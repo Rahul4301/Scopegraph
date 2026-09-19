@@ -2,7 +2,7 @@
 
 ScopeGraph is a research system for testing whether explicit session, project/context, and global memory scopes reduce cross-context retrieval errors in long-running LLM agents. It also tests whether editing persistent memory directly produces more durable corrections than adding a conversational correction.
 
-The repository currently contains Phase 1: typed domain models, configuration, a Neo4j schema and CRUD repository, initial FastAPI routes, health checks, and unit/integration tests. It does not claim experimental results yet.
+The repository currently contains Phases 1 and 2: typed domain models, configuration, Neo4j persistence, initial FastAPI routes, and the complete provenance-aware write path from session ingestion through conservative promotion. It does not claim experimental results yet.
 
 ## Architecture
 
@@ -80,9 +80,23 @@ Complete in Phase 1:
 - `/health`, scope, session, source-message, and memory endpoints;
 - unit tests plus an opt-in live Neo4j integration test.
 
-Deferred to the next specified phases: LLM extraction, consolidation/promotion, embeddings and retrieval, baselines, correction workflows, the web UI, benchmark adapters, and experiment outputs.
+Complete in Phase 2:
 
-No deviation from the Phase 1 specification is known. The integration test is opt-in so `make test` stays deterministic and runnable without Docker; `make test-integration` exercises the real database when explicitly enabled.
+- OpenAI-compatible structured JSON extraction behind a provider protocol;
+- deterministic fake extraction for credential-free testing;
+- exact source-message provenance validation;
+- explicit-scope-first classification with visible uncertainty;
+- normalization and same-scope duplicate suppression;
+- conflict detection using normalized subject and predicate keys;
+- non-destructive temporal supersession with graph edges;
+- durability-gated session-to-scope consolidation;
+- explicit or multi-scope-evidence global promotion;
+- `POST /sessions/{id}/consolidate` using the configured live provider;
+- offline unit coverage and a live Neo4j ingestion round trip.
+
+Deferred to the next specified phases: embeddings and retrieval, baselines, correction workflows, the web UI, benchmark adapters, and experiment outputs.
+
+No deviation from the Phase 1 or Phase 2 deliverables is known. The integration test is opt-in so `make test` stays deterministic and runnable without Docker; `make test-integration` exercises the real database when explicitly enabled. Automatic cross-scope promotion deliberately requires semantically equivalent normalized statements; it does not infer a global preference from unrelated project subjects. More ambitious generalization remains a later research policy rather than an untracked LLM inference.
 
 ## Planned experiment outputs
 
@@ -91,4 +105,3 @@ Later evaluation phases will write append-only JSONL records to `results/raw/`, 
 ## License
 
 MIT
-

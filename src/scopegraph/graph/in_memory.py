@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
-from scopegraph.models.memory import Memory, MemoryCreate, MemoryUpdate
+from scopegraph.models.memory import Memory, MemoryCreate, MemoryStatus, MemoryUpdate
+from scopegraph.models.retrieval import MemoryStats
 from scopegraph.models.scope import Scope, ScopeCreate, ScopeUpdate
 from scopegraph.models.session import Session, SessionCreate
 from scopegraph.models.source import SourceMessage, SourceMessageCreate
@@ -14,6 +15,8 @@ class InMemoryMemoryRepository:
         self.sessions: dict[str, Session] = {}
         self.messages: dict[str, SourceMessage] = {}
         self.memories: dict[str, Memory] = {}
+        self.supersedes: set[tuple[str, str]] = set()
+        self.supports: set[tuple[str, str]] = set()
 
     async def create_scope(self, request: ScopeCreate) -> Scope:
         if request.id in self.scopes:
@@ -39,6 +42,16 @@ class InMemoryMemoryRepository:
             if include_archived or not item.archived
         ]
 
+    async def get_global_scope(self) -> Scope | None:
+        return next(
+            (
+                item
+                for item in self.scopes.values()
+                if item.scope_type.value == "global" and not item.archived
+            ),
+            None,
+        )
+
     async def update_scope(self, scope_id: str, update: ScopeUpdate) -> Scope | None:
         current = self.scopes.get(scope_id)
         if current is None:
@@ -63,6 +76,14 @@ class InMemoryMemoryRepository:
     async def get_session(self, session_id: str) -> Session | None:
         return self.sessions.get(session_id)
 
+    async def end_session(self, session_id: str, ended_at: datetime) -> Session | None:
+        current = self.sessions.get(session_id)
+        if current is None:
+            return None
+        session = current.model_copy(update={"ended_at": ended_at})
+        self.sessions[session_id] = session
+        return session
+
     async def create_source_message(self, request: SourceMessageCreate) -> SourceMessage:
         if request.session_id not in self.sessions:
             raise ValueError(f"Session {request.session_id!r} does not exist")
@@ -72,6 +93,12 @@ class InMemoryMemoryRepository:
 
     async def get_source_message(self, message_id: str) -> SourceMessage | None:
         return self.messages.get(message_id)
+
+    async def list_source_messages(self, session_id: str) -> list[SourceMessage]:
+        return sorted(
+            (item for item in self.messages.values() if item.session_id == session_id),
+            key=lambda item: (item.turn_index, item.timestamp),
+        )
 
     async def create_memory(self, request: MemoryCreate) -> Memory:
         if request.scope_id not in self.scopes:
@@ -105,3 +132,43 @@ class InMemoryMemoryRepository:
         memory = current.model_copy(update=changes)
         self.memories[memory_id] = memory
         return memory
+
+    async def supersede_memory(self, old_memory_id: str, new_memory_id: str) -> None:
+        old = self.memories.get(old_memory_id)
+        new = self.memories.get(new_memory_id)
+        if old is None or new is None:
+            raise ValueError("Both memories must exist to record supersession")
+        self.memories[old_memory_id] = old.model_copy(
+            update={
+                "status": MemoryStatus.SUPERSEDED,
+                "valid_to": new.valid_from or new.created_at,
+                "updated_at": datetime.now(UTC),
+                "revision": old.revision + 1,
+            }
+        )
+        self.supersedes.add((new_memory_id, old_memory_id))
+
+    async def link_support(self, source_memory_id: str, target_memory_id: str) -> None:
+        if source_memory_id not in self.memories or target_memory_id not in self.memories:
+            raise ValueError("Both memories must exist to record support")
+        self.supports.add((source_memory_id, target_memory_id))
+
+    async def stats(self, backend_name: str = "scopegraph") -> MemoryStats:
+        hierarchy_edges = sum(1 for item in self.scopes.values() if item.parent_scope_id)
+        provenance_edges = sum(len(item.source_ids) for item in self.memories.values())
+        return MemoryStats(
+            backend_name=backend_name,
+            scope_count=len(self.scopes),
+            session_count=len(self.sessions),
+            source_message_count=len(self.messages),
+            memory_count=len(self.memories),
+            relationship_count=(
+                hierarchy_edges
+                + len(self.sessions)
+                + len(self.messages)
+                + len(self.memories)
+                + provenance_edges
+                + len(self.supersedes)
+                + len(self.supports)
+            ),
+        )

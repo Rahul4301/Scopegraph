@@ -41,6 +41,9 @@ class IngestResult(BaseModel):
     session_id: str
     source_message_ids: list[str] = Field(default_factory=list)
     memory_ids: list[str] = Field(default_factory=list)
+    duplicate_count: int = 0
+    conflict_count: int = 0
+    promoted_count: int = 0
 
 
 class MemoryStats(BaseModel):
@@ -50,4 +53,3 @@ class MemoryStats(BaseModel):
     source_message_count: int = 0
     memory_count: int = 0
     relationship_count: int = 0
-

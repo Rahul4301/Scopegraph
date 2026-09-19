@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -76,3 +76,33 @@ class MemoryUpdate(BaseModel):
 class Memory(MemoryCreate):
     model_config = ConfigDict(from_attributes=True)
 
+
+class MemoryCandidate(BaseModel):
+    content: str = Field(min_length=1)
+    memory_type: MemoryType
+    subject: str | None = None
+    predicate: str | None = None
+    object: str | None = None
+    proposed_scope_level: Literal["session", "scope", "global"]
+    proposed_scope_id: str | None = None
+    confidence: float = Field(ge=0.0, le=1.0)
+    durability: float = Field(ge=0.0, le=1.0)
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
+    source_message_ids: list[str] = Field(min_length=1)
+    possible_contradiction: bool = False
+    possible_duplicate: bool = False
+    inferred: bool = False
+    explicit_global_signal: bool = False
+
+    @model_validator(mode="after")
+    def validate_candidate(self) -> "MemoryCandidate":
+        if self.valid_from and self.valid_to and self.valid_to < self.valid_from:
+            raise ValueError("valid_to cannot be before valid_from")
+        if self.inferred and self.confidence > 0.8:
+            raise ValueError("inferred memories cannot have confidence above 0.8")
+        return self
+
+
+class MemoryCandidateBatch(BaseModel):
+    candidates: list[MemoryCandidate] = Field(default_factory=list)

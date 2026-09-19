@@ -4,6 +4,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from scopegraph.models.common import new_id, utc_now
+from scopegraph.models.scope import ScopeRef
 from scopegraph.models.source import SourceMessageCreate
 
 
@@ -28,3 +29,6 @@ class SessionInput(SessionCreate):
 class Session(SessionCreate):
     model_config = ConfigDict(from_attributes=True)
 
+
+class SessionConsolidateRequest(BaseModel):
+    current_scope: ScopeRef | None = None

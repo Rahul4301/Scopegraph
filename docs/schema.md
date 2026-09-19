@@ -21,3 +21,4 @@ The schema uses `PARENT_OF`, `BELONGS_TO`, `PART_OF`, `DERIVED_FROM`, `SUPERSEDE
 
 Active, superseded, archived, tombstoned, and needs-review are explicit states. `valid_from` and `valid_to` describe when a fact applies, while `created_at` and `updated_at` describe record history. Mutations increment `revision`. Raw source messages remain separate and linked through `DERIVED_FROM`, allowing a compact memory to retain inspectable evidence.
 
+During Phase 2 consolidation, normalized subject and predicate metadata identifies likely changing facts. A replacement marks the prior node superseded and creates both `SUPERSEDES` and `CONTRADICTS` edges while retaining its source evidence. Cross-scope promotion creates a distinct global node and connects contributing scope memories with `SUPPORTS`.

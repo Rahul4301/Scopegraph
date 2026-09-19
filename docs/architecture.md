@@ -19,7 +19,7 @@ Session memories capture temporary state. Scope memories persist across sessions
 
 ## Write path
 
-Phase 1 stores the raw evidence path without performing model extraction:
+The write path stores raw evidence separately from compact memories:
 
 ```text
 Scope -> Session -> SourceMessage
@@ -27,7 +27,9 @@ Scope -> Session -> SourceMessage
                     +-> Memory -> Scope
 ```
 
-The full write path will validate structured extraction, normalize candidate facts, deduplicate them, detect conflicts, and attach provenance before committing a transaction. New information starts at session level. Session-to-scope promotion may occur when it is durable; scope-to-global promotion is conservative and auditable. Arbitrary model-generated Neo4j relationship types are forbidden. Semantic links use `RELATES_TO.kind` from an allowlist.
+Phase 2 validates structured extraction, normalizes candidate facts, suppresses duplicates, detects conflicts, and attaches provenance before persistence. Low-durability information remains session-level. Durable information can consolidate into the explicit current scope. Global storage requires an explicit general statement or equivalent evidence across the configured number of distinct scopes. Arbitrary model-generated Neo4j relationship types are forbidden. Semantic links use `RELATES_TO.kind` from an allowlist.
+
+Conflicts never erase prior state. A new active memory points to the old memory with `SUPERSEDES` and `CONTRADICTS`; the old memory becomes superseded and receives a temporal validity end. Repeated cross-scope evidence creates a separate global memory supported by the contributing scope memories and their source messages.
 
 ## Read path
 
@@ -48,7 +50,6 @@ Normal correction never hard-deletes a memory. An edit, move, archive, merge, to
 
 All systems will receive identical histories and queries and share embedding models, answer models, temperatures, token budgets, top-k budgets, and scoring. Backend-specific traces may differ in shape but must populate the common `MemorySystem` result schema.
 
-## Phase 1 components
+## Implemented components
 
-The Python package contains validated domain models, configuration loading, an asynchronous Neo4j client, schema creation, CRUD repositories, and initial FastAPI routes. The in-memory repository is a deterministic testing double; Neo4j remains the production graph store. The next phase will implement extraction, provenance-aware ingestion, consolidation, conflict handling, and promotion on top of these primitives.
-
+The Python package contains validated domain models, configuration loading, an asynchronous Neo4j client, schema creation, CRUD repositories, structured extraction, scope resolution, provenance-aware ingestion, consolidation, conflict handling, promotion, and initial FastAPI routes. The in-memory repository and static extractor are deterministic testing doubles; Neo4j and the OpenAI-compatible provider are the production paths. Phase 3 adds embeddings, scoped retrieval, traversal, ranking, token packing, and traces.

@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -47,3 +48,9 @@ class ScopeUpdate(BaseModel):
 class Scope(ScopeCreate):
     model_config = ConfigDict(from_attributes=True)
 
+
+class ScopeDecision(BaseModel):
+    scope_id: str | None
+    scope_level: Literal["session", "scope", "global", "unknown"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    reason: str = Field(min_length=1)

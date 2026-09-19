@@ -5,6 +5,7 @@ from typing import Any
 
 from scopegraph.graph.client import Neo4jClient
 from scopegraph.models.memory import Memory, MemoryCreate, MemoryUpdate
+from scopegraph.models.retrieval import MemoryStats
 from scopegraph.models.scope import Scope, ScopeCreate, ScopeType, ScopeUpdate
 from scopegraph.models.session import Session, SessionCreate
 from scopegraph.models.source import SourceMessage, SourceMessageCreate
@@ -65,6 +66,12 @@ class Neo4jMemoryRepository:
             {"include_archived": include_archived},
         )
         return [Scope.model_validate(_node(row, "s")) for row in rows]
+
+    async def get_global_scope(self) -> Scope | None:
+        rows = await self.client.execute_read(
+            "MATCH (s:Scope {scope_type: 'global', archived: false}) RETURN s LIMIT 1"
+        )
+        return Scope.model_validate(_node(rows[0], "s")) if rows else None
 
     async def update_scope(self, scope_id: str, update: ScopeUpdate) -> Scope | None:
         changes = update.model_dump(mode="json", exclude_unset=True)
@@ -127,6 +134,17 @@ class Neo4jMemoryRepository:
         result["metadata"] = json.loads(result.pop("metadata_json", "{}"))
         return Session.model_validate(result)
 
+    async def end_session(self, session_id: str, ended_at: datetime) -> Session | None:
+        rows = await self.client.execute_write(
+            "MATCH (s:Session {id: $id}) SET s.ended_at = $ended_at RETURN s",
+            {"id": session_id, "ended_at": ended_at.isoformat()},
+        )
+        if not rows:
+            return None
+        result = _node(rows[0], "s")
+        result["metadata"] = json.loads(result.pop("metadata_json", "{}"))
+        return Session.model_validate(result)
+
     async def create_source_message(self, request: SourceMessageCreate) -> SourceMessage:
         rows = await self.client.execute_write(
             """
@@ -145,6 +163,16 @@ class Neo4jMemoryRepository:
             "MATCH (m:SourceMessage {id: $id}) RETURN m", {"id": message_id}
         )
         return SourceMessage.model_validate(_node(rows[0], "m")) if rows else None
+
+    async def list_source_messages(self, session_id: str) -> list[SourceMessage]:
+        rows = await self.client.execute_read(
+            """
+            MATCH (m:SourceMessage)-[:PART_OF]->(:Session {id: $session_id})
+            RETURN m ORDER BY m.turn_index, m.timestamp
+            """,
+            {"session_id": session_id},
+        )
+        return [SourceMessage.model_validate(_node(row, "m")) for row in rows]
 
     async def create_memory(self, request: MemoryCreate) -> Memory:
         payload = request.model_dump(mode="json", exclude={"source_ids"})
@@ -211,6 +239,56 @@ class Neo4jMemoryRepository:
             {"id": memory_id, "changes": changes},
         )
         return self._memory_from_row(rows[0]) if rows else None
+
+    async def supersede_memory(self, old_memory_id: str, new_memory_id: str) -> None:
+        rows = await self.client.execute_write(
+            """
+            MATCH (old:Memory {id: $old_id}), (new:Memory {id: $new_id})
+            SET old.status = 'superseded',
+                old.valid_to = coalesce(new.valid_from, new.created_at),
+                old.updated_at = datetime(),
+                old.revision = old.revision + 1
+            MERGE (new)-[:SUPERSEDES]->(old)
+            MERGE (new)-[:CONTRADICTS]->(old)
+            RETURN old.id AS id
+            """,
+            {"old_id": old_memory_id, "new_id": new_memory_id},
+        )
+        if not rows:
+            raise ValueError("Both memories must exist to record supersession")
+
+    async def link_support(self, source_memory_id: str, target_memory_id: str) -> None:
+        rows = await self.client.execute_write(
+            """
+            MATCH (source:Memory {id: $source_id}), (target:Memory {id: $target_id})
+            MERGE (source)-[:SUPPORTS]->(target)
+            RETURN source.id AS id
+            """,
+            {"source_id": source_memory_id, "target_id": target_memory_id},
+        )
+        if not rows:
+            raise ValueError("Both memories must exist to record support")
+
+    async def stats(self, backend_name: str = "scopegraph") -> MemoryStats:
+        rows = await self.client.execute_read(
+            """
+            MATCH (n)
+            WITH labels(n)[0] AS label, count(n) AS count
+            RETURN collect({label: label, count: count}) AS counts
+            """
+        )
+        counts = {item["label"]: item["count"] for item in rows[0]["counts"]} if rows else {}
+        relationship_rows = await self.client.execute_read(
+            "MATCH ()-[r]->() RETURN count(r) AS count"
+        )
+        return MemoryStats(
+            backend_name=backend_name,
+            scope_count=counts.get("Scope", 0),
+            session_count=counts.get("Session", 0),
+            source_message_count=counts.get("SourceMessage", 0),
+            memory_count=counts.get("Memory", 0),
+            relationship_count=relationship_rows[0]["count"] if relationship_rows else 0,
+        )
 
     @staticmethod
     def _memory_from_row(row: dict[str, Any]) -> Memory:

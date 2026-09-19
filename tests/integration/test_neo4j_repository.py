@@ -3,13 +3,15 @@ from uuid import uuid4
 
 import pytest
 
+from scopegraph.backends.scopegraph import ScopeGraphMemorySystem
 from scopegraph.config import Settings
 from scopegraph.graph.client import Neo4jClient
 from scopegraph.graph.repository import Neo4jMemoryRepository
 from scopegraph.graph.schema import ensure_schema
-from scopegraph.models.memory import MemoryCreate, MemoryType, ScopeLevel
-from scopegraph.models.scope import ScopeCreate, ScopeType
-from scopegraph.models.session import SessionCreate
+from scopegraph.llm.extraction import StaticMemoryExtractor
+from scopegraph.models.memory import MemoryCandidate, MemoryType
+from scopegraph.models.scope import ScopeCreate, ScopeRef, ScopeType
+from scopegraph.models.session import SessionInput
 from scopegraph.models.source import MessageRole, SourceMessageCreate
 
 pytestmark = pytest.mark.integration
@@ -33,32 +35,47 @@ async def test_neo4j_scope_round_trip() -> None:
             ScopeCreate(id=scope_id, name="Integration scope", scope_type=ScopeType.CUSTOM)
         )
         assert await repository.get_scope(created.id) == created
-        session = await repository.create_session(
-            SessionCreate(id=session_id, scope_id=scope_id)
+        candidate = MemoryCandidate(
+            content="Integration scope uses Neo4j",
+            memory_type=MemoryType.FACT,
+            subject="integration scope",
+            predicate="uses_database",
+            object="Neo4j",
+            proposed_scope_level="scope",
+            confidence=1.0,
+            durability=1.0,
+            source_message_ids=[message_id],
         )
-        message = await repository.create_source_message(
-            SourceMessageCreate(
-                id=message_id,
-                session_id=session.id,
-                role=MessageRole.USER,
-                content="Integration test evidence",
-                turn_index=0,
-            )
+        system = ScopeGraphMemorySystem(
+            repository, StaticMemoryExtractor([candidate])
         )
-        memory = await repository.create_memory(
-            MemoryCreate(
-                id=memory_id,
-                content="Integration test memory",
-                memory_type=MemoryType.FACT,
-                scope_level=ScopeLevel.SCOPE,
+        ingest = await system.ingest_session(
+            SessionInput(
+                id=session_id,
                 scope_id=scope_id,
-                source_ids=[message.id],
-            )
+                messages=[
+                    SourceMessageCreate(
+                        id=message_id,
+                        session_id=session_id,
+                        role=MessageRole.USER,
+                        content="Integration scope uses Neo4j",
+                        turn_index=0,
+                    )
+                ],
+            ),
+            current_scope=ScopeRef(id=scope_id, scope_type=ScopeType.CUSTOM),
         )
-        assert await repository.get_session(session.id) == session
-        assert await repository.get_source_message(message.id) == message
-        assert await repository.get_memory(memory.id) == memory
+        memory_id = ingest.memory_ids[0]
+        assert await repository.get_session(session_id) is not None
+        assert await repository.get_source_message(message_id) is not None
+        memory = await repository.get_memory(memory_id)
+        assert memory is not None
+        assert memory.source_ids == [message_id]
     finally:
+        await client.execute_write(
+            "MATCH (m:Memory) WHERE m.metadata_json CONTAINS $session_id DETACH DELETE m",
+            {"session_id": session_id},
+        )
         await client.execute_write(
             "MATCH (n) WHERE n.id IN $ids DETACH DELETE n",
             {"ids": [memory_id, message_id, session_id, scope_id]},
