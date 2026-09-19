@@ -12,8 +12,16 @@ from scopegraph.graph.client import Neo4jClient
 from scopegraph.graph.repository import Neo4jMemoryRepository
 from scopegraph.graph.schema import ensure_schema
 from scopegraph.llm.extraction import StaticMemoryExtractor
+from scopegraph.memory.corrections import CorrectionService
 from scopegraph.memory.retriever import ScopeAwareRetriever
-from scopegraph.models.memory import MemoryCandidate, MemoryType
+from scopegraph.models.correction import (
+    CorrectionRelation,
+    MemoryEditRequest,
+    MemoryRestoreRequest,
+    RelationCorrectionRequest,
+)
+from scopegraph.models.memory import MemoryCandidate, MemoryCreate, MemoryType, ScopeLevel
+from scopegraph.models.relationship import RelationKind
 from scopegraph.models.scope import ScopeCreate, ScopeRef, ScopeType
 from scopegraph.models.session import SessionInput
 from scopegraph.models.source import MessageRole, SourceMessageCreate
@@ -126,6 +134,8 @@ async def test_neo4j_scope_round_trip() -> None:
     session_id = f"integration-session-{run_id}"
     message_id = f"integration-message-{run_id}"
     memory_id = f"integration-memory-{run_id}"
+    related_memory_id = f"integration-related-memory-{run_id}"
+    correction_ids: list[str] = []
     try:
         assert await client.health()
         await ensure_schema(client)
@@ -184,13 +194,70 @@ async def test_neo4j_scope_round_trip() -> None:
         assert persisted is not None
         assert persisted.embedding == [1.0, 0.0]
         assert persisted.embedding_model == "integration-test-v1"
+
+        corrections = CorrectionService(repository)
+        edited = await corrections.edit(
+            memory_id,
+            MemoryEditRequest(
+                content="Integration scope uses Neo4j Community",
+                actor="integration-test",
+                reason="verify revision history",
+            ),
+        )
+        correction_ids.append(edited.event.id)
+        assert edited.memory.revision == 2
+        pruned = await corrections.prune(memory_id, actor="integration-test")
+        correction_ids.append(pruned.event.id)
+        assert pruned.memory.status.value == "tombstoned"
+        restored = await corrections.restore(
+            memory_id,
+            MemoryRestoreRequest(
+                undo_of=pruned.event.id,
+                actor="integration-test",
+            ),
+        )
+        correction_ids.append(restored.event.id)
+        assert restored.memory.status.value == "active"
+
+        await repository.create_memory(
+            MemoryCreate(
+                id=related_memory_id,
+                content="Neo4j Community is a graph database",
+                memory_type=MemoryType.FACT,
+                scope_level=ScopeLevel.SCOPE,
+                scope_id=scope_id,
+            )
+        )
+        relation_request = RelationCorrectionRequest(
+            target_memory_id=related_memory_id,
+            relation=CorrectionRelation.RELATES_TO,
+            kind=RelationKind.USES,
+            actor="integration-test",
+        )
+        added_relation = await corrections.add_relation(memory_id, relation_request)
+        correction_ids.append(added_relation.event.id)
+        removed_relation = await corrections.remove_relation(memory_id, relation_request)
+        correction_ids.append(removed_relation.event.id)
+        assert [event.id for event in await corrections.history(memory_id)] == correction_ids
     finally:
+        await client.execute_write(
+            "MATCH (event:CorrectionEvent) WHERE event.id IN $ids DETACH DELETE event",
+            {"ids": correction_ids},
+        )
         await client.execute_write(
             "MATCH (m:Memory) WHERE m.metadata_json CONTAINS $session_id DETACH DELETE m",
             {"session_id": session_id},
         )
         await client.execute_write(
             "MATCH (n) WHERE n.id IN $ids DETACH DELETE n",
-            {"ids": [memory_id, message_id, session_id, scope_id]},
+            {
+                "ids": [
+                    memory_id,
+                    related_memory_id,
+                    message_id,
+                    session_id,
+                    scope_id,
+                ]
+            },
         )
         await client.close()

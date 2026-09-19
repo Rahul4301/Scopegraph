@@ -2,12 +2,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from scopegraph.api.dependencies import get_repository
+from scopegraph.api.dependencies import get_correction_service, get_repository
 from scopegraph.graph.repository import Neo4jMemoryRepository
-from scopegraph.models.memory import Memory, MemoryCreate, MemoryUpdate
+from scopegraph.memory.corrections import CorrectionService
+from scopegraph.models.correction import CorrectionResult, MemoryEditRequest
+from scopegraph.models.memory import Memory, MemoryCreate
 
 router = APIRouter(prefix="/memories", tags=["memories"])
 Repository = Annotated[Neo4jMemoryRepository, Depends(get_repository)]
+Corrections = Annotated[CorrectionService, Depends(get_correction_service)]
 
 
 @router.post("", response_model=Memory, status_code=status.HTTP_201_CREATED)
@@ -37,12 +40,12 @@ async def get_memory(memory_id: str, repository: Repository) -> Memory:
     return memory
 
 
-@router.patch("/{memory_id}", response_model=Memory)
+@router.patch("/{memory_id}", response_model=CorrectionResult)
 async def update_memory(
-    memory_id: str, request: MemoryUpdate, repository: Repository
-) -> Memory:
-    memory = await repository.update_memory(memory_id, request)
-    if memory is None:
-        raise HTTPException(status_code=404, detail="Memory not found")
-    return memory
-
+    memory_id: str, request: MemoryEditRequest, corrections: Corrections
+) -> CorrectionResult:
+    try:
+        return await corrections.edit(memory_id, request)
+    except ValueError as exc:
+        code = 404 if "does not exist" in str(exc) else 422
+        raise HTTPException(status_code=code, detail=str(exc)) from exc

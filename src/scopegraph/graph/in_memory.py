@@ -1,7 +1,19 @@
 from datetime import UTC, datetime
 
 from scopegraph.memory.traversal import MemoryNeighbor
-from scopegraph.models.memory import Memory, MemoryCreate, MemoryStatus, MemoryUpdate
+from scopegraph.models.correction import (
+    CorrectionEvent,
+    CorrectionRelation,
+    SupportDependency,
+)
+from scopegraph.models.memory import (
+    Memory,
+    MemoryCreate,
+    MemoryStatus,
+    MemoryUpdate,
+    ScopeLevel,
+)
+from scopegraph.models.relationship import RelationKind
 from scopegraph.models.retrieval import MemoryStats
 from scopegraph.models.scope import Scope, ScopeCreate, ScopeUpdate
 from scopegraph.models.session import Session, SessionCreate
@@ -18,6 +30,11 @@ class InMemoryMemoryRepository:
         self.memories: dict[str, Memory] = {}
         self.supersedes: set[tuple[str, str]] = set()
         self.supports: set[tuple[str, str]] = set()
+        self.same_as: set[tuple[str, str]] = set()
+        self.contradicts: set[tuple[str, str]] = set()
+        self.relates_to: set[tuple[str, str, RelationKind]] = set()
+        self.correction_events: dict[str, CorrectionEvent] = {}
+        self.correction_targets: dict[str, set[str]] = {}
 
     async def create_scope(self, request: ScopeCreate) -> Scope:
         if request.id in self.scopes:
@@ -140,6 +157,12 @@ class InMemoryMemoryRepository:
         relationships = [
             *((source, target, "SUPERSEDES") for source, target in self.supersedes),
             *((source, target, "SUPPORTS") for source, target in self.supports),
+            *((source, target, "SAME_AS") for source, target in self.same_as),
+            *((source, target, "CONTRADICTS") for source, target in self.contradicts),
+            *(
+                (source, target, f"RELATES_TO:{kind.value}")
+                for source, target, kind in self.relates_to
+            ),
         ]
         for source, target, relation in relationships:
             if source in requested and target in self.memories:
@@ -158,6 +181,153 @@ class InMemoryMemoryRepository:
         self.memories[memory_id] = memory
         return memory
 
+    async def move_memory(
+        self, memory_id: str, scope_id: str, scope_level: ScopeLevel
+    ) -> Memory | None:
+        if scope_id not in self.scopes:
+            raise ValueError(f"Scope {scope_id!r} does not exist")
+        return await self.update_memory(
+            memory_id, MemoryUpdate(scope_id=scope_id, scope_level=scope_level)
+        )
+
+    async def merge_memories(
+        self, source_memory_id: str, target_memory_id: str
+    ) -> tuple[Memory, Memory]:
+        source = self.memories.get(source_memory_id)
+        target = self.memories.get(target_memory_id)
+        if source is None or target is None:
+            raise ValueError("Both memories must exist to merge")
+        now = datetime.now(UTC)
+        updated_target = target.model_copy(
+            update={
+                "source_ids": list(dict.fromkeys([*target.source_ids, *source.source_ids])),
+                "updated_at": now,
+                "revision": target.revision + 1,
+            }
+        )
+        updated_source = source.model_copy(
+            update={
+                "status": MemoryStatus.TOMBSTONED,
+                "updated_at": now,
+                "revision": source.revision + 1,
+            }
+        )
+        self.memories[target_memory_id] = updated_target
+        self.memories[source_memory_id] = updated_source
+        self.same_as.add((source_memory_id, target_memory_id))
+        return updated_source, updated_target
+
+    async def add_memory_relation(
+        self,
+        source_memory_id: str,
+        target_memory_id: str,
+        relation: CorrectionRelation,
+        kind: RelationKind | None = None,
+    ) -> Memory:
+        source = self.memories.get(source_memory_id)
+        if source is None or target_memory_id not in self.memories:
+            raise ValueError("Both memories must exist to add a relation")
+        if source_memory_id == target_memory_id:
+            raise ValueError("A memory cannot relate to itself")
+        pair = (source_memory_id, target_memory_id)
+        if relation is CorrectionRelation.SUPPORTS:
+            self.supports.add(pair)
+        elif relation is CorrectionRelation.SAME_AS:
+            self.same_as.add(pair)
+        elif relation is CorrectionRelation.CONTRADICTS:
+            self.contradicts.add(pair)
+        elif relation is CorrectionRelation.RELATES_TO and kind is not None:
+            self.relates_to.add((*pair, kind))
+        else:
+            raise ValueError("RELATES_TO requires an allowlisted kind")
+        updated = source.model_copy(
+            update={"updated_at": datetime.now(UTC), "revision": source.revision + 1}
+        )
+        self.memories[source_memory_id] = updated
+        return updated
+
+    async def remove_memory_relation(
+        self,
+        source_memory_id: str,
+        target_memory_id: str,
+        relation: CorrectionRelation,
+        kind: RelationKind | None = None,
+    ) -> Memory:
+        source = self.memories.get(source_memory_id)
+        if source is None or target_memory_id not in self.memories:
+            raise ValueError("Both memories must exist to remove a relation")
+        pair = (source_memory_id, target_memory_id)
+        removed = False
+        if relation is CorrectionRelation.SUPPORTS and pair in self.supports:
+            self.supports.remove(pair)
+            removed = True
+        elif relation is CorrectionRelation.SAME_AS and pair in self.same_as:
+            self.same_as.remove(pair)
+            removed = True
+        elif relation is CorrectionRelation.CONTRADICTS and pair in self.contradicts:
+            self.contradicts.remove(pair)
+            removed = True
+        elif relation is CorrectionRelation.RELATES_TO and kind is not None:
+            semantic = (*pair, kind)
+            if semantic in self.relates_to:
+                self.relates_to.remove(semantic)
+                removed = True
+        if not removed:
+            raise ValueError("The requested memory relation does not exist")
+        updated = source.model_copy(
+            update={"updated_at": datetime.now(UTC), "revision": source.revision + 1}
+        )
+        self.memories[source_memory_id] = updated
+        return updated
+
+    async def get_support_dependents(self, memory_id: str) -> list[SupportDependency]:
+        dependencies: list[SupportDependency] = []
+        dependent_ids = {target for source, target in self.supports if source == memory_id}
+        for dependent_id in sorted(dependent_ids):
+            dependent = self.memories.get(dependent_id)
+            if dependent is None:
+                continue
+            other_support_ids = sorted(
+                source
+                for source, target in self.supports
+                if target == dependent_id
+                and source != memory_id
+                and source in self.memories
+                and self.memories[source].status is MemoryStatus.ACTIVE
+            )
+            dependencies.append(
+                SupportDependency(
+                    memory=dependent,
+                    other_active_support_ids=other_support_ids,
+                )
+            )
+        return dependencies
+
+    async def create_correction_event(
+        self, event: CorrectionEvent, target_memory_ids: list[str]
+    ) -> CorrectionEvent:
+        missing = set(target_memory_ids) - self.memories.keys()
+        if missing:
+            raise ValueError(f"Correction targets do not exist: {sorted(missing)}")
+        if event.id in self.correction_events:
+            raise ValueError(f"Correction event {event.id!r} already exists")
+        self.correction_events[event.id] = event
+        self.correction_targets[event.id] = set(target_memory_ids)
+        return event
+
+    async def get_correction_event(self, event_id: str) -> CorrectionEvent | None:
+        return self.correction_events.get(event_id)
+
+    async def list_correction_events(self, memory_id: str) -> list[CorrectionEvent]:
+        return sorted(
+            (
+                event
+                for event_id, event in self.correction_events.items()
+                if memory_id in self.correction_targets[event_id]
+            ),
+            key=lambda event: (event.timestamp, event.id),
+        )
+
     async def supersede_memory(self, old_memory_id: str, new_memory_id: str) -> None:
         old = self.memories.get(old_memory_id)
         new = self.memories.get(new_memory_id)
@@ -172,6 +342,7 @@ class InMemoryMemoryRepository:
             }
         )
         self.supersedes.add((new_memory_id, old_memory_id))
+        self.contradicts.add((new_memory_id, old_memory_id))
 
     async def link_support(self, source_memory_id: str, target_memory_id: str) -> None:
         if source_memory_id not in self.memories or target_memory_id not in self.memories:
@@ -195,5 +366,9 @@ class InMemoryMemoryRepository:
                 + provenance_edges
                 + len(self.supersedes)
                 + len(self.supports)
+                + len(self.same_as)
+                + len(self.contradicts)
+                + len(self.relates_to)
+                + sum(len(targets) for targets in self.correction_targets.values())
             ),
         )

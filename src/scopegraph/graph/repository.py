@@ -5,7 +5,13 @@ from typing import Any
 
 from scopegraph.graph.client import Neo4jClient
 from scopegraph.memory.traversal import MemoryNeighbor
-from scopegraph.models.memory import Memory, MemoryCreate, MemoryUpdate
+from scopegraph.models.correction import (
+    CorrectionEvent,
+    CorrectionRelation,
+    SupportDependency,
+)
+from scopegraph.models.memory import Memory, MemoryCreate, MemoryUpdate, ScopeLevel
+from scopegraph.models.relationship import RelationKind
 from scopegraph.models.retrieval import MemoryStats
 from scopegraph.models.scope import Scope, ScopeCreate, ScopeType, ScopeUpdate
 from scopegraph.models.session import Session, SessionCreate
@@ -277,19 +283,221 @@ class Neo4jMemoryRepository:
         )
         return self._memory_from_row(rows[0]) if rows else None
 
+    async def move_memory(
+        self, memory_id: str, scope_id: str, scope_level: ScopeLevel
+    ) -> Memory | None:
+        rows = await self.client.execute_write(
+            """
+            MATCH (m:Memory {id: $memory_id}), (scope:Scope {id: $scope_id})
+            OPTIONAL MATCH (m)-[old:BELONGS_TO]->(:Scope)
+            DELETE old
+            SET m.scope_id = $scope_id,
+                m.scope_level = $scope_level,
+                m.updated_at = $updated_at,
+                m.revision = m.revision + 1
+            MERGE (m)-[:BELONGS_TO]->(scope)
+            RETURN m, [(m)-[:DERIVED_FROM]->(source) | source.id] AS source_ids
+            """,
+            {
+                "memory_id": memory_id,
+                "scope_id": scope_id,
+                "scope_level": scope_level.value,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        if not rows:
+            if await self.get_memory(memory_id) is None:
+                return None
+            raise ValueError(f"Scope {scope_id!r} does not exist")
+        return self._memory_from_row(rows[0])
+
+    async def merge_memories(
+        self, source_memory_id: str, target_memory_id: str
+    ) -> tuple[Memory, Memory]:
+        rows = await self.client.execute_write(
+            """
+            MATCH (source:Memory {id: $source_id}), (target:Memory {id: $target_id})
+            OPTIONAL MATCH (source)-[:DERIVED_FROM]->(message:SourceMessage)
+            WITH source, target, collect(message) AS messages
+            FOREACH (message IN messages | MERGE (target)-[:DERIVED_FROM]->(message))
+            SET source.status = 'tombstoned',
+                source.updated_at = $updated_at,
+                source.revision = source.revision + 1,
+                target.updated_at = $updated_at,
+                target.revision = target.revision + 1
+            MERGE (source)-[:SAME_AS]->(target)
+            RETURN source AS source_memory,
+                   [(source)-[:DERIVED_FROM]->(message) | message.id] AS source_ids,
+                   target AS target_memory,
+                   [(target)-[:DERIVED_FROM]->(message) | message.id] AS target_source_ids
+            """,
+            {
+                "source_id": source_memory_id,
+                "target_id": target_memory_id,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        if not rows:
+            raise ValueError("Both memories must exist to merge")
+        row = rows[0]
+        source_row = {"m": row["source_memory"], "source_ids": row["source_ids"]}
+        target_row = {
+            "m": row["target_memory"],
+            "source_ids": row["target_source_ids"],
+        }
+        return self._memory_from_row(source_row), self._memory_from_row(target_row)
+
+    async def add_memory_relation(
+        self,
+        source_memory_id: str,
+        target_memory_id: str,
+        relation: CorrectionRelation,
+        kind: RelationKind | None = None,
+    ) -> Memory:
+        if source_memory_id == target_memory_id:
+            raise ValueError("A memory cannot relate to itself")
+        patterns = {
+            CorrectionRelation.SUPPORTS: "MERGE (source)-[:SUPPORTS]->(target)",
+            CorrectionRelation.SAME_AS: "MERGE (source)-[:SAME_AS]->(target)",
+            CorrectionRelation.CONTRADICTS: "MERGE (source)-[:CONTRADICTS]->(target)",
+            CorrectionRelation.RELATES_TO: (
+                "MERGE (source)-[:RELATES_TO {kind: $kind}]->(target)"
+            ),
+        }
+        if relation is CorrectionRelation.RELATES_TO and kind is None:
+            raise ValueError("RELATES_TO requires an allowlisted kind")
+        rows = await self.client.execute_write(
+            f"""
+            MATCH (source:Memory {{id: $source_id}}), (target:Memory {{id: $target_id}})
+            {patterns[relation]}
+            SET source.updated_at = $updated_at, source.revision = source.revision + 1
+            RETURN source AS m,
+                   [(source)-[:DERIVED_FROM]->(message) | message.id] AS source_ids
+            """,
+            {
+                "source_id": source_memory_id,
+                "target_id": target_memory_id,
+                "kind": kind.value if kind else None,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        if not rows:
+            raise ValueError("Both memories must exist to add a relation")
+        return self._memory_from_row(rows[0])
+
+    async def remove_memory_relation(
+        self,
+        source_memory_id: str,
+        target_memory_id: str,
+        relation: CorrectionRelation,
+        kind: RelationKind | None = None,
+    ) -> Memory:
+        patterns = {
+            CorrectionRelation.SUPPORTS: "[relation:SUPPORTS]",
+            CorrectionRelation.SAME_AS: "[relation:SAME_AS]",
+            CorrectionRelation.CONTRADICTS: "[relation:CONTRADICTS]",
+            CorrectionRelation.RELATES_TO: "[relation:RELATES_TO {kind: $kind}]",
+        }
+        if relation is CorrectionRelation.RELATES_TO and kind is None:
+            raise ValueError("RELATES_TO requires an allowlisted kind")
+        rows = await self.client.execute_write(
+            f"""
+            MATCH (source:Memory {{id: $source_id}})-{patterns[relation]}->
+                  (target:Memory {{id: $target_id}})
+            DELETE relation
+            SET source.updated_at = $updated_at, source.revision = source.revision + 1
+            RETURN source AS m,
+                   [(source)-[:DERIVED_FROM]->(message) | message.id] AS source_ids
+            """,
+            {
+                "source_id": source_memory_id,
+                "target_id": target_memory_id,
+                "kind": kind.value if kind else None,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        if not rows:
+            raise ValueError("The requested memory relation does not exist")
+        return self._memory_from_row(rows[0])
+
+    async def get_support_dependents(self, memory_id: str) -> list[SupportDependency]:
+        rows = await self.client.execute_read(
+            """
+            MATCH (:Memory {id: $memory_id})-[:SUPPORTS]->(dependent:Memory)
+            OPTIONAL MATCH (other:Memory)-[:SUPPORTS]->(dependent)
+            WHERE other.id <> $memory_id AND other.status = 'active'
+            RETURN dependent AS m,
+                   [(dependent)-[:DERIVED_FROM]->(source) | source.id] AS source_ids,
+                   [id IN collect(DISTINCT other.id) WHERE id IS NOT NULL]
+                       AS other_active_support_ids
+            ORDER BY dependent.id
+            """,
+            {"memory_id": memory_id},
+        )
+        return [
+            SupportDependency(
+                memory=self._memory_from_row(row),
+                other_active_support_ids=row["other_active_support_ids"],
+            )
+            for row in rows
+        ]
+
+    async def create_correction_event(
+        self, event: CorrectionEvent, target_memory_ids: list[str]
+    ) -> CorrectionEvent:
+        payload = event.model_dump(mode="json", exclude={"before", "after"})
+        payload["before_json"] = _json(event.before)
+        payload["after_json"] = _json(event.after)
+        rows = await self.client.execute_write(
+            """
+            MATCH (target:Memory)
+            WHERE target.id IN $target_ids
+            WITH collect(target) AS targets
+            WHERE size(targets) = size($target_ids)
+            CREATE (event:CorrectionEvent $event)
+            FOREACH (target IN targets | CREATE (event)-[:TARGETED]->(target))
+            RETURN event
+            """,
+            {"event": payload, "target_ids": list(dict.fromkeys(target_memory_ids))},
+        )
+        if not rows:
+            raise ValueError("Every correction target must exist")
+        return self._correction_from_node(_node(rows[0], "event"))
+
+    async def get_correction_event(self, event_id: str) -> CorrectionEvent | None:
+        rows = await self.client.execute_read(
+            "MATCH (event:CorrectionEvent {id: $id}) RETURN event",
+            {"id": event_id},
+        )
+        return self._correction_from_node(_node(rows[0], "event")) if rows else None
+
+    async def list_correction_events(self, memory_id: str) -> list[CorrectionEvent]:
+        rows = await self.client.execute_read(
+            """
+            MATCH (event:CorrectionEvent)-[:TARGETED]->(:Memory {id: $memory_id})
+            RETURN event ORDER BY event.timestamp, event.id
+            """,
+            {"memory_id": memory_id},
+        )
+        return [self._correction_from_node(_node(row, "event")) for row in rows]
+
     async def supersede_memory(self, old_memory_id: str, new_memory_id: str) -> None:
         rows = await self.client.execute_write(
             """
             MATCH (old:Memory {id: $old_id}), (new:Memory {id: $new_id})
             SET old.status = 'superseded',
                 old.valid_to = coalesce(new.valid_from, new.created_at),
-                old.updated_at = datetime(),
+                old.updated_at = $updated_at,
                 old.revision = old.revision + 1
             MERGE (new)-[:SUPERSEDES]->(old)
             MERGE (new)-[:CONTRADICTS]->(old)
             RETURN old.id AS id
             """,
-            {"old_id": old_memory_id, "new_id": new_memory_id},
+            {
+                "old_id": old_memory_id,
+                "new_id": new_memory_id,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
         )
         if not rows:
             raise ValueError("Both memories must exist to record supersession")
@@ -333,3 +541,10 @@ class Neo4jMemoryRepository:
         result["metadata"] = json.loads(result.pop("metadata_json", "{}"))
         result["source_ids"] = row.get("source_ids", [])
         return Memory.model_validate(result)
+
+    @staticmethod
+    def _correction_from_node(node: dict[str, Any]) -> CorrectionEvent:
+        result = dict(node)
+        result["before"] = json.loads(result.pop("before_json", "{}"))
+        result["after"] = json.loads(result.pop("after_json", "{}"))
+        return CorrectionEvent.model_validate(result)

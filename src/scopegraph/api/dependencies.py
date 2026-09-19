@@ -8,6 +8,7 @@ from scopegraph.graph.client import Neo4jClient
 from scopegraph.graph.repository import Neo4jMemoryRepository
 from scopegraph.llm.extraction import LLMMemoryExtractor
 from scopegraph.llm.openai_compatible import OpenAICompatibleLLM
+from scopegraph.memory.corrections import CorrectionService
 from scopegraph.memory.promoter import PromotionPolicy
 from scopegraph.memory.retriever import RetrievalConfig, ScopeAwareRetriever
 
@@ -19,6 +20,10 @@ def get_client() -> Neo4jClient:
 
 def get_repository() -> Neo4jMemoryRepository:
     return Neo4jMemoryRepository(get_client())
+
+
+def get_correction_service() -> CorrectionService:
+    return CorrectionService(get_repository())
 
 
 @lru_cache

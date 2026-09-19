@@ -4,6 +4,7 @@ from typing import Protocol
 from scopegraph.llm.extraction import CandidateExtractor
 from scopegraph.memory.base import MemorySystem
 from scopegraph.memory.consolidator import ConsolidationRepository, Consolidator
+from scopegraph.memory.corrections import CorrectionRepository, CorrectionService
 from scopegraph.memory.promoter import PromotionPolicy
 from scopegraph.memory.retriever import ScopeAwareRetriever
 from scopegraph.models.correction import CorrectionRequest, CorrectionResult
@@ -14,7 +15,7 @@ from scopegraph.models.session import Session, SessionCreate, SessionInput
 from scopegraph.models.source import SourceMessage, SourceMessageCreate
 
 
-class WriteRepository(ConsolidationRepository, Protocol):
+class WriteRepository(ConsolidationRepository, CorrectionRepository, Protocol):
     async def create_session(self, request: SessionCreate) -> Session: ...
 
     async def create_source_message(self, request: SourceMessageCreate) -> SourceMessage: ...
@@ -48,6 +49,7 @@ class ScopeGraphMemorySystem(MemorySystem):
         self.repository = repository
         self.extractor = extractor
         self.retriever = retriever
+        self.corrections = CorrectionService(repository)
         self.consolidator = Consolidator(
             repository,
             promotion_policy or PromotionPolicy(),
@@ -139,8 +141,7 @@ class ScopeGraphMemorySystem(MemorySystem):
         )
 
     async def apply_correction(self, correction: CorrectionRequest) -> CorrectionResult:
-        del correction
-        raise NotImplementedError("Correction workflows are implemented in Phase 5")
+        return await self.corrections.apply(correction)
 
     async def stats(self) -> MemoryStats:
         return await self.repository.stats("scopegraph")

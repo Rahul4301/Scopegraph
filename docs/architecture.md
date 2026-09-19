@@ -45,7 +45,11 @@ Every result exposes component scores, source IDs, scope IDs, temporal validity,
 
 ## Correction path
 
-Normal correction never hard-deletes a memory. An edit, move, archive, merge, tombstone, or restore creates an append-only `CorrectionEvent` containing before and after state, actor, reason, and optional undo target. A future prune preview will distinguish graph neighbors from evidence dependents: independently supported memories remain active, while memories losing their only provenance become `needs_review` or tombstoned. Revision history makes every study mutation reversible.
+Normal correction never hard-deletes a memory. An edit, move, archive, merge, tombstone, restore, supersession, or relation change creates an append-only `CorrectionEvent` containing before and after state, actor, reason, and optional undo target. Every changed memory increments its revision; content edits also clear the stored embedding so retrieval regenerates it.
+
+Prune preview distinguishes graph neighbors from directed evidentiary dependencies. A target's outgoing `SUPPORTS` edges identify possible dependents. Independently supported memories remain unchanged, while active memories losing their only active support become `needs_review`. Confirmed pruning tombstones only the selected target. Restore is guarded by recorded revision numbers, so undo cannot silently overwrite a newer correction.
+
+Merging copies source-message provenance to the canonical target, tombstones the duplicate, and retains `SAME_AS`; it never deletes either memory. Semantic relation edits are restricted to fixed relationship types and the existing `RELATES_TO.kind` allowlist.
 
 ## Baseline boundaries
 
@@ -60,4 +64,4 @@ See [baselines.md](baselines.md) for the controlled representation differences a
 
 ## Implemented components
 
-The Python package contains validated domain models, configuration loading, an asynchronous Neo4j client, schema creation, CRUD repositories, structured extraction, scope resolution, provenance-aware ingestion, consolidation, conflict handling, promotion, embeddings, scoped retrieval, bounded traversal, temporal filtering, ranking, token packing, retrieval traces, three Phase 4 comparison baselines, and FastAPI routes. The in-memory repository, static extractor, and deterministic test embedder keep tests credential-free; Neo4j and the OpenAI-compatible providers are the production paths.
+The Python package contains validated domain models, configuration loading, an asynchronous Neo4j client, schema creation, CRUD repositories, structured extraction, scope resolution, provenance-aware ingestion, consolidation, conflict handling, promotion, embeddings, scoped retrieval, bounded traversal, temporal filtering, ranking, token packing, retrieval traces, three comparison baselines, reversible correction workflows, and FastAPI routes. The in-memory repository, static extractor, and deterministic test embedder keep tests credential-free; Neo4j and the OpenAI-compatible providers are the production paths.

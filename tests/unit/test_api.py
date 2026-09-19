@@ -1,12 +1,19 @@
+import asyncio
 from datetime import datetime
 
 from fastapi.testclient import TestClient
 
-from scopegraph.api.dependencies import get_memory_system, get_repository
+from scopegraph.api.dependencies import (
+    get_correction_service,
+    get_memory_system,
+    get_repository,
+)
 from scopegraph.api.main import app
 from scopegraph.graph.in_memory import InMemoryMemoryRepository
+from scopegraph.memory.corrections import CorrectionService
+from scopegraph.models.memory import MemoryCreate, MemoryType, ScopeLevel
 from scopegraph.models.retrieval import RetrievalResult
-from scopegraph.models.scope import ScopeRef
+from scopegraph.models.scope import ScopeCreate, ScopeRef, ScopeType
 
 
 class FakeRetrievalSystem:
@@ -77,5 +84,63 @@ def test_retrieval_api() -> None:
         assert response.json()["backend_name"] == "scopegraph"
         assert memory_system.current_scope is not None
         assert memory_system.current_scope.session_id == "session-1"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_correction_api_round_trip() -> None:
+    repository = InMemoryMemoryRepository()
+
+    async def seed() -> None:
+        await repository.create_scope(
+            ScopeCreate(id="global", name="Global", scope_type=ScopeType.GLOBAL)
+        )
+        await repository.create_memory(
+            MemoryCreate(
+                id="memory-1",
+                content="Old content",
+                memory_type=MemoryType.FACT,
+                scope_level=ScopeLevel.GLOBAL,
+                scope_id="global",
+            )
+        )
+
+    asyncio.run(seed())
+    corrections = CorrectionService(repository)
+    app.dependency_overrides[get_repository] = lambda: repository
+    app.dependency_overrides[get_correction_service] = lambda: corrections
+    try:
+        with TestClient(app) as client:
+            edited = client.patch(
+                "/memories/memory-1",
+                json={"content": "Correct content", "reason": "fix typo"},
+            )
+            assert edited.status_code == 200
+            assert edited.json()["memory"]["revision"] == 2
+
+            preview = client.post("/memories/memory-1/prune/preview")
+            assert preview.status_code == 200
+            assert preview.json()["hard_delete"] is False
+
+            pruned = client.post(
+                "/memories/memory-1/prune", json={"reason": "bad evidence"}
+            )
+            assert pruned.status_code == 200
+            prune_event_id = pruned.json()["event"]["id"]
+
+            restored = client.post(
+                "/memories/memory-1/restore",
+                json={"undo_of": prune_event_id, "reason": "undo"},
+            )
+            assert restored.status_code == 200
+            assert restored.json()["memory"]["status"] == "active"
+
+            history = client.get("/memories/memory-1/history")
+            assert history.status_code == 200
+            assert [event["action"] for event in history.json()] == [
+                "edit",
+                "tombstone",
+                "restore",
+            ]
     finally:
         app.dependency_overrides.clear()

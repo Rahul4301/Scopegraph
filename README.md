@@ -2,7 +2,7 @@
 
 ScopeGraph is a research system for testing whether explicit session, project/context, and global memory scopes reduce cross-context retrieval errors in long-running LLM agents. It also tests whether editing persistent memory directly produces more durable corrections than adding a conversational correction.
 
-The repository currently contains Phases 1 through 4: typed domain models, Neo4j persistence, the provenance-aware ScopeGraph write/read paths, and three controlled comparison baselines. It does not claim experimental results yet.
+The repository currently contains Phases 1 through 5: typed domain models, Neo4j persistence, provenance-aware ScopeGraph write/read paths, three controlled comparison baselines, and reversible audited corrections. It does not claim experimental results yet.
 
 ## Architecture
 
@@ -21,7 +21,7 @@ One physical Neo4j database represents three logical memory levels:
 - scope memory for durable project, repository, course, client, task, or workspace facts;
 - global memory for information intended to hold across contexts.
 
-See [docs/architecture.md](docs/architecture.md), [docs/baselines.md](docs/baselines.md), [docs/schema.md](docs/schema.md), and [docs/literature.md](docs/literature.md).
+See [docs/architecture.md](docs/architecture.md), [docs/baselines.md](docs/baselines.md), [docs/corrections.md](docs/corrections.md), [docs/schema.md](docs/schema.md), and [docs/literature.md](docs/literature.md).
 
 ## Requirements
 
@@ -52,6 +52,8 @@ uv run uvicorn scopegraph.api.main:app --reload
 Open `http://127.0.0.1:8000/docs` for the generated API documentation. `GET /health` checks Neo4j connectivity without exposing credentials.
 
 `POST /retrieve` accepts a query, optional current scope and session, top-k, token budget, and optional evaluation timestamp. Retrieval searches the current session and scope, then ancestors and global memory; an unrelated scope is included only when its name appears in the query. The response includes each score component and traversal path.
+
+Memory correction routes are grouped under `/memories/{id}`. Use `/prune/preview` before `/prune`; archive and prune operations can be reversed with `/restore`, and `/history` returns the append-only audit trail. `PATCH /memories/{id}` is an audited edit rather than an untracked property mutation.
 
 ## Quality checks
 
@@ -118,9 +120,20 @@ Complete in Phase 4:
 - unit coverage for backend identity, visibility behavior, graph/no-graph behavior, and two-level session isolation;
 - live Neo4j ingestion/retrieval round trips for all three baselines.
 
-Deferred to the next specified phases: correction workflows, the web UI, benchmark adapters, and experiment outputs.
+Complete in Phase 5:
 
-No deviation from the Phase 1 through 4 deliverables is known. The integration test is opt-in so `make test` stays deterministic and runnable without Docker; `make test-integration` exercises the real database when explicitly enabled. Phase 3 deliberately uses exact cosine scoring over the scope-filtered candidate set instead of a Neo4j vector index: this avoids fixing an embedding dimension in the schema and keeps provider changes reproducible on the target laptop. The bounded candidate pool can be replaced by a native vector index when scale measurements justify it. Phase 4 retains physical `scope_id` fields for compatibility with the common persistence schema, but VectorMemory and FlatGraphMemory never use them for retrieval validity; this representation detail is recorded in traces and does not grant either baseline scoped filtering. Each backend must use an isolated experiment repository because reset/namespacing belongs to the evaluation harness phase.
+- audited memory edits with revision increments and embedding invalidation;
+- scope moves, archive, tombstone, restore, explicit supersession, and duplicate merge;
+- dry-run prune previews separating graph neighbors from evidentiary dependents;
+- dependency-safe pruning that marks only unsupported active dependents `needs_review`;
+- guarded undo that restores affected dependents only when no newer revision exists;
+- allowlisted add/remove relation corrections;
+- append-only `CorrectionEvent` snapshots and per-memory revision history;
+- correction API endpoints and live Neo4j edit/prune/undo coverage.
+
+Deferred to the next specified phases: the web UI, benchmark adapters, and experiment outputs.
+
+No deviation from the Phase 1 through 5 deliverables is known. The integration test is opt-in so `make test` stays deterministic and runnable without Docker; `make test-integration` exercises the real database when explicitly enabled. Phase 3 deliberately uses exact cosine scoring over the scope-filtered candidate set instead of a Neo4j vector index: this avoids fixing an embedding dimension in the schema and keeps provider changes reproducible on the target laptop. Phase 4 retains physical `scope_id` fields for compatibility with the common persistence schema, but VectorMemory and FlatGraphMemory never use them for retrieval validity. Each backend must use an isolated experiment repository because reset/namespacing belongs to the evaluation harness phase. Phase 5 performs no hard deletes; merge tombstones the duplicate and preserves a `SAME_AS` edge and combined provenance.
 
 ## Planned experiment outputs
 

@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from scopegraph.api.corrections import router as corrections_router
 from scopegraph.api.dependencies import get_client, get_embedding_cache, get_memory_system
 from scopegraph.api.memories import router as memories_router
 from scopegraph.api.retrieval import router as retrieval_router
@@ -27,6 +28,7 @@ app = FastAPI(title="ScopeGraph API", version="0.1.0", lifespan=lifespan)
 app.include_router(scopes_router)
 app.include_router(sessions_router)
 app.include_router(memories_router)
+app.include_router(corrections_router)
 app.include_router(retrieval_router)
 
 
