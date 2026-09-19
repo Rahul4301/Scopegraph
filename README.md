@@ -2,7 +2,7 @@
 
 ScopeGraph is a research system for testing whether explicit session, project/context, and global memory scopes reduce cross-context retrieval errors in long-running LLM agents. It also tests whether editing persistent memory directly produces more durable corrections than adding a conversational correction.
 
-The repository currently contains Phases 1 through 3: typed domain models, Neo4j persistence, the provenance-aware write path, and scope-aware hybrid retrieval with inspectable ranking traces. It does not claim experimental results yet.
+The repository currently contains Phases 1 through 4: typed domain models, Neo4j persistence, the provenance-aware ScopeGraph write/read paths, and three controlled comparison baselines. It does not claim experimental results yet.
 
 ## Architecture
 
@@ -21,7 +21,7 @@ One physical Neo4j database represents three logical memory levels:
 - scope memory for durable project, repository, course, client, task, or workspace facts;
 - global memory for information intended to hold across contexts.
 
-See [docs/architecture.md](docs/architecture.md), [docs/schema.md](docs/schema.md), and [docs/literature.md](docs/literature.md).
+See [docs/architecture.md](docs/architecture.md), [docs/baselines.md](docs/baselines.md), [docs/schema.md](docs/schema.md), and [docs/literature.md](docs/literature.md).
 
 ## Requirements
 
@@ -109,9 +109,18 @@ Complete in Phase 3:
 - fixture coverage for scope isolation, session isolation, historical retrieval, caching, traversal, ranking, and token packing;
 - a live Neo4j ingestion, embedding-persistence, and retrieval round trip.
 
-Deferred to the next specified phases: comparison baselines, correction workflows, the web UI, benchmark adapters, and experiment outputs.
+Complete in Phase 4:
 
-No deviation from the Phase 1, 2, or 3 deliverables is known. The integration test is opt-in so `make test` stays deterministic and runnable without Docker; `make test-integration` exercises the real database when explicitly enabled. Phase 3 deliberately uses exact cosine scoring over the scope-filtered candidate set instead of a Neo4j vector index: this avoids fixing an embedding dimension in the schema and keeps provider changes reproducible on the target laptop. The bounded candidate pool can be replaced by a native vector index when scale measurements justify it. Automatic cross-scope promotion still requires semantically equivalent normalized statements; it does not infer a global preference from unrelated project subjects.
+- `VectorMemory`, a flat semantic baseline with no graph traversal or scope filtering;
+- `FlatGraphMemory`, a hybrid semantic/graph baseline with contextual scope validity disabled;
+- `TwoLevelGraphMemory`, a session/global graph baseline that collapses durable contextual memories into global memory;
+- the same extraction, embedding, provenance, temporal scoring, top-k, token budget, result, trace, statistics, and `MemorySystem` interfaces used by ScopeGraph;
+- unit coverage for backend identity, visibility behavior, graph/no-graph behavior, and two-level session isolation;
+- live Neo4j ingestion/retrieval round trips for all three baselines.
+
+Deferred to the next specified phases: correction workflows, the web UI, benchmark adapters, and experiment outputs.
+
+No deviation from the Phase 1 through 4 deliverables is known. The integration test is opt-in so `make test` stays deterministic and runnable without Docker; `make test-integration` exercises the real database when explicitly enabled. Phase 3 deliberately uses exact cosine scoring over the scope-filtered candidate set instead of a Neo4j vector index: this avoids fixing an embedding dimension in the schema and keeps provider changes reproducible on the target laptop. The bounded candidate pool can be replaced by a native vector index when scale measurements justify it. Phase 4 retains physical `scope_id` fields for compatibility with the common persistence schema, but VectorMemory and FlatGraphMemory never use them for retrieval validity; this representation detail is recorded in traces and does not grant either baseline scoped filtering. Each backend must use an isolated experiment repository because reset/namespacing belongs to the evaluation harness phase.
 
 ## Planned experiment outputs
 

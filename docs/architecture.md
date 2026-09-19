@@ -49,13 +49,15 @@ Normal correction never hard-deletes a memory. An edit, move, archive, merge, to
 
 ## Baseline boundaries
 
-- Vector memory stores independent embedded records and performs no graph traversal.
-- Flat graph uses typed graph structure but no session/scope/global hierarchy.
-- Two-level graph separates session from global memory but has no durable intermediate context scope.
+- Vector memory stores independent embedded records, ranks by cosine similarity, and performs no graph traversal or scope filtering.
+- Flat graph uses semantic anchors and bounded typed graph traversal but treats every contextual scope as one validity domain.
+- Two-level graph retains matching current-session memories and global memories; durable contextual facts are collapsed into the global level.
 - ScopeGraph uses session, arbitrary context scopes, and global memory with scope-aware filtering.
 
-All systems will receive identical histories and queries and share embedding models, answer models, temperatures, token budgets, top-k budgets, and scoring. Backend-specific traces may differ in shape but must populate the common `MemorySystem` result schema.
+All four systems implement `MemorySystem`, consume the same structured extractor output, preserve source provenance, and share embedding models, temporal utilities, token counting, top-k, and token budgets. The graph systems also share ranking weights and bounded traversal controls. VectorMemory intentionally uses raw semantic similarity because adding graph/scope ranking components would no longer represent a vector-only baseline. Backend-specific traces populate the common result schema and explicitly identify disabled scope semantics.
+
+See [baselines.md](baselines.md) for the controlled representation differences and isolation requirement.
 
 ## Implemented components
 
-The Python package contains validated domain models, configuration loading, an asynchronous Neo4j client, schema creation, CRUD repositories, structured extraction, scope resolution, provenance-aware ingestion, consolidation, conflict handling, promotion, embeddings, scoped retrieval, bounded traversal, temporal filtering, ranking, token packing, retrieval traces, and FastAPI routes. The in-memory repository, static extractor, and deterministic test embedder keep tests credential-free; Neo4j and the OpenAI-compatible providers are the production paths.
+The Python package contains validated domain models, configuration loading, an asynchronous Neo4j client, schema creation, CRUD repositories, structured extraction, scope resolution, provenance-aware ingestion, consolidation, conflict handling, promotion, embeddings, scoped retrieval, bounded traversal, temporal filtering, ranking, token packing, retrieval traces, three Phase 4 comparison baselines, and FastAPI routes. The in-memory repository, static extractor, and deterministic test embedder keep tests credential-free; Neo4j and the OpenAI-compatible providers are the production paths.
