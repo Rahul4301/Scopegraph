@@ -1,0 +1,19 @@
+# Literature and Research Positioning
+
+ScopeGraph combines established ideas to isolate two experimental variables: explicit context validity scope and direct structural correction. It does not claim that vector retrieval, graph memory, hierarchy, temporal state, provenance, or editable memory is individually new.
+
+## Prior systems
+
+- [GAM](https://aclanthology.org/2026.acl-long.1600/) separates ongoing dialogue in an event progression graph from a topic-associative graph and consolidates around semantic shifts. ScopeGraph adopts the lesson that local encoding and stable consolidation should be separate, but studies project and task validity scopes rather than claiming a new session/global hierarchy.
+- [HiGram](https://arxiv.org/abs/2608.05095) uses coarse-to-fine graph organization, path localization, and coordinated rewriting to limit irrelevant evidence and update related state. ScopeGraph therefore bounds graph expansion, records paths, and represents supersession explicitly without attempting to reproduce HiGram.
+- [Mem0](https://arxiv.org/abs/2504.19413) extracts and consolidates salient conversational memories and reports a graph-enhanced variant for relational reasoning. ScopeGraph retains semantic anchor retrieval rather than treating graphs as a replacement for embeddings.
+- [Neo4j Agent Memory](https://neo4j.com/labs/agent-memory/) demonstrates short-term, long-term, temporal, and graph-native agent memory. Its [consolidation design](https://neo4j.com/labs/agent-memory/how-to/consolidation/) supports dry runs and writes `ConsolidationRun` audit nodes. ScopeGraph borrows these engineering safeguards while using Neo4j only as infrastructure, not as the research contribution.
+- [LangGraph long-term memory](https://www.langchain.com/blog/launching-long-term-memory-support-in-langgraph) distinguishes thread state from cross-thread persistence and organizes durable records with namespaces. ScopeGraph remains framework-independent and will expose only a thin optional adapter.
+- [Memory Sandbox](https://arxiv.org/abs/2308.01542) treats conversational memories as visible, manipulable data objects. ScopeGraph extends this interaction idea into a controlled correction-persistence experiment; a graph UI alone is not claimed as novel.
+- [ChronoMem](https://arxiv.org/abs/2607.27773) motivates version histories and rollback after correction or corruption. ScopeGraph uses append-only correction events, revisions, soft deletion, and undo instead of destructive mutation.
+- LoCoMo and LongMemEval establish difficult long-term conversational recall settings. They will test general behavior, while the planned CrossScopeMem benchmark specifically controls cross-context interference and local overrides.
+
+## Intended contribution
+
+The contribution is empirical: compare vector-only, flat-graph, two-level, and three-level scoped memory under controlled retrieval budgets, then compare no correction, conversational correction, and direct memory repair. The defensible result is a measured accuracy, contamination, persistence, latency, token, and storage tradeoff, including a negative result if explicit scope does not help.
+

@@ -1,0 +1,9 @@
+llm:
+  base_url: ${LLM_BASE_URL}
+  model: ${LLM_MODEL}
+  temperature: 0.0
+  max_output_tokens: 300
+embedding:
+  base_url: ${EMBEDDING_BASE_URL}
+  model: ${EMBEDDING_MODEL}
+

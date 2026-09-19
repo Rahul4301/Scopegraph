@@ -1,0 +1,15 @@
+seed: 42
+retrieval:
+  top_k: 8
+  token_budget: 1500
+  max_graph_hops: 2
+  max_expanded_nodes: 40
+models:
+  temperature: 0.0
+  max_output_tokens: 300
+systems: [vector_memory, flat_graph, two_level_graph, scopegraph]
+datasets: [cross_scope_mem, longmemeval, locomo]
+runs:
+  repetitions: 1
+output_root: results/raw
+

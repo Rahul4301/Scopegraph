@@ -1,0 +1,23 @@
+# Graph Schema
+
+## Nodes
+
+| Label | Purpose | Key properties |
+| --- | --- | --- |
+| `Scope` | Global root and bounded contexts | `id`, `name`, `scope_type`, `parent_scope_id`, `created_at`, `archived` |
+| `Session` | One interaction period | `id`, `started_at`, `ended_at`, `scope_id`, `metadata_json` |
+| `SourceMessage` | Immutable raw conversational evidence | `id`, `session_id`, `role`, `content`, `timestamp`, `turn_index` |
+| `Memory` | Compact retrievable state | `id`, `content`, `memory_type`, `scope_level`, `scope_id`, confidence, status, validity dates, revision, metadata |
+| `CorrectionEvent` | Append-only mutation audit | `id`, action, timestamp, actor, before/after JSON, reason, undo target |
+| `ConsolidationRun` | Audited consolidation execution | `id`, timestamps, policy version, dry-run flag, stats JSON |
+
+Identifiers are unique. Lookup indexes cover scope type and parent, session/source scope, memory scope, status, type, and update time. A full-text memory-content index supports a lexical fallback. A vector index is intentionally deferred until the embedding dimension is configured.
+
+## Relationships
+
+The schema uses `PARENT_OF`, `BELONGS_TO`, `PART_OF`, `DERIVED_FROM`, `SUPERSEDES`, `CONTRADICTS`, `SAME_AS`, `SUPPORTS`, `RELATES_TO`, `TARGETED`, and `TOUCHED`. `RELATES_TO.kind` is restricted to the application allowlist; untrusted text never becomes a Cypher relationship type.
+
+## Temporal and revision semantics
+
+Active, superseded, archived, tombstoned, and needs-review are explicit states. `valid_from` and `valid_to` describe when a fact applies, while `created_at` and `updated_at` describe record history. Mutations increment `revision`. Raw source messages remain separate and linked through `DERIVED_FROM`, allowing a compact memory to retain inspectable evidence.
+

@@ -1,0 +1,13 @@
+{
+  "global": ["User prefers PostgreSQL."],
+  "alpha": ["Alpha uses Neo4j."],
+  "beta": ["Beta uses MongoDB."],
+  "beta_session": ["Temporarily use SQLite."],
+  "queries": [
+    {"scope": "beta", "query": "What DB does this project use normally?", "gold": "MongoDB"},
+    {"scope": "beta", "query": "What DB are we testing right now?", "gold": "SQLite"},
+    {"scope": "global", "query": "What DB do I generally prefer?", "gold": "PostgreSQL"},
+    {"scope": "alpha", "query": "What DB does Beta use?", "gold": "MongoDB"}
+  ]
+}
+

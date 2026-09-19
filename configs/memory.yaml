@@ -1,0 +1,14 @@
+promotion:
+  session_to_scope:
+    durability_threshold: 0.55
+  scope_to_global:
+    require_explicit_global_signal: false
+    minimum_distinct_scopes: 3
+    confidence_threshold: 0.80
+corrections:
+  hard_delete_enabled: false
+  default_action: tombstone
+  dependency_review: true
+consolidation:
+  dry_run_by_default: true
+

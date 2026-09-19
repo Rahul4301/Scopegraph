@@ -1,0 +1,10 @@
+top_k: 8
+token_budget: 1500
+max_graph_hops: 2
+max_expanded_nodes: 40
+weights:
+  semantic: 0.40
+  scope: 0.30
+  temporal: 0.20
+  graph: 0.10
+
