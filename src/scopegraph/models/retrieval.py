@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from scopegraph.models.memory import MemoryStatus, ScopeLevel
+from scopegraph.models.scope import ScopeRef
 
 
 class TraversalStep(BaseModel):
@@ -10,6 +11,13 @@ class TraversalStep(BaseModel):
     to_id: str
     relation: str
     depth: int = Field(ge=0)
+    path: list[str] = Field(default_factory=list)
+    semantic_score: float | None = None
+    scope_score: float | None = None
+    temporal_score: float | None = None
+    graph_score: float | None = None
+    final_score: float | None = None
+    reason: str | None = None
 
 
 class RetrievedMemory(BaseModel):
@@ -35,6 +43,14 @@ class RetrievalResult(BaseModel):
     token_count: int = Field(ge=0)
     trace: list[TraversalStep]
     backend_name: str
+
+
+class RetrievalRequest(BaseModel):
+    query: str = Field(min_length=1)
+    current_scope: ScopeRef | None = None
+    top_k: int = Field(default=8, ge=1, le=100)
+    token_budget: int = Field(default=1500, ge=1)
+    now: datetime | None = None
 
 
 class IngestResult(BaseModel):

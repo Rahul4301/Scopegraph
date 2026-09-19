@@ -5,6 +5,7 @@ from scopegraph.llm.extraction import CandidateExtractor
 from scopegraph.memory.base import MemorySystem
 from scopegraph.memory.consolidator import ConsolidationRepository, Consolidator
 from scopegraph.memory.promoter import PromotionPolicy
+from scopegraph.memory.retriever import ScopeAwareRetriever
 from scopegraph.models.correction import CorrectionRequest, CorrectionResult
 from scopegraph.models.memory import Memory
 from scopegraph.models.retrieval import IngestResult, MemoryStats, RetrievalResult
@@ -42,9 +43,11 @@ class ScopeGraphMemorySystem(MemorySystem):
         extractor: CandidateExtractor,
         *,
         promotion_policy: PromotionPolicy | None = None,
+        retriever: ScopeAwareRetriever | None = None,
     ) -> None:
         self.repository = repository
         self.extractor = extractor
+        self.retriever = retriever
         self.consolidator = Consolidator(
             repository,
             promotion_policy or PromotionPolicy(),
@@ -125,8 +128,15 @@ class ScopeGraphMemorySystem(MemorySystem):
         token_budget: int,
         now: datetime | None = None,
     ) -> RetrievalResult:
-        del query, current_scope, top_k, token_budget, now
-        raise NotImplementedError("Retrieval is implemented in Phase 3")
+        if self.retriever is None:
+            raise RuntimeError("Retrieval requires a configured embedding provider")
+        return await self.retriever.retrieve(
+            query,
+            current_scope=current_scope,
+            top_k=top_k,
+            token_budget=token_budget,
+            now=now,
+        )
 
     async def apply_correction(self, correction: CorrectionRequest) -> CorrectionResult:
         del correction

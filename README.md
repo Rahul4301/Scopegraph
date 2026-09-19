@@ -2,7 +2,7 @@
 
 ScopeGraph is a research system for testing whether explicit session, project/context, and global memory scopes reduce cross-context retrieval errors in long-running LLM agents. It also tests whether editing persistent memory directly produces more durable corrections than adding a conversational correction.
 
-The repository currently contains Phases 1 and 2: typed domain models, configuration, Neo4j persistence, initial FastAPI routes, and the complete provenance-aware write path from session ingestion through conservative promotion. It does not claim experimental results yet.
+The repository currently contains Phases 1 through 3: typed domain models, Neo4j persistence, the provenance-aware write path, and scope-aware hybrid retrieval with inspectable ranking traces. It does not claim experimental results yet.
 
 ## Architecture
 
@@ -28,7 +28,7 @@ See [docs/architecture.md](docs/architecture.md), [docs/schema.md](docs/schema.m
 - Python 3.11+
 - `uv`
 - Docker Desktop or another Docker Compose runtime
-- hosted LLM and embedding API credentials only when later phases need live model calls
+- OpenAI-compatible LLM and embedding credentials for live extraction and retrieval
 
 The Neo4j container is deliberately limited to a 512 MB heap and 256 MB page cache for Apple M1 machines with 8 GB RAM.
 
@@ -50,6 +50,8 @@ uv run uvicorn scopegraph.api.main:app --reload
 ```
 
 Open `http://127.0.0.1:8000/docs` for the generated API documentation. `GET /health` checks Neo4j connectivity without exposing credentials.
+
+`POST /retrieve` accepts a query, optional current scope and session, top-k, token budget, and optional evaluation timestamp. Retrieval searches the current session and scope, then ancestors and global memory; an unrelated scope is included only when its name appears in the query. The response includes each score component and traversal path.
 
 ## Quality checks
 
@@ -94,9 +96,22 @@ Complete in Phase 2:
 - `POST /sessions/{id}/consolidate` using the configured live provider;
 - offline unit coverage and a live Neo4j ingestion round trip.
 
-Deferred to the next specified phases: embeddings and retrieval, baselines, correction workflows, the web UI, benchmark adapters, and experiment outputs.
+Complete in Phase 3:
 
-No deviation from the Phase 1 or Phase 2 deliverables is known. The integration test is opt-in so `make test` stays deterministic and runnable without Docker; `make test-integration` exercises the real database when explicitly enabled. Automatic cross-scope promotion deliberately requires semantically equivalent normalized statements; it does not infer a global preference from unrelated project subjects. More ambitious generalization remains a later research policy rather than an untracked LLM inference.
+- an OpenAI-compatible embedding provider plus a persistent content-and-model-keyed SQLite cache;
+- lazy embedding persistence on Neo4j memory nodes;
+- semantic anchor selection restricted to the current session/scope hierarchy, global memory, and explicitly named scopes;
+- allowlisted, cycle-safe graph expansion bounded by hop, node, and time limits;
+- current versus historical temporal filtering;
+- configurable semantic, scope, temporal, confidence, graph, and recency ranking;
+- deterministic token-budget packing;
+- `POST /retrieve` and per-result white-box retrieval traces;
+- fixture coverage for scope isolation, session isolation, historical retrieval, caching, traversal, ranking, and token packing;
+- a live Neo4j ingestion, embedding-persistence, and retrieval round trip.
+
+Deferred to the next specified phases: comparison baselines, correction workflows, the web UI, benchmark adapters, and experiment outputs.
+
+No deviation from the Phase 1, 2, or 3 deliverables is known. The integration test is opt-in so `make test` stays deterministic and runnable without Docker; `make test-integration` exercises the real database when explicitly enabled. Phase 3 deliberately uses exact cosine scoring over the scope-filtered candidate set instead of a Neo4j vector index: this avoids fixing an embedding dimension in the schema and keeps provider changes reproducible on the target laptop. The bounded candidate pool can be replaced by a native vector index when scale measurements justify it. Automatic cross-scope promotion still requires semantically equivalent normalized statements; it does not infer a global preference from unrelated project subjects.
 
 ## Planned experiment outputs
 

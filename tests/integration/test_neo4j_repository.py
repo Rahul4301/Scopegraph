@@ -9,12 +9,20 @@ from scopegraph.graph.client import Neo4jClient
 from scopegraph.graph.repository import Neo4jMemoryRepository
 from scopegraph.graph.schema import ensure_schema
 from scopegraph.llm.extraction import StaticMemoryExtractor
+from scopegraph.memory.retriever import ScopeAwareRetriever
 from scopegraph.models.memory import MemoryCandidate, MemoryType
 from scopegraph.models.scope import ScopeCreate, ScopeRef, ScopeType
 from scopegraph.models.session import SessionInput
 from scopegraph.models.source import MessageRole, SourceMessageCreate
 
 pytestmark = pytest.mark.integration
+
+
+class IntegrationEmbeddingProvider:
+    model_name = "integration-test-v1"
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0, 0.0] for _ in texts]
 
 
 @pytest.mark.asyncio
@@ -71,6 +79,20 @@ async def test_neo4j_scope_round_trip() -> None:
         memory = await repository.get_memory(memory_id)
         assert memory is not None
         assert memory.source_ids == [message_id]
+
+        retriever = ScopeAwareRetriever(repository, IntegrationEmbeddingProvider())
+        result = await retriever.retrieve(
+            "Which database does this scope use?",
+            current_scope=ScopeRef(id=scope_id, scope_type=ScopeType.CUSTOM),
+            top_k=3,
+            token_budget=100,
+        )
+        assert [item.memory_id for item in result.items] == [memory_id]
+        assert result.trace[0].relation == "SEMANTIC_ANCHOR"
+        persisted = await repository.get_memory(memory_id)
+        assert persisted is not None
+        assert persisted.embedding == [1.0, 0.0]
+        assert persisted.embedding_model == "integration-test-v1"
     finally:
         await client.execute_write(
             "MATCH (m:Memory) WHERE m.metadata_json CONTAINS $session_id DETACH DELETE m",

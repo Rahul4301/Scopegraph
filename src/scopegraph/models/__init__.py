@@ -8,7 +8,12 @@ from scopegraph.models.memory import (
     MemoryType,
     ScopeLevel,
 )
-from scopegraph.models.retrieval import IngestResult, MemoryStats, RetrievalResult
+from scopegraph.models.retrieval import (
+    IngestResult,
+    MemoryStats,
+    RetrievalRequest,
+    RetrievalResult,
+)
 from scopegraph.models.scope import Scope, ScopeCreate, ScopeDecision, ScopeRef, ScopeType
 from scopegraph.models.session import Session, SessionCreate, SessionInput
 from scopegraph.models.source import SourceMessage, SourceMessageCreate
@@ -25,6 +30,7 @@ __all__ = [
     "MemoryStatus",
     "MemoryType",
     "RetrievalResult",
+    "RetrievalRequest",
     "Scope",
     "ScopeCreate",
     "ScopeDecision",

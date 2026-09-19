@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from scopegraph.memory.traversal import MemoryNeighbor
 from scopegraph.models.memory import Memory, MemoryCreate, MemoryStatus, MemoryUpdate
 from scopegraph.models.retrieval import MemoryStats
 from scopegraph.models.scope import Scope, ScopeCreate, ScopeUpdate
@@ -122,6 +123,30 @@ class InMemoryMemoryRepository:
             if (scope_id is None or item.scope_id == scope_id)
             and (include_inactive or item.status.value == "active")
         ]
+
+    async def set_memory_embedding(
+        self, memory_id: str, embedding: list[float], model_name: str
+    ) -> None:
+        current = self.memories.get(memory_id)
+        if current is None:
+            raise ValueError(f"Memory {memory_id!r} does not exist")
+        self.memories[memory_id] = current.model_copy(
+            update={"embedding": embedding, "embedding_model": model_name}
+        )
+
+    async def get_memory_neighbors(self, memory_ids: list[str]) -> list[MemoryNeighbor]:
+        requested = set(memory_ids)
+        neighbors: list[MemoryNeighbor] = []
+        relationships = [
+            *((source, target, "SUPERSEDES") for source, target in self.supersedes),
+            *((source, target, "SUPPORTS") for source, target in self.supports),
+        ]
+        for source, target, relation in relationships:
+            if source in requested and target in self.memories:
+                neighbors.append(MemoryNeighbor(source, self.memories[target], relation))
+            if target in requested and source in self.memories:
+                neighbors.append(MemoryNeighbor(target, self.memories[source], relation))
+        return neighbors
 
     async def update_memory(self, memory_id: str, update: MemoryUpdate) -> Memory | None:
         current = self.memories.get(memory_id)

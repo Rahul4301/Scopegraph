@@ -22,6 +22,7 @@ class ScopeRef(BaseModel):
     id: str
     name: str | None = None
     scope_type: ScopeType | None = None
+    session_id: str | None = None
 
 
 class ScopeCreate(BaseModel):

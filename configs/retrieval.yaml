@@ -2,9 +2,18 @@ top_k: 8
 token_budget: 1500
 max_graph_hops: 2
 max_expanded_nodes: 40
+max_traversal_time_ms: 100
 weights:
   semantic: 0.40
-  scope: 0.30
-  temporal: 0.20
-  graph: 0.10
-
+  scope: 0.25
+  temporal: 0.15
+  confidence: 0.08
+  graph: 0.07
+  recency: 0.05
+historical_query_terms: [before, previous, previously, used to, history, historical, formerly]
+scope:
+  current_session: 1.0
+  current_scope: 0.9
+  parent_scope: 0.7
+  explicit_named_scope: 0.85
+  global: 0.5

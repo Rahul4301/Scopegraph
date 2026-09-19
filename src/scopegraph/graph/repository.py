@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from scopegraph.graph.client import Neo4jClient
+from scopegraph.memory.traversal import MemoryNeighbor
 from scopegraph.models.memory import Memory, MemoryCreate, MemoryUpdate
 from scopegraph.models.retrieval import MemoryStats
 from scopegraph.models.scope import Scope, ScopeCreate, ScopeType, ScopeUpdate
@@ -222,6 +223,42 @@ class Neo4jMemoryRepository:
             {"scope_id": scope_id, "include_inactive": include_inactive},
         )
         return [self._memory_from_row(row) for row in rows]
+
+    async def set_memory_embedding(
+        self, memory_id: str, embedding: list[float], model_name: str
+    ) -> None:
+        rows = await self.client.execute_write(
+            """
+            MATCH (m:Memory {id: $id})
+            SET m.embedding = $embedding, m.embedding_model = $model_name
+            RETURN m.id AS id
+            """,
+            {"id": memory_id, "embedding": embedding, "model_name": model_name},
+        )
+        if not rows:
+            raise ValueError(f"Memory {memory_id!r} does not exist")
+
+    async def get_memory_neighbors(self, memory_ids: list[str]) -> list[MemoryNeighbor]:
+        if not memory_ids:
+            return []
+        rows = await self.client.execute_read(
+            """
+            MATCH (source:Memory)-[r:SUPERSEDES|CONTRADICTS|SAME_AS|SUPPORTS|RELATES_TO]-(m:Memory)
+            WHERE source.id IN $memory_ids
+            RETURN source.id AS source_id, type(r) AS relation, m,
+                   [(m)-[:DERIVED_FROM]->(message) | message.id] AS source_ids
+            ORDER BY source.id, m.id
+            """,
+            {"memory_ids": memory_ids},
+        )
+        return [
+            MemoryNeighbor(
+                source_id=row["source_id"],
+                relation=row["relation"],
+                memory=self._memory_from_row(row),
+            )
+            for row in rows
+        ]
 
     async def update_memory(self, memory_id: str, update: MemoryUpdate) -> Memory | None:
         changes = update.model_dump(mode="json", exclude_unset=True)

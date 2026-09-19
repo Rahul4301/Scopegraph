@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     embedding_base_url: str = "https://api.openai.com/v1"
     embedding_api_key: SecretStr = SecretStr("")
     embedding_model: str = ""
+    embedding_cache_path: Path = Path(".scopegraph/embeddings.sqlite3")
     scopegraph_log_level: str = "INFO"
     scopegraph_config_dir: Path = Field(default=Path("configs"))
 
@@ -39,4 +40,3 @@ def load_yaml_config(path: Path) -> dict[str, Any]:
     if not isinstance(loaded, dict):
         raise ValueError(f"Expected a mapping in {path}")
     return loaded
-

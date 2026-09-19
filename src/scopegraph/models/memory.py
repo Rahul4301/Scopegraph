@@ -48,6 +48,7 @@ class MemoryCreate(BaseModel):
     valid_to: datetime | None = None
     last_confirmed_at: datetime | None = None
     embedding: list[float] | None = None
+    embedding_model: str | None = None
     revision: int = Field(default=1, ge=1)
     metadata: dict[str, Any] = Field(default_factory=dict)
     source_ids: list[str] = Field(default_factory=list)
@@ -70,6 +71,7 @@ class MemoryUpdate(BaseModel):
     valid_to: datetime | None = None
     last_confirmed_at: datetime | None = None
     embedding: list[float] | None = None
+    embedding_model: str | None = None
     metadata: dict[str, Any] | None = None
 
 
