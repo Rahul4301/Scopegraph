@@ -6,6 +6,7 @@ from scopegraph.models.correction import (
     CorrectionRelation,
     SupportDependency,
 )
+from scopegraph.models.graph import GraphEdge, GraphNode, GraphSubgraph
 from scopegraph.models.memory import (
     Memory,
     MemoryCreate,
@@ -116,6 +117,15 @@ class InMemoryMemoryRepository:
         return sorted(
             (item for item in self.messages.values() if item.session_id == session_id),
             key=lambda item: (item.turn_index, item.timestamp),
+        )
+
+    async def get_source_messages_by_ids(
+        self, message_ids: list[str]
+    ) -> list[SourceMessage]:
+        requested = set(message_ids)
+        return sorted(
+            (message for key, message in self.messages.items() if key in requested),
+            key=lambda message: (message.timestamp, message.turn_index, message.id),
         )
 
     async def create_memory(self, request: MemoryCreate) -> Memory:
@@ -302,6 +312,117 @@ class InMemoryMemoryRepository:
                 )
             )
         return dependencies
+
+    async def get_subgraph(
+        self,
+        *,
+        scope_id: str | None = None,
+        memory_id: str | None = None,
+        include_inactive: bool = True,
+        include_sources: bool = False,
+        limit: int = 200,
+    ) -> GraphSubgraph:
+        scopes = list(self.scopes.values())
+        memories = [
+            memory
+            for memory in self.memories.values()
+            if (scope_id is None or memory.scope_id == scope_id or memory_id is not None)
+            and (include_inactive or memory.status is MemoryStatus.ACTIVE)
+        ]
+        if memory_id is not None:
+            neighbor_ids = {memory_id}
+            for source, target in (
+                self.supersedes | self.supports | self.same_as | self.contradicts
+            ):
+                if source == memory_id:
+                    neighbor_ids.add(target)
+                if target == memory_id:
+                    neighbor_ids.add(source)
+            for source, target, _ in self.relates_to:
+                if source == memory_id:
+                    neighbor_ids.add(target)
+                if target == memory_id:
+                    neighbor_ids.add(source)
+            memories = [memory for memory in memories if memory.id in neighbor_ids]
+        memories = sorted(memories, key=lambda memory: (memory.created_at, memory.id))[:limit]
+        memory_ids = {memory.id for memory in memories}
+        nodes: dict[str, GraphNode] = {
+            scope.id: GraphNode(
+                id=scope.id,
+                node_type="scope",
+                label=scope.name,
+                data=scope.model_dump(mode="json"),
+            )
+            for scope in scopes
+        }
+        edges: dict[str, GraphEdge] = {}
+        for scope in scopes:
+            if scope.parent_scope_id:
+                edge = GraphEdge(
+                    id=f"scope:{scope.parent_scope_id}:PARENT_OF:{scope.id}",
+                    source=scope.parent_scope_id,
+                    target=scope.id,
+                    relation="PARENT_OF",
+                )
+                edges[edge.id] = edge
+        for memory in memories:
+            nodes[memory.id] = GraphNode(
+                id=memory.id,
+                node_type="memory",
+                label=memory.content[:64],
+                data=memory.model_dump(mode="json"),
+            )
+            edge = GraphEdge(
+                id=f"memory:{memory.id}:BELONGS_TO:{memory.scope_id}",
+                source=memory.id,
+                target=memory.scope_id,
+                relation="BELONGS_TO",
+            )
+            edges[edge.id] = edge
+        relations = [
+            *((source, target, "SUPERSEDES", None) for source, target in self.supersedes),
+            *((source, target, "SUPPORTS", None) for source, target in self.supports),
+            *((source, target, "SAME_AS", None) for source, target in self.same_as),
+            *((source, target, "CONTRADICTS", None) for source, target in self.contradicts),
+            *(
+                (source, target, "RELATES_TO", kind.value)
+                for source, target, kind in self.relates_to
+            ),
+        ]
+        for source, target, relation, kind in relations:
+            if source not in memory_ids or target not in memory_ids:
+                continue
+            edge = GraphEdge(
+                id=f"memory:{source}:{relation}:{kind or ''}:{target}",
+                source=source,
+                target=target,
+                relation=relation,
+                kind=kind,
+            )
+            edges[edge.id] = edge
+        if include_sources:
+            for memory in memories:
+                for source_id in memory.source_ids:
+                    source_message = self.messages.get(source_id)
+                    if source_message is None:
+                        continue
+                    nodes[source_message.id] = GraphNode(
+                        id=source_message.id,
+                        node_type="source_message",
+                        label=(
+                            f"{source_message.role.value}: "
+                            f"{source_message.content[:48]}"
+                        ),
+                        data=source_message.model_dump(mode="json"),
+                    )
+                    edge = GraphEdge(
+                        id=f"memory:{memory.id}:DERIVED_FROM:{source_message.id}",
+                        source=memory.id,
+                        target=source_message.id,
+                        relation="DERIVED_FROM",
+                    )
+                    edges[edge.id] = edge
+        return GraphSubgraph(nodes=list(nodes.values()), edges=list(edges.values()))
 
     async def create_correction_event(
         self, event: CorrectionEvent, target_memory_ids: list[str]

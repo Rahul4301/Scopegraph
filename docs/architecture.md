@@ -62,6 +62,12 @@ All four systems implement `MemorySystem`, consume the same structured extractor
 
 See [baselines.md](baselines.md) for the controlled representation differences and isolation requirement.
 
+## Inspection surface
+
+The React Memory Explorer consumes explicit FastAPI schemas for graph slices, provenance, correction history, statistics, and retrieval traces. The browser can filter a bounded subgraph by scope or center it on one memory, but cannot submit Cypher. Memory and source-message nodes retain their full typed API record for inspection; corrections always pass through the audited correction service.
+
+Status is communicated with written labels plus node shape, border pattern, and color. This makes active, superseded, archived, tombstoned, and review-required state distinguishable without relying on color alone.
+
 ## Implemented components
 
-The Python package contains validated domain models, configuration loading, an asynchronous Neo4j client, schema creation, CRUD repositories, structured extraction, scope resolution, provenance-aware ingestion, consolidation, conflict handling, promotion, embeddings, scoped retrieval, bounded traversal, temporal filtering, ranking, token packing, retrieval traces, three comparison baselines, reversible correction workflows, and FastAPI routes. The in-memory repository, static extractor, and deterministic test embedder keep tests credential-free; Neo4j and the OpenAI-compatible providers are the production paths.
+The Python package contains validated domain models, configuration loading, an asynchronous Neo4j client, schema creation, CRUD repositories, structured extraction, scope resolution, provenance-aware ingestion, consolidation, conflict handling, promotion, embeddings, scoped retrieval, bounded traversal, temporal filtering, ranking, token packing, retrieval traces, three comparison baselines, reversible correction workflows, graph inspection/export queries, and FastAPI routes. The React application provides the scope tree, graph explorer, inspector, correction dialogs, and retrieval debugger. The in-memory repository, static extractor, and deterministic test embedder keep tests credential-free; Neo4j and the OpenAI-compatible providers are the production paths.

@@ -6,6 +6,7 @@ from scopegraph.api.dependencies import get_correction_service, get_repository
 from scopegraph.graph.repository import Neo4jMemoryRepository
 from scopegraph.memory.corrections import CorrectionService
 from scopegraph.models.correction import CorrectionResult, MemoryEditRequest
+from scopegraph.models.graph import MemoryProvenance
 from scopegraph.models.memory import Memory, MemoryCreate
 
 router = APIRouter(prefix="/memories", tags=["memories"])
@@ -38,6 +39,17 @@ async def get_memory(memory_id: str, repository: Repository) -> Memory:
     if memory is None:
         raise HTTPException(status_code=404, detail="Memory not found")
     return memory
+
+
+@router.get("/{memory_id}/provenance", response_model=MemoryProvenance)
+async def get_memory_provenance(
+    memory_id: str, repository: Repository
+) -> MemoryProvenance:
+    memory = await repository.get_memory(memory_id)
+    if memory is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    messages = await repository.get_source_messages_by_ids(memory.source_ids)
+    return MemoryProvenance(memory=memory, source_messages=messages)
 
 
 @router.patch("/{memory_id}", response_model=CorrectionResult)

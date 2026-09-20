@@ -14,6 +14,8 @@ from scopegraph.memory.corrections import CorrectionService
 from scopegraph.models.memory import MemoryCreate, MemoryType, ScopeLevel
 from scopegraph.models.retrieval import RetrievalResult
 from scopegraph.models.scope import ScopeCreate, ScopeRef, ScopeType
+from scopegraph.models.session import SessionCreate
+from scopegraph.models.source import MessageRole, SourceMessageCreate
 
 
 class FakeRetrievalSystem:
@@ -142,5 +144,61 @@ def test_correction_api_round_trip() -> None:
                 "tombstone",
                 "restore",
             ]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_graph_provenance_export_and_stats_api() -> None:
+    repository = InMemoryMemoryRepository()
+
+    async def seed() -> None:
+        await repository.create_scope(
+            ScopeCreate(id="global", name="Global", scope_type=ScopeType.GLOBAL)
+        )
+        await repository.create_session(SessionCreate(id="session-1", scope_id="global"))
+        await repository.create_source_message(
+            SourceMessageCreate(
+                id="source-1",
+                session_id="session-1",
+                role=MessageRole.USER,
+                content="The user prefers PostgreSQL",
+                turn_index=0,
+            )
+        )
+        await repository.create_memory(
+            MemoryCreate(
+                id="memory-1",
+                content="User prefers PostgreSQL",
+                memory_type=MemoryType.PREFERENCE,
+                scope_level=ScopeLevel.GLOBAL,
+                scope_id="global",
+                source_ids=["source-1"],
+            )
+        )
+
+    asyncio.run(seed())
+    app.dependency_overrides[get_repository] = lambda: repository
+    try:
+        with TestClient(app) as client:
+            graph = client.get("/graph/subgraph?include_sources=true")
+            assert graph.status_code == 200
+            assert {node["id"] for node in graph.json()["nodes"]} == {
+                "global",
+                "memory-1",
+                "source-1",
+            }
+
+            provenance = client.get("/memories/memory-1/provenance")
+            assert provenance.status_code == 200
+            assert provenance.json()["source_messages"][0]["id"] == "source-1"
+
+            exported = client.get("/graph/export?format=graphml")
+            assert exported.status_code == 200
+            assert "<graphml" in exported.text
+            assert "memory-1" in exported.text
+
+            stats = client.get("/stats")
+            assert stats.status_code == 200
+            assert stats.json()["memory_count"] == 1
     finally:
         app.dependency_overrides.clear()

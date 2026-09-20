@@ -236,6 +236,21 @@ async def test_neo4j_scope_round_trip() -> None:
         )
         added_relation = await corrections.add_relation(memory_id, relation_request)
         correction_ids.append(added_relation.event.id)
+
+        graph = await repository.get_subgraph(
+            scope_id=scope_id, include_inactive=True, include_sources=True
+        )
+        assert {memory_id, related_memory_id, message_id, scope_id}.issubset(
+            {node.id for node in graph.nodes}
+        )
+        assert {"BELONGS_TO", "DERIVED_FROM", "RELATES_TO"}.issubset(
+            {edge.relation for edge in graph.edges}
+        )
+        focused = await repository.get_subgraph(memory_id=memory_id)
+        assert {memory_id, related_memory_id}.issubset(
+            {node.id for node in focused.nodes}
+        )
+
         removed_relation = await corrections.remove_relation(memory_id, relation_request)
         correction_ids.append(removed_relation.event.id)
         assert [event.id for event in await corrections.history(memory_id)] == correction_ids

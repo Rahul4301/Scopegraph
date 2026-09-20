@@ -10,6 +10,7 @@ from scopegraph.models.correction import (
     CorrectionRelation,
     SupportDependency,
 )
+from scopegraph.models.graph import GraphEdge, GraphNode, GraphSubgraph
 from scopegraph.models.memory import Memory, MemoryCreate, MemoryUpdate, ScopeLevel
 from scopegraph.models.relationship import RelationKind
 from scopegraph.models.retrieval import MemoryStats
@@ -178,6 +179,22 @@ class Neo4jMemoryRepository:
             RETURN m ORDER BY m.turn_index, m.timestamp
             """,
             {"session_id": session_id},
+        )
+        return [SourceMessage.model_validate(_node(row, "m")) for row in rows]
+
+    async def get_source_messages_by_ids(
+        self, message_ids: list[str]
+    ) -> list[SourceMessage]:
+        if not message_ids:
+            return []
+        rows = await self.client.execute_read(
+            """
+            MATCH (message:SourceMessage)
+            WHERE message.id IN $message_ids
+            RETURN message AS m
+            ORDER BY message.timestamp, message.turn_index, message.id
+            """,
+            {"message_ids": message_ids},
         )
         return [SourceMessage.model_validate(_node(row, "m")) for row in rows]
 
@@ -441,6 +458,125 @@ class Neo4jMemoryRepository:
             )
             for row in rows
         ]
+
+    async def get_subgraph(
+        self,
+        *,
+        scope_id: str | None = None,
+        memory_id: str | None = None,
+        include_inactive: bool = True,
+        include_sources: bool = False,
+        limit: int = 200,
+    ) -> GraphSubgraph:
+        scopes = await self.list_scopes(include_archived=True)
+        rows = await self.client.execute_read(
+            """
+            MATCH (m:Memory)
+            WHERE ($scope_id IS NULL OR m.scope_id = $scope_id OR $memory_id IS NOT NULL)
+              AND ($include_inactive OR m.status = 'active')
+              AND (
+                $memory_id IS NULL OR m.id = $memory_id OR EXISTS {
+                  MATCH (m)-[:SUPERSEDES|CONTRADICTS|SAME_AS|SUPPORTS|RELATES_TO]-
+                        (:Memory {id: $memory_id})
+                }
+              )
+            RETURN m, [(m)-[:DERIVED_FROM]->(source) | source.id] AS source_ids
+            ORDER BY m.created_at, m.id
+            LIMIT $limit
+            """,
+            {
+                "scope_id": scope_id,
+                "memory_id": memory_id,
+                "include_inactive": include_inactive,
+                "limit": limit,
+            },
+        )
+        memories = [self._memory_from_row(row) for row in rows]
+        memory_ids = [memory.id for memory in memories]
+        nodes: dict[str, GraphNode] = {
+            scope.id: GraphNode(
+                id=scope.id,
+                node_type="scope",
+                label=scope.name,
+                data=scope.model_dump(mode="json"),
+            )
+            for scope in scopes
+        }
+        edges: dict[str, GraphEdge] = {}
+        for scope in scopes:
+            if scope.parent_scope_id:
+                edge = GraphEdge(
+                    id=f"scope:{scope.parent_scope_id}:PARENT_OF:{scope.id}",
+                    source=scope.parent_scope_id,
+                    target=scope.id,
+                    relation="PARENT_OF",
+                )
+                edges[edge.id] = edge
+        for memory in memories:
+            nodes[memory.id] = GraphNode(
+                id=memory.id,
+                node_type="memory",
+                label=memory.content[:64],
+                data=memory.model_dump(mode="json"),
+            )
+            edge = GraphEdge(
+                id=f"memory:{memory.id}:BELONGS_TO:{memory.scope_id}",
+                source=memory.id,
+                target=memory.scope_id,
+                relation="BELONGS_TO",
+            )
+            edges[edge.id] = edge
+        if memory_ids:
+            relationship_rows = await self.client.execute_read(
+                """
+                MATCH (source:Memory)-
+                      [relation:SUPERSEDES|CONTRADICTS|SAME_AS|SUPPORTS|RELATES_TO]->
+                      (target:Memory)
+                WHERE source.id IN $memory_ids AND target.id IN $memory_ids
+                RETURN source.id AS source, target.id AS target,
+                       type(relation) AS relation, relation.kind AS kind
+                ORDER BY source.id, relation, target.id
+                """,
+                {"memory_ids": memory_ids},
+            )
+            for row in relationship_rows:
+                edge = GraphEdge(
+                    id=(
+                        f"memory:{row['source']}:{row['relation']}:"
+                        f"{row.get('kind') or ''}:{row['target']}"
+                    ),
+                    source=row["source"],
+                    target=row["target"],
+                    relation=row["relation"],
+                    kind=row.get("kind"),
+                )
+                edges[edge.id] = edge
+        if include_sources and memory_ids:
+            source_rows = await self.client.execute_read(
+                """
+                MATCH (memory:Memory)-[:DERIVED_FROM]->(source:SourceMessage)
+                WHERE memory.id IN $memory_ids
+                RETURN memory.id AS memory_id, source
+                ORDER BY source.timestamp, source.turn_index, source.id
+                """,
+                {"memory_ids": memory_ids},
+            )
+            for row in source_rows:
+                source = SourceMessage.model_validate(_node(row, "source"))
+                nodes[source.id] = GraphNode(
+                    id=source.id,
+                    node_type="source_message",
+                    label=f"{source.role.value}: {source.content[:48]}",
+                    data=source.model_dump(mode="json"),
+                )
+                edge = GraphEdge(
+                    id=f"memory:{row['memory_id']}:DERIVED_FROM:{source.id}",
+                    source=row["memory_id"],
+                    target=source.id,
+                    relation="DERIVED_FROM",
+                )
+                edges[edge.id] = edge
+        return GraphSubgraph(nodes=list(nodes.values()), edges=list(edges.values()))
 
     async def create_correction_event(
         self, event: CorrectionEvent, target_memory_ids: list[str]

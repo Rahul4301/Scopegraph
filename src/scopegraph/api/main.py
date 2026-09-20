@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from scopegraph.api.admin import router as admin_router
 from scopegraph.api.corrections import router as corrections_router
 from scopegraph.api.dependencies import get_client, get_embedding_cache, get_memory_system
 from scopegraph.api.memories import router as memories_router
@@ -30,6 +31,7 @@ app.include_router(sessions_router)
 app.include_router(memories_router)
 app.include_router(corrections_router)
 app.include_router(retrieval_router)
+app.include_router(admin_router)
 
 
 @app.get("/health")

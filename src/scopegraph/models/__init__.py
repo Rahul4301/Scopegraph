@@ -11,6 +11,7 @@ from scopegraph.models.correction import (
     PrunePreview,
     RelationCorrectionRequest,
 )
+from scopegraph.models.graph import GraphEdge, GraphNode, GraphSubgraph, MemoryProvenance
 from scopegraph.models.memory import (
     Memory,
     MemoryCandidate,
@@ -36,12 +37,16 @@ __all__ = [
     "CorrectionEvent",
     "CorrectionRelation",
     "IngestResult",
+    "GraphEdge",
+    "GraphNode",
+    "GraphSubgraph",
     "Memory",
     "MemoryCandidate",
     "MemoryCandidateBatch",
     "MemoryCreate",
     "MemoryEditRequest",
     "MemoryMergeRequest",
+    "MemoryProvenance",
     "MemoryMoveRequest",
     "MemoryRestoreRequest",
     "MemorySupersedeRequest",

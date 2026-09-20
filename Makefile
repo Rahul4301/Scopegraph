@@ -1,4 +1,4 @@
-.PHONY: install test test-integration lint typecheck check neo4j-up neo4j-down schema api
+.PHONY: install test test-integration lint typecheck check web-install web-build web-dev neo4j-up neo4j-down schema api
 
 export PYTHONPATH := src
 
@@ -18,6 +18,15 @@ typecheck:
 	uv run mypy
 
 check: lint typecheck test
+
+web-install:
+	npm --prefix web install
+
+web-build:
+	npm --prefix web run build
+
+web-dev:
+	npm --prefix web run dev
 
 neo4j-up:
 	docker compose up -d neo4j
