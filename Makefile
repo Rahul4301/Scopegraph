@@ -1,4 +1,4 @@
-.PHONY: install test test-integration lint typecheck check web-install web-build web-dev neo4j-up neo4j-down schema api
+.PHONY: install test test-integration lint typecheck check eval-all eval-report eval-correction web-install web-build web-dev neo4j-up neo4j-down schema api
 
 export PYTHONPATH := src
 
@@ -27,6 +27,15 @@ web-build:
 
 web-dev:
 	npm --prefix web run dev
+
+eval-all:
+	uv run python -m evals.runners.run_all --dataset cross_scope_mem --config configs/experiments.yaml
+
+eval-report:
+	uv run python -m evals.analysis.run_report results/raw/*.jsonl
+
+eval-correction:
+	uv run python -m evals.runners.run_correction_eval
 
 neo4j-up:
 	docker compose up -d neo4j
