@@ -23,7 +23,7 @@ def main() -> None:
     parser.add_argument("--scenario-count", type=int, default=1)
     args = parser.parse_args()
     if args.dataset != "cross_scope_mem":
-        raise SystemExit("Phase 7 currently implements only --dataset cross_scope_mem")
+        raise SystemExit("run_all supports cross_scope_mem; use run_external for external datasets")
     paths = asyncio.run(run_all(systems=[item.strip() for item in args.systems.split(",")],
                                 seed=args.seed, difficulty=args.difficulty,
                                 scenario_count=args.scenario_count, config_path=args.config))

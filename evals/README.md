@@ -37,3 +37,14 @@ Validate an acquired external release before replay:
 ```bash
 make validate-external DATASET=longmemeval DATA_PATH=data/longmemeval/longmemeval_s_cleaned.json
 ```
+
+Replay a validated release through one backend and write the same JSONL trace format:
+
+```bash
+make eval-external DATASET=longmemeval \
+  DATA_PATH=data/longmemeval/longmemeval_s_cleaned.json SYSTEM=scopegraph
+```
+
+The external runner uses a credential-free turn-preserving extractor by default. Add
+`LIVE_ANSWER=1` to call the configured OpenAI-compatible answer model; retrieval and
+answer scoring remain separate.

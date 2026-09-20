@@ -1,7 +1,11 @@
 import json
+from pathlib import Path
+
+import pytest
 
 from evals.adapters import LoCoMoAdapter, LongMemEvalAdapter, MemConflictAdapter
 from evals.adapters.external import session_inputs
+from evals.runners.run_external import run_external
 
 
 def _write_json(tmp_path, name: str, payload: object):
@@ -75,3 +79,22 @@ def test_external_validation_reports_missing_file(tmp_path) -> None:
     result = LongMemEvalAdapter().validate(tmp_path / "missing.json")
     assert result.valid is False
     assert result.errors
+
+
+@pytest.mark.asyncio
+async def test_external_runner_replays_local_release(tmp_path: Path) -> None:
+    path = _write_json(
+        tmp_path,
+        "longmemeval.json",
+        [{
+            "question_id": "q1", "question": "Which database?", "answer": "Neo4j",
+            "haystack_sessions": [[{"role": "user", "content": "We use Neo4j."}]],
+        }],
+    )
+    output = tmp_path / "records.jsonl"
+    created = await run_external(
+        dataset="longmemeval", path=path, system_name="scopegraph", output=output
+    )
+    record = json.loads(created.read_text())
+    assert record["dataset"] == "longmemeval"
+    assert record["retrieved_memory_ids"]

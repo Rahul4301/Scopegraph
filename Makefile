@@ -1,4 +1,4 @@
-.PHONY: install test test-integration lint typecheck check smoke demo reset-db export-graph migrate eval-all eval-report eval-correction validate-external web-install web-build web-dev neo4j-up neo4j-down schema api
+.PHONY: install test test-integration lint typecheck check smoke demo reset-db export-graph migrate eval-all eval-external eval-report eval-correction validate-external web-install web-build web-dev neo4j-up neo4j-down schema api
 
 export PYTHONPATH := src:.
 export UV_CACHE_DIR ?= /private/tmp/scopegraph-uv-cache
@@ -46,6 +46,9 @@ web-dev:
 
 eval-all:
 	uv run python -m evals.runners.run_all --dataset cross_scope_mem --config configs/experiments.yaml
+
+eval-external:
+	uv run python -m evals.runners.run_external --dataset $(DATASET) --path $(DATA_PATH) --system $(SYSTEM) --config configs/experiments.yaml $(if $(LIVE_ANSWER),--live-answer,)
 
 eval-report:
 	uv run python -m evals.analysis.run_report results/raw/*.jsonl

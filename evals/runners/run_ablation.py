@@ -17,7 +17,7 @@ def main() -> None:
     parser.add_argument("--difficulty", type=int, default=2)
     args = parser.parse_args()
     if args.dataset != "cross_scope_mem":
-        raise SystemExit("Phase 7 currently implements only --dataset cross_scope_mem")
+        raise SystemExit("run_ablation supports cross_scope_mem only")
     print(asyncio.run(run_evaluation(system_name=args.system, seed=args.seed,
                                      difficulty=args.difficulty, config_path=args.config,
                                      ablation=args.ablation)))
