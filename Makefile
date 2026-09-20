@@ -1,4 +1,4 @@
-.PHONY: install test test-integration lint typecheck check eval-all eval-report eval-correction web-install web-build web-dev neo4j-up neo4j-down schema api
+.PHONY: install test test-integration lint typecheck check eval-all eval-report eval-correction validate-external web-install web-build web-dev neo4j-up neo4j-down schema api
 
 export PYTHONPATH := src
 
@@ -36,6 +36,9 @@ eval-report:
 
 eval-correction:
 	uv run python -m evals.runners.run_correction_eval
+
+validate-external:
+	uv run python -m evals.runners.validate_external --dataset $(DATASET) --path $(DATA_PATH)
 
 neo4j-up:
 	docker compose up -d neo4j

@@ -31,6 +31,43 @@ class CrossScopeScenario(BaseModel):
     examples: list[BenchmarkExample]
 
 
+class ExternalTurn(BaseModel):
+    role: str
+    content: str
+    timestamp: datetime | None = None
+    turn_id: str | None = None
+    has_answer: bool = False
+
+
+class ExternalSession(BaseModel):
+    session_id: str
+    date: datetime | None = None
+    turns: list[ExternalTurn] = Field(default_factory=list)
+
+
+class ExternalBenchmarkExample(BaseModel):
+    dataset: str
+    example_id: str
+    question_id: str
+    question_type: str
+    question: str
+    answer: str
+    question_date: datetime | None = None
+    sessions: list[ExternalSession] = Field(default_factory=list)
+    answer_session_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdapterValidation(BaseModel):
+    dataset: str
+    path: str
+    valid: bool
+    example_count: int = 0
+    session_count: int = 0
+    turn_count: int = 0
+    errors: list[str] = Field(default_factory=list)
+
+
 class EvaluationRecord(BaseModel):
     run_id: str
     dataset: str

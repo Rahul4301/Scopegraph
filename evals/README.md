@@ -1,6 +1,6 @@
 # Evaluations
 
-Phase 7 implements the credential-free CrossScopeMem benchmark and a reproducible evaluation harness. External benchmark data is never committed or fabricated; LongMemEval, LoCoMo, and MemConflict remain Phase 8 adapters.
+Phase 7 implements the credential-free CrossScopeMem benchmark and a reproducible evaluation harness. Phase 8 adds local-file adapters and validation for LongMemEval, LoCoMo, and MemConflict; external benchmark data is never committed or fabricated.
 
 Run all four controlled backends:
 
@@ -30,4 +30,10 @@ The correction-persistence experiment compares no correction, conversational cor
 
 ```bash
 PYTHONPATH=src uv run python -m evals.runners.run_correction_eval
+```
+
+Validate an acquired external release before replay:
+
+```bash
+make validate-external DATASET=longmemeval DATA_PATH=data/longmemeval/longmemeval_s_cleaned.json
 ```
