@@ -1,12 +1,13 @@
 # Evaluation
 
-Phase 7 provides an executable, credential-free harness around the shared `MemorySystem` interface. CrossScopeMem creates deterministic global, project, and session memories with scope interference, temporary overrides, and (at higher difficulty) updates and distractors. The generator records structured gold answers and memory content; it does not fabricate external benchmark data.
+Phase 7 provides an executable, credential-free harness around the shared `MemorySystem` interface. CrossScopeMem creates deterministic global, project, and session memories with scope interference, temporary overrides, and (at higher difficulty) updates and distractors. Phase 9 adds a reproducible smoke command and graph-backed demo/export scripts. The generator records structured gold answers and memory content; it does not fabricate external benchmark data.
 
 Run the four architecture variants with the same histories, seed, top-k, token budget, and deterministic hash-bucket embedder:
 
 ```bash
 make eval-all
 make eval-report
+make smoke
 ```
 
 The raw JSONL record preserves retrieved IDs, scopes, scores, status, trace paths, latency, token count, logical storage statistics, configuration hash, seed, and git commit. `evals.analysis.aggregate` scores raw records independently of execution; `tables` and `plots` write Markdown and SVG artifacts.

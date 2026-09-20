@@ -2,7 +2,7 @@
 
 ScopeGraph is a research system for testing whether explicit session, project/context, and global memory scopes reduce cross-context retrieval errors in long-running LLM agents. It also tests whether editing persistent memory directly produces more durable corrections than adding a conversational correction.
 
-The repository currently contains Phases 1 through 6: typed domain models, Neo4j persistence, provenance-aware ScopeGraph write/read paths, three controlled comparison baselines, reversible audited corrections, and an inspectable Memory Explorer. It does not claim experimental results yet.
+The repository contains completed Phases 1 through 8: typed domain models, Neo4j persistence, provenance-aware ScopeGraph write/read paths, three controlled comparison baselines, reversible audited corrections, the Memory Explorer, a synthetic evaluation harness, and local-file external benchmark adapters. It does not claim experimental results yet.
 
 ## Architecture
 
@@ -66,6 +66,23 @@ The explorer renders the scope hierarchy and typed memory graph, exposes source-
 make check
 npm --prefix web run build
 ```
+
+Run the credential-free end-to-end smoke test:
+
+```bash
+make smoke
+```
+
+For a Neo4j-backed demo, start the database and apply the schema first:
+
+```bash
+make neo4j-up
+make migrate
+make demo
+make export-graph OUTPUT=results/graph.json
+```
+
+`make reset-db` is an explicit destructive development reset. It requires no model API keys; live extraction and answer generation do require the provider variables in `.env`.
 
 The normal suite uses an in-memory repository and needs no services. The live Neo4j round-trip is opt-in and must use a disposable database:
 
@@ -147,7 +164,18 @@ Complete in Phase 6:
 - redundant text, shape, border, and color status cues for accessibility;
 - frontend type-checking and production build verification plus live Neo4j graph-query coverage.
 
-Deferred to the next specified phases: synthetic evaluation, external benchmark adapters, and final reproducibility outputs.
+Complete in Phase 7:
+
+- deterministic CrossScopeMem generation and four-system evaluation;
+- retrieval, answer, contamination, stale-memory, latency, token, storage, and correction metrics;
+- JSONL records, aggregation, Markdown tables, and SVG plots.
+
+Complete in Phase 8:
+
+- local-file validation and normalization adapters for LongMemEval, LoCoMo, and MemConflict;
+- benchmark acquisition documentation without committing external data.
+
+Phase 9 reproducibility tooling is included through `make smoke`, `make migrate`, `make demo`, `make export-graph`, and the documented full-check workflow. External benchmark execution and live answer-model evaluation remain the next research implementation step.
 
 No deviation from the Phase 1 through 6 deliverables is known. The integration test is opt-in so `make test` stays deterministic and runnable without Docker; `make test-integration` exercises the real database when explicitly enabled. Phase 3 deliberately uses exact cosine scoring over the scope-filtered candidate set instead of a Neo4j vector index: this avoids fixing an embedding dimension in the schema and keeps provider changes reproducible on the target laptop. Phase 4 retains physical `scope_id` fields for compatibility with the common persistence schema, but VectorMemory and FlatGraphMemory never use them for retrieval validity. Each backend must use an isolated experiment repository because reset/namespacing belongs to the evaluation harness phase. Phase 5 performs no hard deletes; merge tombstones the duplicate and preserves a `SAME_AS` edge and combined provenance. Phase 6 keeps graph reads behind bounded, fixed repository queries and limits exports to 500 memories; it never exposes arbitrary browser-authored Cypher.
 

@@ -1,6 +1,7 @@
-.PHONY: install test test-integration lint typecheck check eval-all eval-report eval-correction validate-external web-install web-build web-dev neo4j-up neo4j-down schema api
+.PHONY: install test test-integration lint typecheck check smoke demo reset-db export-graph migrate eval-all eval-report eval-correction validate-external web-install web-build web-dev neo4j-up neo4j-down schema api
 
-export PYTHONPATH := src
+export PYTHONPATH := src:.
+export UV_CACHE_DIR ?= /private/tmp/scopegraph-uv-cache
 
 install:
 	uv sync --extra dev
@@ -18,6 +19,21 @@ typecheck:
 	uv run mypy
 
 check: lint typecheck test
+
+smoke:
+	uv run python scripts/smoke_test.py
+
+demo:
+	uv run python scripts/run_demo.py
+
+reset-db:
+	uv run python scripts/reset_db.py --yes
+
+export-graph:
+	uv run python scripts/export_graph.py --output $(if $(OUTPUT),$(OUTPUT),results/graph.json)
+
+migrate:
+	uv run python scripts/migrate.py
 
 web-install:
 	npm --prefix web install
