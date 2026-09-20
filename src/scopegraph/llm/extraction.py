@@ -40,6 +40,18 @@ class LLMMemoryExtractor:
             schema_name="memory_candidates",
             json_schema=MemoryCandidateBatch.model_json_schema(),
         )
+        # JSON Schema cannot express the cross-field invariant enforced by the
+        # Pydantic model. Clamp model-produced inferred confidence at the
+        # documented ceiling before strict validation.
+        candidates = raw.get("candidates")
+        if isinstance(candidates, list):
+            for item in candidates:
+                if (
+                    isinstance(item, dict)
+                    and item.get("inferred") is True
+                    and isinstance(item.get("confidence"), int | float)
+                ):
+                    item["confidence"] = min(float(item["confidence"]), 0.8)
         batch = MemoryCandidateBatch.model_validate(raw)
         valid_source_ids = {message.id for message in messages}
         for candidate in batch.candidates:

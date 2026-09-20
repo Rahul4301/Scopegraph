@@ -4,21 +4,15 @@ import argparse
 import json
 from pathlib import Path
 
-from evals.adapters import LoCoMoAdapter, LongMemEvalAdapter, MemConflictAdapter
+from evals.adapters.registry import EXTERNAL_DATASETS, external_adapters
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--dataset", choices=("longmemeval", "locomo", "memconflict"), required=True
-    )
+    parser.add_argument("--dataset", choices=EXTERNAL_DATASETS, required=True)
     parser.add_argument("--path", type=Path, required=True)
     args = parser.parse_args()
-    adapter = {
-        "longmemeval": LongMemEvalAdapter(),
-        "locomo": LoCoMoAdapter(),
-        "memconflict": MemConflictAdapter(),
-    }[args.dataset]
+    adapter = external_adapters()[args.dataset]
     result = adapter.validate(args.path)
     print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
     return 0 if result.valid else 1

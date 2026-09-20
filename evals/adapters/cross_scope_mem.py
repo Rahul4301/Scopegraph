@@ -19,7 +19,7 @@ class ScenarioExtractor(CandidateExtractor):
                       existing_memories: list[str] | None = None) -> list[MemoryCandidate]:
         del current_scope, existing_memories
         return [
-            candidate
+            candidate.model_copy(deep=True)
             for message in messages
             for candidate in self.candidates.get(message.id, [])
         ]

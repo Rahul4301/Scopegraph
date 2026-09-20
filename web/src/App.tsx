@@ -196,18 +196,27 @@ export function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
+        <div className="window-controls" aria-hidden="true"><i /><i /><i /></div>
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-          <div><strong>ScopeGraph</strong><span>Memory Explorer</span></div>
+          <span className="brand-mark" aria-hidden="true">✳</span>
+          <div><strong>scopegraph</strong><span>~/memory-explorer</span></div>
         </div>
+        <nav className="product-nav" aria-label="Product navigation">
+          <button className="product-nav__item is-active" type="button">/graph</button>
+          <button className="product-nav__item" type="button">/retrieve</button>
+          <button className="product-nav__item" type="button">/history</button>
+        </nav>
         <div className="system-stats" aria-label="System statistics">
           <span><b>{stats.scope_count}</b> scopes</span>
           <span><b>{stats.memory_count}</b> memories</span>
           <span><b>{stats.relationship_count}</b> edges</span>
         </div>
-        <div className={`health health--${health}`}>
-          <span aria-hidden="true" />
-          Neo4j {health === "checking" ? "checking" : health}
+        <div className="topbar__runtime">
+          <span className="model-pill"><span className="model-pill__dot" />claude-code · local</span>
+          <div className={`health health--${health}`}>
+            <span aria-hidden="true" />
+            Neo4j {health === "checking" ? "checking" : health}
+          </div>
         </div>
       </header>
 
@@ -215,10 +224,10 @@ export function App() {
 
       <main className="workspace">
         <aside className="panel scope-panel">
-          <div className="panel-heading"><div><span className="eyebrow">Context hierarchy</span><h2>Scopes</h2></div><span className="count-pill">{scopes.length}</span></div>
+          <div className="panel-heading"><div><span className="eyebrow">workspace</span><h2><span className="prompt-char">›</span> scope tree</h2></div><span className="count-pill">{scopes.length}</span></div>
           <ScopeTree scopes={scopes} selectedScopeId={selectedScopeId} onSelect={selectScope} />
           <footer className="scope-legend">
-            <h3>Memory levels</h3>
+            <h3>legend</h3>
             <span><i className="legend-dot legend-dot--session" /> Session</span>
             <span><i className="legend-dot legend-dot--scope" /> Context</span>
             <span><i className="legend-dot legend-dot--global" /> Global</span>
@@ -228,11 +237,11 @@ export function App() {
 
         <section className="panel graph-panel">
           <header className="graph-toolbar">
-            <div><span className="eyebrow">Graph explorer</span><h1>{scopeLabel}</h1></div>
+            <div><span className="eyebrow">scopegraph inspect --live</span><h1><span className="prompt-char">›</span> {scopeLabel}</h1><span className="graph-subtitle">bounded traversal · provenance on · corrections reversible</span></div>
             <div className="graph-toolbar__actions">
               <label className="toggle"><input type="checkbox" checked={includeInactive} onChange={(event) => setIncludeInactive(event.target.checked)} /><span />Inactive</label>
               <label className="toggle"><input type="checkbox" checked={includeSources} onChange={(event) => setIncludeSources(event.target.checked)} /><span />Sources</label>
-              <a className="export-link" href={graphExportUrl(selectedScopeId)}>Export</a>
+              <a className="export-link" href={graphExportUrl(selectedScopeId)}>export.json</a>
               <button className="icon-button" type="button" onClick={() => void loadGraph()} aria-label="Refresh graph">↻</button>
             </div>
           </header>
@@ -240,17 +249,17 @@ export function App() {
             {graphLoading && <div className="loading-scrim"><span />Loading graph…</div>}
             <GraphCanvas graph={graph} selectedNodeId={selectedNodeId} retrievedIds={retrievedIds} onSelectNode={selectNode} />
           </div>
-          <footer className="graph-footer"><span>{graph?.nodes.length ?? 0} visible nodes</span><span>{graph?.edges.length ?? 0} visible edges</span><span>Scroll to zoom · drag to pan</span></footer>
+          <footer className="graph-footer"><span><b>{graph?.nodes.length ?? 0}</b> nodes</span><span><b>{graph?.edges.length ?? 0}</b> edges</span><span className="graph-footer__hint">Scroll to zoom · drag to pan · click any node to inspect</span></footer>
         </section>
 
         <aside className="panel inspector-panel">
-          <div className="panel-heading panel-heading--sticky"><div><span className="eyebrow">Selected node</span><h2>Inspector</h2></div>{selectedNode && <span className="node-kind">{selectedNode.node_type.replace("_", " ")}</span>}</div>
+          <div className="panel-heading panel-heading--sticky"><div><span className="eyebrow">selected node</span><h2><span className="prompt-char">›</span> inspector</h2></div>{selectedNode && <span className="node-kind">{selectedNode.node_type.replace("_", " ")}</span>}</div>
           <Inspector node={selectedNode} memory={memory} provenance={provenance} history={history} relationships={relationships} scopes={scopes} busy={correctionBusy} onCorrection={correct} onPrunePreview={previewPrune} onSelectNode={selectNode} />
         </aside>
       </main>
 
       <TraceDebugger scopes={scopes} initialScopeId={selectedScopeId} onResult={onRetrieval} onSelectMemory={(id) => void selectRetrievedMemory(id)} />
-      <footer className="app-footer"><span>ScopeGraph research console</span><span>Soft corrections · inspectable provenance · bounded retrieval</span></footer>
+      <footer className="app-footer"><span><b>✳</b> scopegraph research terminal</span><span>esc clear · / help · neo4j connected</span></footer>
     </div>
   );
 }

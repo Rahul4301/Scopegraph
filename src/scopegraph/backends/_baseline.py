@@ -128,6 +128,14 @@ class BaselineMemorySystem(MemorySystem):
         for raw_candidate in candidates:
             validate_provenance(raw_candidate, valid_source_ids)
             candidate = normalize_candidate(raw_candidate)
+            if candidate.valid_from is None:
+                timestamps = [
+                    message.timestamp
+                    for message in stored_messages
+                    if message.id in candidate.source_message_ids
+                ]
+                if timestamps:
+                    candidate = candidate.model_copy(update={"valid_from": min(timestamps)})
             target_scope_id, scope_level = self._placement(
                 candidate,
                 session_scope_id=scope_id,

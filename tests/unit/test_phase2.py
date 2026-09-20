@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
@@ -90,6 +92,23 @@ def test_inferred_candidate_confidence_is_bounded() -> None:
             confidence=0.95,
             inferred=True,
         )
+
+
+@pytest.mark.asyncio
+async def test_live_extractor_clamps_inferred_confidence() -> None:
+    raw = candidate(source_id="known").model_dump(mode="json")
+    raw.update(inferred=True, confidence=0.97)
+    extractor = LLMMemoryExtractor(FakeStructuredProvider({"candidates": [raw]}))
+    message = SourceMessageCreate(
+        id="known",
+        session_id="s1",
+        role=MessageRole.USER,
+        content="Alpha probably uses Neo4j",
+        turn_index=0,
+    )
+    extracted = await extractor.extract([message], current_scope=ScopeRef(id="alpha"))
+    assert extracted[0].confidence == 0.8
+    assert extracted[0].inferred is True
 
 
 def test_explicit_scope_wins_and_unapproved_global_is_downscoped() -> None:
@@ -199,6 +218,78 @@ async def test_conflict_supersedes_old_memory_without_deleting_history() -> None
     assert old.valid_to is not None
     assert (new.id, old.id) in repository.supersedes
     assert second_result.conflict_count == 1
+
+
+@pytest.mark.asyncio
+async def test_session_override_does_not_supersede_scope_memory() -> None:
+    repository = InMemoryMemoryRepository()
+    await repository.create_scope(
+        ScopeCreate(id="global", name="Global", scope_type=ScopeType.GLOBAL)
+    )
+    await repository.create_scope(
+        ScopeCreate(id="alpha", name="Alpha", scope_type=ScopeType.PROJECT)
+    )
+    durable = ScopeGraphMemorySystem(
+        repository,
+        StaticMemoryExtractor(
+            [candidate(source_id="m1", content="Alpha uses MongoDB", object_value="MongoDB")]
+        ),
+    )
+    await durable.ingest_session(
+        session("s1", "alpha", "m1", "Alpha uses MongoDB"),
+        current_scope=ScopeRef(id="alpha"),
+    )
+    temporary = ScopeGraphMemorySystem(
+        repository,
+        StaticMemoryExtractor(
+            [candidate(
+                source_id="m2", content="Temporarily use SQLite", object_value="SQLite",
+                level="session", durability=0.1,
+            )]
+        ),
+    )
+    result = await temporary.ingest_session(
+        session("s2", "alpha", "m2", "Temporarily use SQLite"),
+        current_scope=ScopeRef(id="alpha", session_id="s2"),
+    )
+
+    memories = await repository.list_memories(scope_id="alpha", include_inactive=True)
+    durable_memory = next(
+        memory for memory in memories if memory.metadata.get("object") == "mongodb"
+    )
+    temporary_memory = next(
+        memory for memory in memories if memory.metadata.get("object") == "sqlite"
+    )
+    assert result.conflict_count == 0
+    assert durable_memory.status is MemoryStatus.ACTIVE
+    assert temporary_memory.scope_level is ScopeLevel.SESSION
+
+
+@pytest.mark.asyncio
+async def test_memory_validity_starts_at_source_message_timestamp() -> None:
+    repository = InMemoryMemoryRepository()
+    await repository.create_scope(
+        ScopeCreate(id="global", name="Global", scope_type=ScopeType.GLOBAL)
+    )
+    await repository.create_scope(
+        ScopeCreate(id="alpha", name="Alpha", scope_type=ScopeType.PROJECT)
+    )
+    timestamp = datetime(2026, 6, 10, 10, 0, tzinfo=UTC)
+    message = SourceMessageCreate(
+        id="m1", session_id="s1", role=MessageRole.USER,
+        content="Alpha uses MongoDB", turn_index=0, timestamp=timestamp,
+    )
+    system = ScopeGraphMemorySystem(
+        repository,
+        StaticMemoryExtractor([candidate(source_id="m1", object_value="MongoDB")]),
+    )
+    result = await system.ingest_session(
+        SessionInput(id="s1", scope_id="alpha", messages=[message]),
+        current_scope=ScopeRef(id="alpha"),
+    )
+    memory = await repository.get_memory(result.memory_ids[0])
+    assert memory is not None
+    assert memory.valid_from == timestamp
 
 
 @pytest.mark.asyncio

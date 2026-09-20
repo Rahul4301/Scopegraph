@@ -172,7 +172,8 @@ Complete in Phase 7:
 
 Complete in Phase 8:
 
-- local-file validation and normalization adapters for LongMemEval, LoCoMo, and MemConflict;
+- local-file validation and normalization adapters for LongMemEval, LongMemEval-V2,
+  LoCoMo, MemConflict, MemoryAgentBench, RHELM, MemBench, Mem2ActBench, and TIME;
 - benchmark acquisition documentation without committing external data.
 
 Phase 9 reproducibility tooling is included through `make smoke`, `make migrate`, `make demo`, `make export-graph`, and the documented full-check workflow. External benchmark execution and live answer-model evaluation remain the next research implementation step.

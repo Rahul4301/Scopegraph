@@ -61,8 +61,9 @@ export function TraceDebugger({
     <section className="trace-panel">
       <header className="trace-panel__header">
         <div>
-          <span className="eyebrow">Retrieval debugger</span>
-          <h2>Ask the memory graph</h2>
+          <span className="eyebrow">retrieval session</span>
+          <h2><span className="prompt-char">›</span> ask the memory graph</h2>
+          <p className="trace-panel__description">Evidence, scope weighting, and traversal are streamed below.</p>
         </div>
         {result && (
           <div className="trace-metrics">
@@ -74,14 +75,14 @@ export function TraceDebugger({
       </header>
       <form className="trace-form" onSubmit={submit}>
         <label className="trace-form__query">
-          <span>Query</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="What database does Beta use?" required />
+          <span>prompt</span>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Which database does Atlas API use?" required />
         </label>
         <label><span>Scope</span><select value={scopeId} onChange={(event) => setScopeId(event.target.value)}><option value="">Global only</option>{scopes.filter((scope) => !scope.archived).map((scope) => <option value={scope.id} key={scope.id}>{scope.name}</option>)}</select></label>
         <label><span>Session ID</span><input value={sessionId} onChange={(event) => setSessionId(event.target.value)} placeholder="optional" /></label>
         <label><span>Top K</span><input type="number" min="1" max="100" value={topK} onChange={(event) => setTopK(event.target.value)} /></label>
         <label><span>Token budget</span><input type="number" min="1" value={tokenBudget} onChange={(event) => setTokenBudget(event.target.value)} /></label>
-        <button className="run-query" type="submit" disabled={loading}>{loading ? "Searching…" : "Run retrieval"}<span aria-hidden="true">↗</span></button>
+        <button className="run-query" type="submit" disabled={loading}>{loading ? "running…" : "run"}<span aria-hidden="true">↵</span></button>
       </form>
       {error && <div className="trace-error" role="alert"><strong>Retrieval unavailable</strong><span>{error}</span></div>}
       {result && (

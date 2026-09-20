@@ -66,7 +66,9 @@ class RetrievalConfig:
             max_graph_hops=int(config.get("max_graph_hops", 2)),
             max_expanded_nodes=int(config.get("max_expanded_nodes", 40)),
             max_traversal_time_ms=float(config.get("max_traversal_time_ms", 100.0)),
-            historical_query_terms=tuple(config.get("historical_query_terms", ())),
+            historical_query_terms=tuple(config.get(
+                "historical_query_terms", cls().historical_query_terms
+            )),
             current_session_score=float(scope.get("current_session", 1.0)),
             current_scope_score=float(scope.get("current_scope", 0.9)),
             parent_scope_score=float(scope.get("parent_scope", 0.7)),
@@ -106,10 +108,6 @@ class ScopeAwareRetriever:
         effective_now = now or datetime.now(UTC)
         access = await self._scope_access(query, current_scope)
         historical = is_historical_query(query, self.config.historical_query_terms)
-        prefer_durable = any(
-            term in query.casefold()
-            for term in ("normally", "usually", "generally", "typically", "project use")
-        )
         candidates = await self._eligible_memories(
             access, current_scope=current_scope, historical=historical
         )
@@ -135,6 +133,8 @@ class ScopeAwareRetriever:
             max_expanded_nodes=self.config.max_expanded_nodes,
             max_time_ms=self.config.max_traversal_time_ms,
         )
+        eligible_ids = {memory.id for memory in candidates}
+        expanded = {key: value for key, value in expanded.items() if key in eligible_ids}
         expanded_memories = [value[0] for value in expanded.values()]
         await self._ensure_embeddings(expanded_memories)
         for memory in expanded_memories:
@@ -156,7 +156,7 @@ class ScopeAwareRetriever:
             score = final_score(
                 semantic=semantic[memory.id],
                 scope=self._memory_scope_score(
-                    memory, current_scope, scope_access.score, prefer_durable
+                    memory, current_scope, scope_access.score
                 ),
                 temporal=temporal,
                 confidence=memory.confidence,
@@ -176,7 +176,7 @@ class ScopeAwareRetriever:
                 valid_to=memory.valid_to,
                 semantic_score=semantic[memory.id],
                 scope_score=self._memory_scope_score(
-                    memory, current_scope, scope_access.score, prefer_durable
+                    memory, current_scope, scope_access.score
                 ),
                 temporal_score=temporal,
                 graph_score=graph,
@@ -296,14 +296,5 @@ class ScopeAwareRetriever:
         memory: Memory,
         current_scope: ScopeRef | None,
         base_score: float,
-        prefer_durable: bool,
     ) -> float:
-        if (
-            memory.scope_level is ScopeLevel.SESSION
-            and current_scope is not None
-            and current_scope.session_id == memory.metadata.get("session_id")
-        ):
-            if prefer_durable:
-                return min(base_score, 0.4)
-            return self.config.current_session_score
         return base_score

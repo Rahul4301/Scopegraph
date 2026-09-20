@@ -2,6 +2,7 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
+from threading import RLock
 
 from scopegraph.embeddings.base import EmbeddingProvider
 
@@ -15,7 +16,11 @@ class SQLiteEmbeddingCache:
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(path)
+        # FastAPI may execute requests on different worker threads while the
+        # cached embedder is shared by the process. Serialize the tiny cache
+        # reads/writes instead of leaking sqlite's thread-affinity exception.
+        self._lock = RLock()
+        self._connection = sqlite3.connect(path, check_same_thread=False)
         self._connection.execute(
             """
             CREATE TABLE IF NOT EXISTS embeddings (
@@ -28,23 +33,26 @@ class SQLiteEmbeddingCache:
         self._connection.commit()
 
     def get(self, key: str) -> list[float] | None:
-        row = self._connection.execute(
-            "SELECT vector_json FROM embeddings WHERE content_hash = ?", (key,)
-        ).fetchone()
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT vector_json FROM embeddings WHERE content_hash = ?", (key,)
+            ).fetchone()
         return json.loads(row[0]) if row else None
 
     def put(self, key: str, model_name: str, vector: list[float]) -> None:
-        self._connection.execute(
-            """
-            INSERT OR REPLACE INTO embeddings(content_hash, model_name, vector_json)
-            VALUES (?, ?, ?)
-            """,
-            (key, model_name, json.dumps(vector, separators=(",", ":"))),
-        )
-        self._connection.commit()
+        with self._lock:
+            self._connection.execute(
+                """
+                INSERT OR REPLACE INTO embeddings(content_hash, model_name, vector_json)
+                VALUES (?, ?, ?)
+                """,
+                (key, model_name, json.dumps(vector, separators=(",", ":"))),
+            )
+            self._connection.commit()
 
     def close(self) -> None:
-        self._connection.close()
+        with self._lock:
+            self._connection.close()
 
 
 class CachedEmbedder:

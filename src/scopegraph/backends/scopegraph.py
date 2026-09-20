@@ -108,6 +108,7 @@ class ScopeGraphMemorySystem(MemorySystem):
             candidates,
             session_id=session_id,
             session_message_ids={message.id for message in stored_messages},
+            source_timestamps={message.id: message.timestamp for message in stored_messages},
             current_scope=resolved_scope,
             global_scope_id=global_scope.id if global_scope else None,
         )

@@ -15,6 +15,8 @@ def is_historical_query(query: str, historical_terms: tuple[str, ...]) -> bool:
 def temporal_score(memory: Memory, *, now: datetime, historical: bool) -> float:
     if memory.status is MemoryStatus.TOMBSTONED:
         return 0.0
+    if memory.valid_from and memory.valid_from > now:
+        return 0.0
     if historical:
         if memory.status is MemoryStatus.SUPERSEDED:
             return 1.0

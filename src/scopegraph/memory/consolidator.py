@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 
 from scopegraph.llm.scope_classification import resolve_candidate_scope
@@ -42,6 +43,7 @@ class Consolidator:
         *,
         session_id: str,
         session_message_ids: set[str],
+        source_timestamps: dict[str, datetime] | None = None,
         current_scope: ScopeRef | None,
         global_scope_id: str | None,
     ) -> ConsolidationOutcome:
@@ -49,6 +51,14 @@ class Consolidator:
         for raw_candidate in candidates:
             validate_provenance(raw_candidate, session_message_ids)
             candidate = normalize_candidate(raw_candidate)
+            if candidate.valid_from is None and source_timestamps:
+                timestamps = [
+                    source_timestamps[source_id]
+                    for source_id in candidate.source_message_ids
+                    if source_id in source_timestamps
+                ]
+                if timestamps:
+                    candidate = candidate.model_copy(update={"valid_from": min(timestamps)})
             decision = resolve_candidate_scope(
                 candidate, current_scope=current_scope, global_scope_id=global_scope_id
             )

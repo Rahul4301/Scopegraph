@@ -17,6 +17,8 @@ class BenchmarkExample(BaseModel):
     gold_scope_ids: list[str] = Field(default_factory=list)
     gold_memory_ids: list[str] = Field(default_factory=list)
     gold_memory_contents: list[str] = Field(default_factory=list)
+    gold_source_ids: list[str] = Field(default_factory=list)
+    allowed_scope_ids: list[str] = Field(default_factory=list)
     current_scope_id: str | None = None
     current_session_id: str | None = None
     timestamp: datetime | None = None
@@ -69,6 +71,10 @@ class AdapterValidation(BaseModel):
 
 
 class EvaluationRecord(BaseModel):
+    protocol_version: str = "legacy"
+    evaluation_mode: str = "unspecified"
+    latency_protocol: str = "unspecified"
+    embedding_preparation_ms: float | None = None
     run_id: str
     dataset: str
     system: str
@@ -81,6 +87,11 @@ class EvaluationRecord(BaseModel):
     current_scope_id: str | None = None
     gold_scope_ids: list[str] = Field(default_factory=list)
     gold_memory_ids: list[str] = Field(default_factory=list)
+    gold_source_ids: list[str] = Field(default_factory=list)
+    allowed_scope_ids: list[str] = Field(default_factory=list)
+    retrieved_source_ids: list[list[str]] = Field(default_factory=list)
+    retrieved_origin_scope_ids: list[list[str]] = Field(default_factory=list)
+    retrieved_contents: list[str] = Field(default_factory=list)
     retrieved_memory_ids: list[str] = Field(default_factory=list)
     retrieved_scope_ids: list[str] = Field(default_factory=list)
     retrieved_statuses: list[str] = Field(default_factory=list)
@@ -88,6 +99,7 @@ class EvaluationRecord(BaseModel):
     retrieval_latency_ms: float = 0.0
     retrieved_tokens: int = 0
     answer: str | None = None
+    answer_evaluated: bool = True
     answer_latency_ms: float | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None

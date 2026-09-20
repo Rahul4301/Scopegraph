@@ -47,7 +47,6 @@ def generate_cross_scope_mem(*, seed: int = 42, difficulty: int = 2,
     project_count = {1: 2, 2: 3, 3: 5, 4: 9}[difficulty]
     projects = list(_PROJECTS[:project_count])
     rng.shuffle(projects)
-    projects.sort(key=lambda item: item[0])
     base = datetime(2026, 6, 10, 10, 0, tzinfo=UTC)
     scopes = [
         ScopeCreate(id="global", name="Global", scope_type=ScopeType.GLOBAL, created_at=base)
@@ -90,13 +89,20 @@ def generate_cross_scope_mem(*, seed: int = 42, difficulty: int = 2,
 
     examples: list[BenchmarkExample] = []
     if beta is not None:
+        beta_database = "PostgreSQL" if difficulty >= 3 else "MongoDB"
+        beta_gold_content = (
+            "Beta is switching its database to PostgreSQL."
+            if difficulty >= 3
+            else "Beta uses MongoDB."
+        )
+        beta_question_time = base + timedelta(minutes=len(sessions) + 1)
         examples.extend([
             BenchmarkExample(
                 question_id="q_beta_normal", question_type="scope_specific_recall",
-                question="What database does Beta use normally?", gold_answer="MongoDB",
+                question="What database does Beta use normally?", gold_answer=beta_database,
                 gold_scope_ids=["scope_beta"], gold_memory_ids=["m_beta_database"],
-                gold_memory_contents=["Beta uses MongoDB."], current_scope_id="scope_beta",
-                current_session_id="session_beta_override", timestamp=base,
+                gold_memory_contents=[beta_gold_content], current_scope_id="scope_beta",
+                current_session_id=None, timestamp=beta_question_time,
             ),
             BenchmarkExample(
                 question_id="q_beta_override", question_type="session_override",
@@ -104,7 +110,7 @@ def generate_cross_scope_mem(*, seed: int = 42, difficulty: int = 2,
                 gold_scope_ids=["scope_beta"], gold_memory_ids=["m_beta_override"],
                 gold_memory_contents=["For today's migration test, temporarily use SQLite."],
                 current_scope_id="scope_beta", current_session_id="session_beta_override",
-                timestamp=base,
+                timestamp=next(s.started_at for s in sessions if s.id == "session_beta_override"),
             ),
         ])
     examples.extend([
@@ -113,26 +119,35 @@ def generate_cross_scope_mem(*, seed: int = 42, difficulty: int = 2,
             question="What database do I generally prefer?", gold_answer="PostgreSQL",
             gold_scope_ids=["global"], gold_memory_ids=["m_global_database"],
             gold_memory_contents=["I generally prefer PostgreSQL."], current_scope_id="global",
-            timestamp=base,
+            timestamp=base + timedelta(minutes=1),
         ),
     ])
     alpha = next((item for item in projects if item[0] == "alpha"), None)
     if alpha is not None and beta is not None:
         examples.append(BenchmarkExample(
             question_id="q_named_beta", question_type="cross_scope_comparison",
-            question="What database does Beta use?", gold_answer="MongoDB",
+            question="What database does Beta use?", gold_answer=beta_database,
             gold_scope_ids=["scope_beta"], gold_memory_ids=["m_beta_database"],
-            gold_memory_contents=["Beta uses MongoDB."], current_scope_id="scope_alpha",
-            timestamp=base,
+            gold_memory_contents=[beta_gold_content], current_scope_id="scope_alpha",
+            timestamp=base + timedelta(minutes=len(sessions) + 1),
         ))
         examples.append(BenchmarkExample(
             question_id="q_alpha_database", question_type="scope_specific_recall",
             question="What database does Alpha use?", gold_answer="Neo4j",
             gold_scope_ids=["scope_alpha"], gold_memory_ids=["m_alpha_database"],
             gold_memory_contents=["Alpha uses Neo4j."], current_scope_id="scope_alpha",
-            timestamp=base,
+            timestamp=base + timedelta(minutes=len(sessions) + 1),
         ))
 
+    for example in examples:
+        example.gold_source_ids = [
+            message.id for session in sessions for message in session.messages
+            if message.content in example.gold_memory_contents
+        ]
+        example.allowed_scope_ids = sorted({
+            "global", *example.gold_scope_ids,
+            *([example.current_scope_id] if example.current_scope_id else []),
+        })
     scenario = CrossScopeScenario(
         scenario_id=scenario_id or f"cross_scope_mem_{seed}_{difficulty}",
         difficulty=difficulty, seed=seed, scopes=scopes, sessions=sessions, examples=examples,
@@ -144,7 +159,11 @@ def _with_canonical_content(scenario: CrossScopeScenario) -> CrossScopeScenario:
     """Keep logical gold IDs stable while messages contain natural benchmark text."""
     for example in scenario.examples:
         if example.question_id == "q_beta_normal":
-            example.gold_memory_contents[:] = ["Beta uses MongoDB."]
+            example.gold_memory_contents[:] = [
+                "Beta is switching its database to PostgreSQL."
+                if example.gold_answer == "PostgreSQL"
+                else "Beta uses MongoDB."
+            ]
         elif example.question_id == "q_alpha_database":
             example.gold_memory_contents[:] = ["Alpha uses Neo4j."]
     return scenario

@@ -3,6 +3,7 @@ from functools import lru_cache
 from scopegraph.backends.scopegraph import ScopeGraphMemorySystem
 from scopegraph.config import get_settings, load_yaml_config
 from scopegraph.embeddings.cache import CachedEmbedder, SQLiteEmbeddingCache
+from scopegraph.embeddings.local import HashEmbeddingProvider
 from scopegraph.embeddings.openai_compatible import OpenAICompatibleEmbeddingProvider
 from scopegraph.graph.client import Neo4jClient
 from scopegraph.graph.repository import Neo4jMemoryRepository
@@ -41,10 +42,15 @@ def get_memory_system() -> ScopeGraphMemorySystem:
     )
     memory_config = load_yaml_config(settings.scopegraph_config_dir / "memory.yaml")
     retrieval_config = load_yaml_config(settings.scopegraph_config_dir / "retrieval.yaml")
-    embedding_provider = OpenAICompatibleEmbeddingProvider(
-        base_url=settings.embedding_base_url,
-        api_key=settings.embedding_api_key.get_secret_value(),
-        model=settings.embedding_model,
+    embedding_api_key = settings.embedding_api_key.get_secret_value()
+    embedding_provider = (
+        OpenAICompatibleEmbeddingProvider(
+            base_url=settings.embedding_base_url,
+            api_key=embedding_api_key,
+            model=settings.embedding_model,
+        )
+        if embedding_api_key and settings.embedding_model
+        else HashEmbeddingProvider()
     )
     embedder = CachedEmbedder(embedding_provider, get_embedding_cache())
     repository = get_repository()

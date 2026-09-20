@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -30,9 +30,9 @@ class OpenAICompatibleLLM:
     ) -> dict[str, Any]:
         if not self.api_key or not self.model:
             raise RuntimeError("LLM_API_KEY and LLM_MODEL are required for live extraction")
-        payload = {
+        strict_schema = _strict_json_schema(json_schema)
+        payload: dict[str, object] = {
             "model": self.model,
-            "temperature": 0,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -42,10 +42,12 @@ class OpenAICompatibleLLM:
                 "json_schema": {
                     "name": schema_name,
                     "strict": True,
-                    "schema": json_schema,
+                    "schema": strict_schema,
                 },
             },
         }
+        if not self.model.startswith("gpt-5"):
+            payload["temperature"] = 0
         headers = {"Authorization": f"Bearer {self.api_key}"}
         last_error: Exception | None = None
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
@@ -71,3 +73,35 @@ class OpenAICompatibleLLM:
                     if attempt + 1 < self.max_retries:
                         await asyncio.sleep(0.25 * (2**attempt))
         raise RuntimeError("Structured LLM request failed after retries") from last_error
+
+
+def _strict_json_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Adapt Pydantic JSON Schema to OpenAI strict structured-output rules."""
+    normalized = dict(schema)
+    properties = normalized.get("properties")
+    if isinstance(properties, dict):
+        normalized["additionalProperties"] = False
+        normalized["required"] = list(properties)
+        normalized["properties"] = {
+            name: _strict_json_value(value) for name, value in properties.items()
+        }
+    for key in ("$defs", "definitions"):
+        definitions = normalized.get(key)
+        if isinstance(definitions, dict):
+            normalized[key] = {
+                name: _strict_json_value(value) for name, value in definitions.items()
+            }
+    return cast(dict[str, Any], _strict_json_value(normalized))
+
+
+def _strict_json_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        normalized = {key: _strict_json_value(item) for key, item in value.items()}
+        properties = normalized.get("properties")
+        if isinstance(properties, dict):
+            normalized["additionalProperties"] = False
+            normalized["required"] = list(properties)
+        return normalized
+    if isinstance(value, list):
+        return [_strict_json_value(item) for item in value]
+    return value

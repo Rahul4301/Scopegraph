@@ -1,5 +1,5 @@
 from scopegraph.memory.normalizer import conflict_key, normalize_text
-from scopegraph.models.memory import Memory, MemoryCandidate, MemoryStatus
+from scopegraph.models.memory import Memory, MemoryCandidate, MemoryStatus, ScopeLevel
 
 
 def find_conflicts(
@@ -9,8 +9,12 @@ def find_conflicts(
     if key is None or candidate.object is None:
         return []
     conflicts: list[Memory] = []
+    if candidate.proposed_scope_level == ScopeLevel.SESSION.value:
+        return conflicts
     for memory in existing:
         if memory.scope_id != scope_id or memory.status is not MemoryStatus.ACTIVE:
+            continue
+        if memory.scope_level is ScopeLevel.SESSION:
             continue
         if memory.metadata.get("conflict_key") != key:
             continue

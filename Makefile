@@ -45,13 +45,17 @@ web-dev:
 	npm --prefix web run dev
 
 eval-all:
-	uv run python -m evals.runners.run_all --dataset cross_scope_mem --config configs/experiments.yaml
+	uv run python -m evals.runners.run_all --dataset cross_scope_mem --config configs/experiments.yaml \
+		--systems $(if $(SYSTEMS),$(SYSTEMS),vector_memory,flat_graph,two_level_graph,scopegraph) \
+		--scenario-count $(if $(SCENARIOS),$(SCENARIOS),1) --difficulty $(if $(DIFFICULTY),$(DIFFICULTY),2) \
+		$(if $(LIVE),--live,) $(if $(LIVE_ANSWER),--live-answer,)
 
 eval-external:
-	uv run python -m evals.runners.run_external --dataset $(DATASET) --path $(DATA_PATH) --system $(SYSTEM) --config configs/experiments.yaml $(if $(LIVE_ANSWER),--live-answer,)
+	uv run python -m evals.runners.run_external --dataset $(DATASET) --path $(DATA_PATH) --system $(SYSTEM) --config configs/experiments.yaml $(if $(LIVE),--live,) $(if $(LIVE_ANSWER),--live-answer,)
 
 eval-report:
-	uv run python -m evals.analysis.run_report results/raw/*.jsonl
+	@test -n "$(BATCH)" || (echo 'Set BATCH=results/batches/<run-id>'; exit 1)
+	uv run python -m evals.analysis.run_report $(BATCH)/*.jsonl --output-root $(BATCH)/report
 
 eval-correction:
 	uv run python -m evals.runners.run_correction_eval
