@@ -1,4 +1,4 @@
-.PHONY: install test test-integration lint typecheck check smoke demo reset-db export-graph migrate eval-all eval-external eval-report eval-correction validate-external web-install web-build web-dev neo4j-up neo4j-down schema api
+.PHONY: install test test-integration lint typecheck check smoke demo reset-db export-graph migrate eval-all eval-neo4j eval-external eval-report eval-correction validate-external web-install web-build web-dev neo4j-up neo4j-down schema api
 
 export PYTHONPATH := src:.
 export UV_CACHE_DIR ?= /private/tmp/scopegraph-uv-cache
@@ -48,6 +48,19 @@ eval-all:
 	uv run python -m evals.runners.run_all --dataset cross_scope_mem --config configs/experiments.yaml \
 		--systems $(if $(SYSTEMS),$(SYSTEMS),vector_memory,flat_graph,two_level_graph,scopegraph) \
 		--scenario-count $(if $(SCENARIOS),$(SCENARIOS),1) --difficulty $(if $(DIFFICULTY),$(DIFFICULTY),2) \
+		--concurrency $(if $(CONCURRENCY),$(CONCURRENCY),1) \
+		$(if $(LIVE),--live,) $(if $(LIVE_ANSWER),--live-answer,)
+
+# Real end-to-end ScopeGraph run against an isolated Neo4j service. The runner
+# clears this evaluation-only database between scenarios so repeated fixture IDs
+# cannot leak state across trials.
+eval-neo4j:
+	docker compose --profile eval up -d --wait neo4j-eval
+	NEO4J_URI=bolt://localhost:7688 NEO4J_PASSWORD=scopegraph-eval \
+	uv run python -m evals.runners.run_eval --dataset cross_scope_mem --system scopegraph \
+		--storage neo4j --allow-neo4j-reset --config configs/experiments.yaml \
+		--scenario-count $(if $(SCENARIOS),$(SCENARIOS),10) \
+		--difficulty $(if $(DIFFICULTY),$(DIFFICULTY),3) \
 		$(if $(LIVE),--live,) $(if $(LIVE_ANSWER),--live-answer,)
 
 eval-external:

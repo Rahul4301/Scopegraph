@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import sqlite3
@@ -39,6 +40,29 @@ class SQLiteEmbeddingCache:
             ).fetchone()
         return json.loads(row[0]) if row else None
 
+    def get_many(self, keys: list[str]) -> dict[str, list[float]]:
+        found: dict[str, list[float]] = {}
+        unique = list(dict.fromkeys(keys))
+        with self._lock:
+            for offset in range(0, len(unique), 800):
+                batch = unique[offset:offset + 800]
+                placeholders = ",".join("?" for _ in batch)
+                rows = self._connection.execute(
+                    f"SELECT content_hash, vector_json FROM embeddings "
+                    f"WHERE content_hash IN ({placeholders})", batch,
+                ).fetchall()
+                found.update({key: json.loads(vector) for key, vector in rows})
+        return found
+
+    def put_many(self, values: dict[str, list[float]], model_name: str) -> None:
+        with self._lock:
+            with self._connection:
+                self._connection.executemany(
+                    "INSERT OR REPLACE INTO embeddings VALUES (?, ?, ?)",
+                    [(key, model_name, json.dumps(vector, separators=(",", ":")))
+                     for key, vector in values.items()],
+                )
+
     def put(self, key: str, model_name: str, vector: list[float]) -> None:
         with self._lock:
             self._connection.execute(
@@ -65,23 +89,16 @@ class CachedEmbedder:
         return self.provider.model_name
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        vectors: list[list[float] | None] = []
-        missing_texts: list[str] = []
-        missing_indexes: list[int] = []
-        keys = [content_hash(self.model_name, text) for text in texts]
-        for index, key in enumerate(keys):
-            cached = self.cache.get(key)
-            vectors.append(cached)
-            if cached is None:
-                missing_indexes.append(index)
-                missing_texts.append(texts[index])
+        namespace = str(getattr(self.provider, "cache_namespace", self.model_name))
+        keys = [content_hash(namespace, text) for text in texts]
+        vectors = await asyncio.to_thread(self.cache.get_many, keys)
+        missing_texts = {key: text for key, text in zip(keys, texts, strict=True)
+                         if key not in vectors}
         if missing_texts:
-            generated = await self.provider.embed(missing_texts)
+            generated = await self.provider.embed(list(missing_texts.values()))
             if len(generated) != len(missing_texts):
                 raise ValueError("Embedding provider returned the wrong number of vectors")
-            for index, vector in zip(missing_indexes, generated, strict=True):
-                vectors[index] = vector
-                self.cache.put(keys[index], self.model_name, vector)
-        if any(vector is None for vector in vectors):
-            raise RuntimeError("Embedding cache did not resolve every requested vector")
-        return [vector for vector in vectors if vector is not None]
+            additions = dict(zip(missing_texts, generated, strict=True))
+            await asyncio.to_thread(self.cache.put_many, additions, namespace)
+            vectors.update(additions)
+        return [list(vectors[key]) for key in keys]

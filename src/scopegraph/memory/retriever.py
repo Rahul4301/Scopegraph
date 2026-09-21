@@ -2,6 +2,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from heapq import nlargest
 from typing import Any, Protocol
 
 from scopegraph.embeddings.base import EmbeddingProvider
@@ -30,11 +31,23 @@ class RetrievalRepository(Protocol):
         self, *, scope_id: str | None = None, include_inactive: bool = False
     ) -> list[Memory]: ...
 
+    async def list_retrieval_memories(
+        self, *, scope_ids: set[str], session_id: str | None,
+        historical: bool, now: datetime,
+    ) -> list[Memory]: ...
+
+    async def set_memory_embeddings(
+        self, values: list[tuple[str, str, list[float]]], model_name: str
+    ) -> None: ...
+
     async def set_memory_embedding(
         self, memory_id: str, embedding: list[float], model_name: str
     ) -> None: ...
 
-    async def get_memory_neighbors(self, memory_ids: list[str]) -> list[MemoryNeighbor]: ...
+    async def get_memory_neighbors(
+        self, memory_ids: list[str], *, eligible_ids: set[str] | None = None,
+        limit: int | None = None,
+    ) -> list[MemoryNeighbor]: ...
 
 
 @dataclass(frozen=True)
@@ -109,8 +122,11 @@ class ScopeAwareRetriever:
         access = await self._scope_access(query, current_scope)
         historical = is_historical_query(query, self.config.historical_query_terms)
         candidates = await self._eligible_memories(
-            access, current_scope=current_scope, historical=historical
+            access, current_scope=current_scope, historical=historical, now=effective_now
         )
+        if not candidates:
+            return RetrievalResult(items=[], trace=[], token_count=0, backend_name="scopegraph",
+                                   retrieval_latency_ms=(time.perf_counter() - started) * 1000)
         query_vector = (await self.embedder.embed([query]))[0]
         await self._ensure_embeddings(candidates)
         semantic = {
@@ -118,13 +134,13 @@ class ScopeAwareRetriever:
             for memory in candidates
         }
         anchor_limit = min(len(candidates), max(top_k * 3, top_k))
-        anchors = sorted(
+        anchors = nlargest(
+            anchor_limit,
             candidates,
             key=lambda memory: (
                 0.65 * semantic[memory.id] + 0.35 * access[memory.scope_id].score
             ),
-            reverse=True,
-        )[:anchor_limit]
+        )
         expanded, traversal_steps = await bounded_traversal(
             self.repository,
             [memory.id for memory in anchors],
@@ -132,15 +148,12 @@ class ScopeAwareRetriever:
             max_hops=self.config.max_graph_hops,
             max_expanded_nodes=self.config.max_expanded_nodes,
             max_time_ms=self.config.max_traversal_time_ms,
+            eligible_ids={memory.id for memory in candidates},
         )
         eligible_ids = {memory.id for memory in candidates}
         expanded = {key: value for key, value in expanded.items() if key in eligible_ids}
         expanded_memories = [value[0] for value in expanded.values()]
-        await self._ensure_embeddings(expanded_memories)
-        for memory in expanded_memories:
-            semantic[memory.id] = cosine_similarity(query_vector, memory.embedding or [])
-
-        all_memories = {memory.id: memory for memory in candidates}
+        all_memories = {memory.id: memory for memory in anchors}
         all_memories.update({memory.id: memory for memory in expanded_memories})
         anchor_ids = {memory.id for memory in anchors}
         step_by_id = {step.to_id: step for step in traversal_steps}
@@ -220,10 +233,13 @@ class ScopeAwareRetriever:
         if not missing:
             return
         vectors = await self.embedder.embed([memory.content for memory in missing])
+        await self.repository.set_memory_embeddings(
+            [(memory.id, memory.content, vector)
+             for memory, vector in zip(missing, vectors, strict=True)], self.embedder.model_name,
+        )
         for memory, vector in zip(missing, vectors, strict=True):
             memory.embedding = vector
             memory.embedding_model = self.embedder.model_name
-            await self.repository.set_memory_embedding(memory.id, vector, self.embedder.model_name)
 
     async def _eligible_memories(
         self,
@@ -231,8 +247,12 @@ class ScopeAwareRetriever:
         *,
         current_scope: ScopeRef | None,
         historical: bool,
+        now: datetime,
     ) -> list[Memory]:
-        memories = await self.repository.list_memories(include_inactive=historical)
+        memories = await self.repository.list_retrieval_memories(
+            scope_ids=set(access), session_id=current_scope.session_id if current_scope else None,
+            historical=historical, now=now,
+        )
         eligible: list[Memory] = []
         for memory in memories:
             if memory.scope_id not in access or memory.status is MemoryStatus.TOMBSTONED:
@@ -257,14 +277,19 @@ class ScopeAwareRetriever:
         self, query: str, current_scope: ScopeRef | None
     ) -> dict[str, ScopeAccess]:
         access: dict[str, ScopeAccess] = {}
+        scopes = {scope.id: scope for scope in await self.repository.list_scopes(
+            include_archived=False
+        )}
         if current_scope is not None:
+            if current_scope.id not in scopes:
+                raise ValueError("Current scope does not exist or is archived")
             access[current_scope.id] = ScopeAccess(
                 self.config.current_scope_score, "same active context scope"
             )
-            scope = await self.repository.get_scope(current_scope.id)
+            scope = scopes.get(current_scope.id)
             visited = {current_scope.id}
             while scope and scope.parent_scope_id and scope.parent_scope_id not in visited:
-                parent = await self.repository.get_scope(scope.parent_scope_id)
+                parent = scopes.get(scope.parent_scope_id)
                 if parent is None:
                     break
                 visited.add(parent.id)
@@ -275,18 +300,20 @@ class ScopeAwareRetriever:
                     "ancestor scope fallback",
                 )
                 scope = parent
-        global_scope = await self.repository.get_global_scope()
+        global_scope = next((scope for scope in scopes.values()
+                             if scope.scope_type is ScopeType.GLOBAL), None)
         if global_scope is not None:
             access.setdefault(
                 global_scope.id,
                 ScopeAccess(self.config.global_scope_score, "global fallback scope"),
             )
         lowered = query.casefold()
-        for scope in await self.repository.list_scopes(include_archived=False):
+        for scope in scopes.values():
             name = scope.name.casefold().strip()
-            if name and re.search(rf"\b{re.escape(name)}\b", lowered):
+            if name and name in lowered and re.search(rf"\b{re.escape(name)}\b", lowered):
                 access[scope.id] = ScopeAccess(
-                    self.config.explicit_named_scope_score,
+                    max(self.config.explicit_named_scope_score,
+                        access[scope.id].score if scope.id in access else 0.0),
                     f"query explicitly names scope {scope.name}",
                 )
         return access
@@ -297,4 +324,7 @@ class ScopeAwareRetriever:
         current_scope: ScopeRef | None,
         base_score: float,
     ) -> float:
+        if (memory.scope_level is ScopeLevel.SESSION and current_scope
+                and memory.metadata.get("session_id") == current_scope.session_id):
+            return self.config.current_session_score
         return base_score

@@ -1,4 +1,7 @@
-from typing import Any, Protocol
+from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
+from functools import wraps
+from typing import Any, Concatenate, ParamSpec, Protocol
 
 from scopegraph.memory.traversal import MemoryNeighbor
 from scopegraph.models.correction import (
@@ -24,6 +27,8 @@ from scopegraph.models.scope import Scope, ScopeType
 
 
 class CorrectionRepository(Protocol):
+    def transaction(self) -> AbstractAsyncContextManager[None]: ...
+
     async def get_memory(self, memory_id: str) -> Memory | None: ...
 
     async def get_scope(self, scope_id: str) -> Scope | None: ...
@@ -73,6 +78,22 @@ def _snapshot(memory: Memory) -> dict[str, Any]:
     return memory.model_dump(mode="json")
 
 
+P = ParamSpec("P")
+
+
+def atomic(
+    method: Callable[Concatenate["CorrectionService", P], Awaitable[CorrectionResult]],
+) -> Callable[Concatenate["CorrectionService", P], Awaitable[CorrectionResult]]:
+    @wraps(method)
+    async def wrapped(
+        self: "CorrectionService", /, *args: P.args, **kwargs: P.kwargs
+    ) -> CorrectionResult:
+        async with self.repository.transaction():
+            return await method(self, *args, **kwargs)
+
+    return wrapped
+
+
 class CorrectionService:
     def __init__(self, repository: CorrectionRepository) -> None:
         self.repository = repository
@@ -81,6 +102,7 @@ class CorrectionService:
         await self._require_memory(memory_id)
         return await self.repository.list_correction_events(memory_id)
 
+    @atomic
     async def edit(self, memory_id: str, request: MemoryEditRequest) -> CorrectionResult:
         before = await self._require_memory(memory_id)
         changes = request.model_dump(exclude={"actor", "reason"}, exclude_unset=True)
@@ -88,6 +110,13 @@ class CorrectionService:
             raise ValueError("At least one editable memory field is required")
         if "content" in changes:
             changes.update(embedding=None, embedding_model=None)
+            # Structured extraction describes the old content and must not cause
+            # a future duplicate or conflict decision after a human text edit.
+            changes["metadata"] = {
+                key: value
+                for key, value in before.metadata.items()
+                if key not in {"subject", "predicate", "object", "normalized_key", "conflict_key"}
+            }
         Memory.model_validate(
             {
                 **before.model_dump(),
@@ -110,6 +139,7 @@ class CorrectionService:
         )
         return CorrectionResult(event=event, memory=updated)
 
+    @atomic
     async def move(self, memory_id: str, request: MemoryMoveRequest) -> CorrectionResult:
         before = await self._require_memory(memory_id)
         scope = await self.repository.get_scope(request.scope_id)
@@ -134,6 +164,7 @@ class CorrectionService:
         )
         return CorrectionResult(event=event, memory=updated)
 
+    @atomic
     async def archive(
         self, memory_id: str, *, actor: str = "user", reason: str = ""
     ) -> CorrectionResult:
@@ -176,6 +207,7 @@ class CorrectionService:
             graph_neighbors=graph_neighbors,
         )
 
+    @atomic
     async def prune(
         self, memory_id: str, *, actor: str = "user", reason: str = ""
     ) -> CorrectionResult:
@@ -221,9 +253,8 @@ class CorrectionService:
             affected_memories=dependent_after,
         )
 
-    async def restore(
-        self, memory_id: str, request: MemoryRestoreRequest
-    ) -> CorrectionResult:
+    @atomic
+    async def restore(self, memory_id: str, request: MemoryRestoreRequest) -> CorrectionResult:
         before = await self._require_memory(memory_id)
         if before.status not in {MemoryStatus.TOMBSTONED, MemoryStatus.ARCHIVED}:
             raise ValueError("Only archived or tombstoned memories can be restored")
@@ -246,9 +277,7 @@ class CorrectionService:
         dependent_before: list[Memory] = []
         dependent_after: list[Memory] = []
         if undo_event.action is CorrectionAction.TOMBSTONE:
-            before_by_id = {
-                item["id"]: item for item in undo_event.before.get("dependents", [])
-            }
+            before_by_id = {item["id"]: item for item in undo_event.before.get("dependents", [])}
             for after_snapshot in undo_event.after.get("dependents", []):
                 current = await self.repository.get_memory(after_snapshot["id"])
                 original = before_by_id.get(after_snapshot["id"])
@@ -286,9 +315,8 @@ class CorrectionService:
             affected_memories=dependent_after,
         )
 
-    async def merge(
-        self, memory_id: str, request: MemoryMergeRequest
-    ) -> CorrectionResult:
+    @atomic
+    async def merge(self, memory_id: str, request: MemoryMergeRequest) -> CorrectionResult:
         if memory_id == request.target_memory_id:
             raise ValueError("A memory cannot be merged into itself")
         source_before = await self._require_memory(memory_id)
@@ -320,9 +348,8 @@ class CorrectionService:
             affected_memories=[source_after],
         )
 
-    async def supersede(
-        self, memory_id: str, request: MemorySupersedeRequest
-    ) -> CorrectionResult:
+    @atomic
+    async def supersede(self, memory_id: str, request: MemorySupersedeRequest) -> CorrectionResult:
         if memory_id == request.replacement_memory_id:
             raise ValueError("A memory cannot supersede itself")
         old_before = await self._require_memory(memory_id)
@@ -348,6 +375,7 @@ class CorrectionService:
             affected_memories=[old_after],
         )
 
+    @atomic
     async def add_relation(
         self, memory_id: str, request: RelationCorrectionRequest
     ) -> CorrectionResult:
@@ -379,6 +407,7 @@ class CorrectionService:
         )
         return CorrectionResult(event=event, memory=source_after)
 
+    @atomic
     async def remove_relation(
         self, memory_id: str, request: RelationCorrectionRequest
     ) -> CorrectionResult:
@@ -432,9 +461,7 @@ class CorrectionService:
         if correction.action is CorrectionAction.RESTORE:
             return await self.restore(
                 correction.memory_id,
-                MemoryRestoreRequest.model_validate(
-                    {**context, "undo_of": correction.undo_of}
-                ),
+                MemoryRestoreRequest.model_validate({**context, "undo_of": correction.undo_of}),
             )
         if correction.action is CorrectionAction.MERGE:
             return await self.merge(
@@ -444,23 +471,17 @@ class CorrectionService:
         if correction.action is CorrectionAction.SUPERSEDE:
             return await self.supersede(
                 correction.memory_id,
-                MemorySupersedeRequest.model_validate(
-                    {**context, **correction.changes}
-                ),
+                MemorySupersedeRequest.model_validate({**context, **correction.changes}),
             )
         if correction.action is CorrectionAction.ADD_RELATION:
             return await self.add_relation(
                 correction.memory_id,
-                RelationCorrectionRequest.model_validate(
-                    {**context, **correction.changes}
-                ),
+                RelationCorrectionRequest.model_validate({**context, **correction.changes}),
             )
         if correction.action is CorrectionAction.REMOVE_RELATION:
             return await self.remove_relation(
                 correction.memory_id,
-                RelationCorrectionRequest.model_validate(
-                    {**context, **correction.changes}
-                ),
+                RelationCorrectionRequest.model_validate({**context, **correction.changes}),
             )
         raise ValueError(f"Unsupported correction action: {correction.action}")
 
@@ -497,15 +518,12 @@ class CorrectionService:
     def _impact(dependency: SupportDependency) -> PruneImpact:
         memory = dependency.memory
         should_review = (
-            memory.status is MemoryStatus.ACTIVE
-            and not dependency.other_active_support_ids
+            memory.status is MemoryStatus.ACTIVE and not dependency.other_active_support_ids
         )
         return PruneImpact(
             memory_id=memory.id,
             current_status=memory.status,
-            proposed_status=(
-                MemoryStatus.NEEDS_REVIEW if should_review else memory.status
-            ),
+            proposed_status=(MemoryStatus.NEEDS_REVIEW if should_review else memory.status),
             other_active_support_ids=dependency.other_active_support_ids,
             reason=(
                 "target is the only active evidentiary support"

@@ -11,11 +11,17 @@ from scopegraph.api.retrieval import router as retrieval_router
 from scopegraph.api.scopes import router as scopes_router
 from scopegraph.api.sessions import router as sessions_router
 from scopegraph.config import get_settings
+from scopegraph.llm.transport import close_provider
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
+    if get_memory_system.cache_info().currsize:
+        system = get_memory_system()
+        await close_provider(system.extractor)
+        if system.retriever:
+            await close_provider(system.retriever.embedder)
     if get_client.cache_info().currsize:
         await get_client().close()
         get_client.cache_clear()

@@ -84,6 +84,7 @@ async def _condition(condition: str, probes: tuple[int, ...]) -> dict[str, objec
             ),
         )
     relapse: list[str] = []
+    probe_results: list[dict[str, object]] = []
     for count in range(1, max(probes) + 1):
         session_id = f"future-{count}"
         await system.ingest_session(
@@ -101,9 +102,12 @@ async def _condition(condition: str, probes: tuple[int, ...]) -> dict[str, objec
                                        session_id=session_id),
                 top_k=5, token_budget=100,
             )
-            if any("PostgreSQL" in item.content for item in result.items):
-                relapse.append("PostgreSQL")
+            evidence = "\n".join(item.content for item in result.items)
+            relapse.append(evidence)
+            probe_results.append({"after_sessions": count, "evidence": evidence,
+                                  "relapsed": "PostgreSQL" in evidence})
     return {"condition": condition, "probes": list(probes), "relapses": relapse,
+            "probe_results": probe_results,
             "error_relapse_rate": error_relapse_rate(relapse, "PostgreSQL")}
 
 

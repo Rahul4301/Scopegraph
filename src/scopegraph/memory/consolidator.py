@@ -23,6 +23,10 @@ class ConsolidationRepository(Protocol):
 
     async def link_support(self, source_memory_id: str, target_memory_id: str) -> None: ...
 
+    async def add_memory_sources(
+        self, memory_id: str, source_ids: list[str], confirmed_at: datetime | None
+    ) -> Memory: ...
+
 
 @dataclass
 class ConsolidationOutcome:
@@ -48,6 +52,7 @@ class Consolidator:
         global_scope_id: str | None,
     ) -> ConsolidationOutcome:
         outcome = ConsolidationOutcome(memories=[])
+        existing_by_scope: dict[str, list[Memory]] = {}
         for raw_candidate in candidates:
             validate_provenance(raw_candidate, session_message_ids)
             candidate = normalize_candidate(raw_candidate)
@@ -70,11 +75,19 @@ class Consolidator:
             ):
                 level = ScopeLevel.SESSION
 
-            existing = await self.repository.list_memories(
-                scope_id=decision.scope_id, include_inactive=True
-            )
-            duplicate = find_duplicate(candidate, existing, scope_id=decision.scope_id)
+            if decision.scope_id not in existing_by_scope:
+                existing_by_scope[decision.scope_id] = await self.repository.list_memories(
+                    scope_id=decision.scope_id, include_inactive=True
+                )
+            existing = existing_by_scope[decision.scope_id]
+            duplicate = find_duplicate(candidate, existing, scope_id=decision.scope_id,
+                                       scope_level=level, session_id=session_id)
             if duplicate is not None:
+                confirmed = await self.repository.add_memory_sources(
+                    duplicate.id, candidate.source_message_ids, candidate.valid_from
+                )
+                existing[existing.index(duplicate)] = confirmed
+                outcome.memories.append(confirmed)
                 outcome.duplicate_count += 1
                 continue
 
@@ -102,11 +115,24 @@ class Consolidator:
                     metadata=metadata,
                 )
             )
-            conflicts = find_conflicts(candidate, existing, scope_id=decision.scope_id)
+            effective_candidate = candidate.model_copy(update={"proposed_scope_level": level.value})
+            conflicts = find_conflicts(effective_candidate, existing, scope_id=decision.scope_id)
             for old_memory in conflicts:
-                await self.repository.supersede_memory(old_memory.id, memory.id)
+                if (old_memory.valid_from and memory.valid_from
+                        and old_memory.valid_from > memory.valid_from):
+                    await self.repository.supersede_memory(memory.id, old_memory.id)
+                else:
+                    await self.repository.supersede_memory(old_memory.id, memory.id)
             outcome.conflict_count += len(conflicts)
             outcome.memories.append(memory)
+            # Mutations may return detached objects (Neo4j), so refresh only when
+            # a conflict changed state; normal multi-fact sessions reuse one read.
+            if conflicts:
+                existing_by_scope[decision.scope_id] = await self.repository.list_memories(
+                    scope_id=decision.scope_id, include_inactive=True
+                )
+            else:
+                existing.append(memory)
 
             if level is ScopeLevel.SCOPE and global_scope_id is not None:
                 await self._maybe_promote(candidate, memory, global_scope_id, outcome)

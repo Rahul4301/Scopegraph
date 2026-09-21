@@ -1,3 +1,4 @@
+import asyncio
 import time
 from dataclasses import dataclass
 from typing import Protocol
@@ -14,7 +15,10 @@ class MemoryNeighbor:
 
 
 class TraversalRepository(Protocol):
-    async def get_memory_neighbors(self, memory_ids: list[str]) -> list[MemoryNeighbor]: ...
+    async def get_memory_neighbors(
+        self, memory_ids: list[str], *, eligible_ids: set[str] | None = None,
+        limit: int | None = None,
+    ) -> list[MemoryNeighbor]: ...
 
 
 async def bounded_traversal(
@@ -25,6 +29,7 @@ async def bounded_traversal(
     max_hops: int,
     max_expanded_nodes: int,
     max_time_ms: float = 100.0,
+    eligible_ids: set[str] | None = None,
 ) -> tuple[dict[str, tuple[Memory, int]], list[TraversalStep]]:
     started = time.perf_counter()
     visited = set(anchor_ids)
@@ -37,11 +42,21 @@ async def bounded_traversal(
             break
         if (time.perf_counter() - started) * 1000 >= max_time_ms:
             break
-        neighbors = await repository.get_memory_neighbors(frontier)
+        remaining_seconds = max_time_ms / 1000 - (time.perf_counter() - started)
+        try:
+            async with asyncio.timeout(remaining_seconds):
+                neighbors = await repository.get_memory_neighbors(
+                    frontier, eligible_ids=eligible_ids,
+                    limit=max_expanded_nodes + len(visited),
+                )
+        except TimeoutError:
+            break
         next_frontier: list[str] = []
         for neighbor in neighbors:
             memory = neighbor.memory
             if memory.id in visited or memory.scope_id not in allowed_scope_ids:
+                continue
+            if eligible_ids is not None and memory.id not in eligible_ids:
                 continue
             visited.add(memory.id)
             expanded[memory.id] = (memory, depth)

@@ -27,6 +27,6 @@ def temporal_score(memory: Memory, *, now: datetime, historical: bool) -> float:
         return 0.0
     if memory.valid_from and memory.valid_from > now:
         return 0.0
-    if memory.valid_to and memory.valid_to < now:
+    if memory.valid_to and memory.valid_to <= now:
         return 0.0
     return 1.0

@@ -21,7 +21,7 @@ One physical Neo4j database represents three logical memory levels:
 - scope memory for durable project, repository, course, client, task, or workspace facts;
 - global memory for information intended to hold across contexts.
 
-See [docs/architecture.md](docs/architecture.md), [docs/baselines.md](docs/baselines.md), [docs/corrections.md](docs/corrections.md), [docs/schema.md](docs/schema.md), and [docs/literature.md](docs/literature.md).
+See [docs/architecture.md](docs/architecture.md), [docs/baselines.md](docs/baselines.md), [docs/corrections.md](docs/corrections.md), [docs/schema.md](docs/schema.md), [docs/literature.md](docs/literature.md), and the latest [audit](docs/audit.md).
 
 ## Requirements
 
@@ -89,6 +89,11 @@ The normal suite uses an in-memory repository and needs no services. The live Ne
 ```bash
 SCOPEGRAPH_RUN_INTEGRATION=1 uv run pytest -m integration
 ```
+
+This is a research prototype, not an internet-facing production service. The API
+does not yet provide authentication, tenant isolation, quotas, distributed workers,
+or a production migration/backup policy. Keep Neo4j and the API bound to trusted
+local infrastructure until those controls are added.
 
 ## Configuration
 
@@ -167,7 +172,7 @@ Complete in Phase 6:
 Complete in Phase 7:
 
 - deterministic CrossScopeMem generation and four-system evaluation;
-- retrieval, answer, contamination, stale-memory, latency, token, storage, and correction metrics;
+- retrieval, answer, contamination, stale-memory, latency, token, storage, scope-classification, and correction metrics;
 - JSONL records, aggregation, Markdown tables, and SVG plots.
 
 Complete in Phase 8:
@@ -176,9 +181,9 @@ Complete in Phase 8:
   LoCoMo, MemConflict, MemoryAgentBench, RHELM, MemBench, Mem2ActBench, and TIME;
 - benchmark acquisition documentation without committing external data.
 
-Phase 9 reproducibility tooling is included through `make smoke`, `make migrate`, `make demo`, `make export-graph`, and the documented full-check workflow. External benchmark execution and live answer-model evaluation remain the next research implementation step.
+Phase 9 reproducibility tooling is included through `make smoke`, `make migrate`, `make demo`, `make export-graph`, resumable CrossScopeMem batches, and the documented full-check workflow. External benchmark replay and live answer-model evaluation are implemented, but full released-dataset runs and third-party-provider comparisons have not yet been executed or claimed.
 
-No deviation from the Phase 1 through 6 deliverables is known. The integration test is opt-in so `make test` stays deterministic and runnable without Docker; `make test-integration` exercises the real database when explicitly enabled. Phase 3 deliberately uses exact cosine scoring over the scope-filtered candidate set instead of a Neo4j vector index: this avoids fixing an embedding dimension in the schema and keeps provider changes reproducible on the target laptop. Phase 4 retains physical `scope_id` fields for compatibility with the common persistence schema, but VectorMemory and FlatGraphMemory never use them for retrieval validity. Each backend must use an isolated experiment repository because reset/namespacing belongs to the evaluation harness phase. Phase 5 performs no hard deletes; merge tombstones the duplicate and preserves a `SAME_AS` edge and combined provenance. Phase 6 keeps graph reads behind bounded, fixed repository queries and limits exports to 500 memories; it never exposes arbitrary browser-authored Cypher.
+The integration test is opt-in so `make test` stays deterministic and runnable without Docker; `make test-integration` exercises the real database when explicitly enabled. Phase 3 deliberately uses exact cosine scoring over the scope-filtered candidate set instead of a Neo4j vector index: this avoids fixing an embedding dimension in the schema and keeps provider changes reproducible on the target laptop, but it remains a production-scale limitation for very large individual scopes. Phase 4 retains physical `scope_id` fields for compatibility with the common persistence schema, but VectorMemory and FlatGraphMemory never use them for retrieval validity. Each backend must use an isolated experiment repository because reset/namespacing belongs to the evaluation harness phase. Phase 5 performs no hard deletes; merge tombstones the duplicate and preserves a `SAME_AS` edge and combined provenance. Phase 6 keeps graph reads behind bounded, fixed repository queries and limits exports to 500 memories; it never exposes arbitrary browser-authored Cypher.
 
 ## Planned experiment outputs
 

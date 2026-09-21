@@ -65,7 +65,14 @@ class BaselineRepository(Protocol):
         self, memory_id: str, embedding: list[float], model_name: str
     ) -> None: ...
 
-    async def get_memory_neighbors(self, memory_ids: list[str]) -> list[MemoryNeighbor]: ...
+    async def get_memory_neighbors(
+        self, memory_ids: list[str], *, eligible_ids: set[str] | None = None,
+        limit: int | None = None,
+    ) -> list[MemoryNeighbor]: ...
+
+    async def set_memory_embeddings(
+        self, values: list[tuple[str, str, list[float]]], model_name: str
+    ) -> None: ...
 
     async def stats(self, backend_name: str = "scopegraph") -> MemoryStats: ...
 
@@ -252,6 +259,7 @@ class BaselineMemorySystem(MemorySystem):
             memory
             for memory in memories
             if self._eligible(memory, current_scope, historical=historical)
+            and temporal_score(memory, now=effective_now, historical=historical) > 0
         ]
         query_vector = (await self.embedder.embed([query]))[0]
         await self._ensure_embeddings(candidates)
@@ -274,17 +282,14 @@ class BaselineMemorySystem(MemorySystem):
                 max_hops=self.retrieval_config.max_graph_hops,
                 max_expanded_nodes=self.retrieval_config.max_expanded_nodes,
                 max_time_ms=self.retrieval_config.max_traversal_time_ms,
+                eligible_ids={memory.id for memory in candidates},
             )
         expanded_memories = [
             memory
             for memory, _ in expanded.values()
             if self._eligible(memory, current_scope, historical=historical)
         ]
-        await self._ensure_embeddings(expanded_memories)
-        for memory in expanded_memories:
-            semantic[memory.id] = cosine_similarity(query_vector, memory.embedding or [])
-
-        all_memories = {memory.id: memory for memory in candidates}
+        all_memories = {memory.id: memory for memory in anchors}
         all_memories.update({memory.id: memory for memory in expanded_memories})
         anchor_ids = {memory.id for memory in anchors}
         step_by_id = {step.to_id: step for step in traversal_steps}
@@ -401,10 +406,13 @@ class BaselineMemorySystem(MemorySystem):
         vectors = await self.embedder.embed([memory.content for memory in missing])
         if len(vectors) != len(missing):
             raise ValueError("Embedding provider returned the wrong number of vectors")
+        await self.repository.set_memory_embeddings(
+            [(memory.id, memory.content, vector)
+             for memory, vector in zip(missing, vectors, strict=True)], self.embedder.model_name,
+        )
         for memory, vector in zip(missing, vectors, strict=True):
             memory.embedding = vector
             memory.embedding_model = self.embedder.model_name
-            await self.repository.set_memory_embedding(memory.id, vector, self.embedder.model_name)
 
     async def apply_correction(self, correction: CorrectionRequest) -> CorrectionResult:
         del correction

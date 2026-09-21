@@ -7,6 +7,7 @@ import { ScopeTree } from "./components/ScopeTree";
 import { TraceDebugger } from "./components/TraceDebugger";
 import type {
   CorrectionEvent,
+  ConfigStatus,
   GraphNode,
   GraphSubgraph,
   Memory,
@@ -30,6 +31,7 @@ export function App() {
   const [scopes, setScopes] = useState<Scope[]>([]);
   const [stats, setStats] = useState<MemoryStats>(EMPTY_STATS);
   const [health, setHealth] = useState<"checking" | "up" | "down">("checking");
+  const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null);
   const [graph, setGraph] = useState<GraphSubgraph | null>(null);
   const [selectedScopeId, setSelectedScopeId] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -45,14 +47,16 @@ export function App() {
 
   const loadHeader = useCallback(async () => {
     try {
-      const [scopeData, statData, healthData] = await Promise.all([
+      const [scopeData, statData, healthData, providerData] = await Promise.all([
         api.scopes(),
         api.stats(),
         api.health(),
+        api.configStatus(),
       ]);
       setScopes(scopeData);
       setStats(statData);
       setHealth(healthData.neo4j === "up" ? "up" : "down");
+      setConfigStatus(providerData);
     } catch (caught) {
       setHealth("down");
       setError(caught instanceof Error ? caught.message : "API unavailable");
@@ -201,18 +205,21 @@ export function App() {
           <span className="brand-mark" aria-hidden="true">✳</span>
           <div><strong>scopegraph</strong><span>~/memory-explorer</span></div>
         </div>
-        <nav className="product-nav" aria-label="Product navigation">
-          <button className="product-nav__item is-active" type="button">/graph</button>
-          <button className="product-nav__item" type="button">/retrieve</button>
-          <button className="product-nav__item" type="button">/history</button>
-        </nav>
+        <div className="product-nav" aria-label="Current workspace">
+          <span className="product-nav__item is-active">/graph</span>
+          <span className="product-nav__item">/retrieve below</span>
+        </div>
         <div className="system-stats" aria-label="System statistics">
           <span><b>{stats.scope_count}</b> scopes</span>
           <span><b>{stats.memory_count}</b> memories</span>
           <span><b>{stats.relationship_count}</b> edges</span>
         </div>
         <div className="topbar__runtime">
-          <span className="model-pill"><span className="model-pill__dot" />claude-code · local</span>
+          <span className="model-pill"><span className="model-pill__dot" />
+            {configStatus
+              ? `providers ${configStatus.llm_configured && configStatus.embedding_configured ? "ready" : "offline"}`
+              : "providers checking"}
+          </span>
           <div className={`health health--${health}`}>
             <span aria-hidden="true" />
             Neo4j {health === "checking" ? "checking" : health}
@@ -237,7 +244,7 @@ export function App() {
 
         <section className="panel graph-panel">
           <header className="graph-toolbar">
-            <div><span className="eyebrow">scopegraph inspect --live</span><h1><span className="prompt-char">›</span> {scopeLabel}</h1><span className="graph-subtitle">bounded traversal · provenance on · corrections reversible</span></div>
+            <div><span className="eyebrow">scopegraph inspect --{health === "up" ? "connected" : "offline"}</span><h1><span className="prompt-char">›</span> {scopeLabel}</h1><span className="graph-subtitle">bounded traversal · provenance on · corrections reversible</span></div>
             <div className="graph-toolbar__actions">
               <label className="toggle"><input type="checkbox" checked={includeInactive} onChange={(event) => setIncludeInactive(event.target.checked)} /><span />Inactive</label>
               <label className="toggle"><input type="checkbox" checked={includeSources} onChange={(event) => setIncludeSources(event.target.checked)} /><span />Sources</label>
@@ -259,7 +266,7 @@ export function App() {
       </main>
 
       <TraceDebugger scopes={scopes} initialScopeId={selectedScopeId} onResult={onRetrieval} onSelectMemory={(id) => void selectRetrievedMemory(id)} />
-      <footer className="app-footer"><span><b>✳</b> scopegraph research terminal</span><span>esc clear · / help · neo4j connected</span></footer>
+      <footer className="app-footer"><span><b>✳</b> scopegraph research terminal</span><span>neo4j {health} · providers {configStatus?.llm_configured && configStatus?.embedding_configured ? "ready" : "offline"}</span></footer>
     </div>
   );
 }

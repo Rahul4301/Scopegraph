@@ -14,7 +14,7 @@ from evals.adapters import (
     RHELMAdapter,
     TIMEAdapter,
 )
-from evals.adapters.external import session_inputs
+from evals.adapters.external import evidence_source_ids, session_inputs
 from evals.runners.run_external import run_external
 
 
@@ -50,6 +50,8 @@ def test_longmemeval_adapter_normalizes_sessions(tmp_path) -> None:
     example = adapter.load(path)[0]
     assert adapter.validate(path).model_dump()["turn_count"] == 1
     assert session_inputs(example)[0].messages[0].content == "We chose Neo4j."
+    inputs = session_inputs(example, as_of=example.question_date)
+    assert evidence_source_ids(example, inputs) == ["q1:s1:0"]
 
 
 def test_locomo_adapter_preserves_evidence_turn_ids(tmp_path) -> None:
@@ -169,3 +171,31 @@ async def test_external_runner_replays_local_release(tmp_path: Path) -> None:
     record = json.loads(created.read_text())
     assert record["dataset"] == "longmemeval"
     assert record["retrieved_memory_ids"]
+    assert record["answer"] is None
+    assert record["answer_evaluated"] is False
+
+
+def test_external_replay_excludes_future_turns(tmp_path) -> None:
+    path = _write_json(
+        tmp_path,
+        "longmemeval.json",
+        [
+            {
+                "question_id": "q1",
+                "question": "Which database?",
+                "answer": "Neo4j",
+                "question_date": "2025-01-02T00:00:00Z",
+                "haystack_session_ids": ["past", "future"],
+                "haystack_dates": ["2025-01-01", "2025-01-03"],
+                "haystack_sessions": [
+                    [{"role": "user", "content": "Neo4j"}],
+                    [{"role": "user", "content": "Future leak"}],
+                ],
+                "answer_session_ids": ["past"],
+            }
+        ],
+    )
+    example = LongMemEvalAdapter().load(path)[0]
+    inputs = session_inputs(example, as_of=example.question_date)
+    assert [item.id for item in inputs] == ["q1:past"]
+    assert evidence_source_ids(example, inputs) == ["q1:past:0"]

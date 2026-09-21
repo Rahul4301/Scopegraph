@@ -61,7 +61,10 @@ def normalize_turn(raw: dict[str, Any], *, fallback_id: str) -> ExternalTurn:
 
 
 def session_inputs(
-    example: ExternalBenchmarkExample, *, scope_id: str | None = None
+    example: ExternalBenchmarkExample,
+    *,
+    scope_id: str | None = None,
+    as_of: datetime | None = None,
 ) -> list[SessionInput]:
     """Convert normalized sessions into the common MemorySystem ingestion model."""
     target_scope = scope_id or f"external_{example.dataset}_{example.example_id}"
@@ -77,14 +80,17 @@ def session_inputs(
         started = session.date or example.question_date or datetime.now(UTC)
         messages = [
             SourceMessageCreate(
-                id=f"{example.example_id}:{session.session_id}:{index}",
+                id=f"{example.example_id}:{turn.turn_id or f'{session.session_id}:{index}'}",
                 session_id=f"{example.example_id}:{session.session_id}",
                 role=MessageRole(turn.role),
                 content=turn.content,
                 timestamp=turn.timestamp or started, turn_index=index,
             )
             for index, turn in enumerate(session.turns)
+            if as_of is None or (turn.timestamp or started) <= as_of
         ]
+        if (as_of is not None and started > as_of) or not messages:
+            continue
         inputs.append(
             SessionInput(
                 id=f"{example.example_id}:{session.session_id}",
@@ -94,3 +100,28 @@ def session_inputs(
             )
         )
     return inputs
+
+
+def evidence_source_ids(
+    example: ExternalBenchmarkExample, inputs: list[SessionInput]
+) -> list[str]:
+    """Resolve release evidence identifiers to normalized source-message IDs.
+
+    Releases variously identify an entire session or an individual turn. Unknown
+    identifiers remain absent instead of being guessed, making missing gold visible
+    as missing rather than granting accidental retrieval credit.
+    """
+    evidence = {
+        *example.answer_session_ids,
+        *(str(item) for item in example.metadata.get("evidence_turn_ids", [])),
+    }
+    resolved: set[str] = set()
+    for normalized in inputs:
+        for identifier in evidence:
+            normalized_id = f"{example.example_id}:{identifier}"
+            if normalized.id == normalized_id:
+                resolved.update(message.id for message in normalized.messages)
+            resolved.update(
+                message.id for message in normalized.messages if message.id == normalized_id
+            )
+    return sorted(resolved)

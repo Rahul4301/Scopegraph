@@ -1,5 +1,6 @@
 import json
 from collections.abc import Mapping
+from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -33,6 +34,9 @@ class Neo4jMemoryRepository:
 
     def __init__(self, client: Neo4jClient) -> None:
         self.client = client
+
+    def transaction(self) -> AbstractAsyncContextManager[None]:
+        return self.client.transaction()
 
     async def create_scope(self, request: ScopeCreate) -> Scope:
         if request.scope_type is ScopeType.GLOBAL:
@@ -116,6 +120,13 @@ class Neo4jMemoryRepository:
         return Scope.model_validate(_node(rows[0], "s")) if rows else None
 
     async def create_session(self, request: SessionCreate) -> Session:
+        existing = await self.get_session(request.id)
+        if existing is not None:
+            if existing.model_dump(exclude={"ended_at"}) != request.model_dump(
+                exclude={"ended_at"}
+            ):
+                raise ValueError("Session ID already exists with different data")
+            return existing
         payload = request.model_dump(mode="json")
         payload["metadata_json"] = _json(payload.pop("metadata"))
         rows = await self.client.execute_write(
@@ -154,6 +165,11 @@ class Neo4jMemoryRepository:
         return Session.model_validate(result)
 
     async def create_source_message(self, request: SourceMessageCreate) -> SourceMessage:
+        existing = await self.get_source_message(request.id)
+        if existing is not None:
+            if existing.model_dump() != request.model_dump():
+                raise ValueError("Source message ID already exists with different data")
+            return existing
         rows = await self.client.execute_write(
             """
             MATCH (session:Session {id: $session_id})
@@ -261,18 +277,92 @@ class Neo4jMemoryRepository:
         if not rows:
             raise ValueError(f"Memory {memory_id!r} does not exist")
 
-    async def get_memory_neighbors(self, memory_ids: list[str]) -> list[MemoryNeighbor]:
+    async def set_memory_embeddings(
+        self, values: list[tuple[str, str, list[float]]], model_name: str
+    ) -> None:
+        if not values:
+            return
+        await self.client.execute_write(
+            """
+            UNWIND $values AS item
+            MATCH (m:Memory {id: item.id})
+            WHERE m.content = item.content
+            SET m.embedding = item.vector, m.embedding_model = $model_name
+            """,
+            {"values": [{"id": mid, "content": content, "vector": vector}
+                        for mid, content, vector in values], "model_name": model_name},
+        )
+
+    async def list_retrieval_memories(
+        self, *, scope_ids: set[str], session_id: str | None,
+        historical: bool, now: datetime,
+    ) -> list[Memory]:
+        if not scope_ids:
+            return []
+        rows = await self.client.execute_read(
+            """
+            MATCH (m:Memory)
+            WHERE m.scope_id IN $scope_ids AND m.status IN $statuses
+              AND (m.valid_from IS NULL OR datetime(m.valid_from) <= datetime($now))
+              AND ($historical OR m.valid_to IS NULL OR datetime(m.valid_to) > datetime($now))
+              AND (m.scope_level <> 'session' OR EXISTS {
+                  MATCH (m)-[:DERIVED_FROM]->(:SourceMessage)-[:PART_OF]->(s:Session)
+                  WHERE s.id = $session_id
+              })
+            RETURN m, [(m)-[:DERIVED_FROM]->(source) | source.id] AS source_ids
+            ORDER BY m.id
+            """,
+            {"scope_ids": sorted(scope_ids), "session_id": session_id,
+             "statuses": ["active", "superseded", "archived"] if historical else ["active"],
+             "historical": historical, "now": now.isoformat()},
+        )
+        return [self._memory_from_row(row) for row in rows]
+
+    async def add_memory_sources(
+        self, memory_id: str, source_ids: list[str], confirmed_at: datetime | None
+    ) -> Memory:
+        rows = await self.client.execute_write(
+            """
+            MATCH (m:Memory {id: $id})
+            MATCH (source:SourceMessage) WHERE source.id IN $source_ids
+            WITH m, collect(source) AS sources
+            WHERE size(sources) = size($source_ids)
+            FOREACH (source IN sources | MERGE (m)-[:DERIVED_FROM]->(source))
+            SET m.last_confirmed_at = CASE
+                WHEN $confirmed_at IS NULL THEN m.last_confirmed_at
+                WHEN m.last_confirmed_at IS NULL
+                  OR datetime(m.last_confirmed_at) < datetime($confirmed_at) THEN $confirmed_at
+                ELSE m.last_confirmed_at END
+            RETURN m, [(m)-[:DERIVED_FROM]->(source) | source.id] AS source_ids
+            """,
+            {"id": memory_id, "source_ids": list(dict.fromkeys(source_ids)),
+             "confirmed_at": confirmed_at.isoformat() if confirmed_at else None},
+        )
+        if not rows:
+            raise ValueError("Memory or source message does not exist")
+        return self._memory_from_row(rows[0])
+
+    async def get_memory_neighbors(
+        self, memory_ids: list[str], *, eligible_ids: set[str] | None = None,
+        limit: int | None = None,
+    ) -> list[MemoryNeighbor]:
         if not memory_ids:
             return []
         rows = await self.client.execute_read(
             """
             MATCH (source:Memory)-[r:SUPERSEDES|CONTRADICTS|SAME_AS|SUPPORTS|RELATES_TO]-(m:Memory)
             WHERE source.id IN $memory_ids
-            RETURN source.id AS source_id, type(r) AS relation, m,
+              AND ($eligible_ids IS NULL OR m.id IN $eligible_ids)
+            WITH m, source, r ORDER BY source.id, type(r)
+            WITH m, head(collect({source_id: source.id, relation: type(r)})) AS edge
+            RETURN edge.source_id AS source_id, edge.relation AS relation, m,
                    [(m)-[:DERIVED_FROM]->(message) | message.id] AS source_ids
-            ORDER BY source.id, m.id
+            ORDER BY m.id
+            LIMIT $limit
             """,
-            {"memory_ids": memory_ids},
+            {"memory_ids": memory_ids, "eligible_ids": sorted(eligible_ids)
+             if eligible_ids is not None else None,
+             "limit": limit if limit is not None else 2**31-1},
         )
         return [
             MemoryNeighbor(

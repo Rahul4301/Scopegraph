@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from scopegraph.models.memory import MemoryCandidate
 from scopegraph.models.scope import ScopeCreate
 from scopegraph.models.session import SessionInput
 
@@ -25,12 +26,39 @@ class BenchmarkExample(BaseModel):
 
 
 class CrossScopeScenario(BaseModel):
+    profile: str = "smoke"
     scenario_id: str
     difficulty: int = Field(ge=1, le=4)
     seed: int
     scopes: list[ScopeCreate]
     sessions: list[SessionInput]
     examples: list[BenchmarkExample]
+    oracle_candidates: dict[str, list[MemoryCandidate]] = Field(default_factory=dict)
+
+
+class ScopeClassificationPair(BaseModel):
+    scenario_id: str
+    source_message_id: str
+    gold_candidate_index: int | None = None
+    predicted_candidate_index: int | None = None
+    gold_scope_level: str | None = None
+    predicted_scope_level: str | None = None
+    gold_scope_id: str | None = None
+    predicted_scope_id: str | None = None
+    gold_session_id: str | None = None
+    predicted_session_id: str | None = None
+    match_score: float | None = None
+    scope_level_correct: bool = False
+    scope_target_correct: bool = False
+
+
+class ScopeClassificationEvaluation(BaseModel):
+    protocol_version: str = "scope-classification-v1"
+    evaluated: bool
+    mode: str
+    pairs: list[ScopeClassificationPair] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    confusion_matrix: dict[str, dict[str, int]] = Field(default_factory=dict)
 
 
 class ExternalTurn(BaseModel):
@@ -99,7 +127,7 @@ class EvaluationRecord(BaseModel):
     retrieval_latency_ms: float = 0.0
     retrieved_tokens: int = 0
     answer: str | None = None
-    answer_evaluated: bool = True
+    answer_evaluated: bool = False
     answer_latency_ms: float | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None

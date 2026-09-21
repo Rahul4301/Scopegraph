@@ -9,13 +9,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from evals.adapters.cross_scope_mem import CrossScopeMemAdapter
+from evals.analysis.scope_classification import evaluate_scope_classification
+from evals.runners.checkpoint import save_json, source_fingerprint
 from evals.runners.providers import (
     EvaluationProviders,
     build_cross_scope_providers,
     freeze_extraction,
 )
 from evals.runners.run_eval import run_evaluation
+from evals.schemas import EvaluationRecord
 from scopegraph.config import get_settings
+from scopegraph.models.memory import MemoryCandidate
 
 
 async def run_all(*, systems: list[str], **kwargs: object) -> list[str]:
@@ -23,14 +27,23 @@ async def run_all(*, systems: list[str], **kwargs: object) -> list[str]:
         raise ValueError("Supply distinct evaluation systems")
     if set(systems) - {"vector_memory", "flat_graph", "two_level_graph", "scopegraph"}:
         raise ValueError("Unknown evaluation system")
-    batch = Path(str(kwargs.pop("output", "results/batches"))) / datetime.now(UTC).strftime(
-        "%Y%m%dT%H%M%S%fZ"
+    concurrency = int(str(kwargs.pop("concurrency", 1)))
+    if concurrency < 1 or concurrency > len(systems):
+        raise ValueError("concurrency must be between 1 and the number of systems")
+    resume_path = kwargs.pop("resume", None)
+    output_root = kwargs.pop("output", "results/batches")
+    batch = (
+        Path(str(resume_path))
+        if resume_path
+        else Path(str(output_root)) / datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     )
-    batch.mkdir(parents=True, exist_ok=False)
+    if not resume_path:
+        batch.mkdir(parents=True, exist_ok=False)
     scenarios = CrossScopeMemAdapter(
         seed=int(str(kwargs.get("seed", 42))),
         difficulty=int(str(kwargs.get("difficulty", 2))),
         scenario_count=int(str(kwargs.get("scenario_count", 1))),
+        profile=str(kwargs.get("profile", "research")),
     ).scenarios()
     bank: dict[str, EvaluationProviders] = {}
     settings = get_settings()
@@ -39,21 +52,42 @@ async def run_all(*, systems: list[str], **kwargs: object) -> list[str]:
     )
     diff = diff_result.stdout
     manifest = {
-        "protocol": "cross-scope-v2", "status": "preparing", "systems": systems,
-        "options": kwargs, "paths": [],
-        "llm_model": settings.llm_model, "embedding_model": settings.embedding_model,
+        "protocol": f"cross-scope-v3/{kwargs.get('profile', 'research')}",
+        "status": "preparing",
+        "systems": systems,
+        "concurrency": concurrency,
+        "options": kwargs,
+        "paths": [],
+        "llm_model": settings.llm_model,
+        "embedding_model": settings.embedding_model,
         "working_diff_sha256": hashlib.sha256(diff).hexdigest(),
+        "source_fingerprint": source_fingerprint(),
         "extraction_policy": "frozen once per source; no backend-specific existing memories",
         "latency_protocol": "warm-embeddings/in-memory-repository",
-        "limitations": ["synthetic fixture; seeds shuffle order, not independent worlds",
-                        "offline runs evaluate retrieval, not model answer quality",
-                        "retrieval latency excludes extraction and embedding API preparation"],
+        "limitations": [
+            "synthetic templates; use external datasets before generalizing",
+            "offline runs evaluate retrieval, not model answer quality",
+            "retrieval latency excludes extraction and embedding API preparation",
+        ],
     }
     manifest_path = batch / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    if resume_path:
+        previous = json.loads(manifest_path.read_text())
+        for key in ("options", "systems", "source_fingerprint", "llm_model", "embedding_model"):
+            if previous.get(key) != manifest[key]:
+                raise ValueError(f"Cannot resume: {key} changed from the original batch")
+    save_json(manifest_path, manifest)
+    save_json(
+        batch / "scenarios.json", [scenario.model_dump(mode="json") for scenario in scenarios]
+    )
     paths = []
     try:
-        frozen = {}
+        extraction_path = batch / "extractions.json"
+        frozen = (
+            json.loads(extraction_path.read_text())
+            if resume_path and extraction_path.exists()
+            else {}
+        )
         for scenario in scenarios:
             providers = build_cross_scope_providers(
                 scenario,
@@ -61,19 +95,72 @@ async def run_all(*, systems: list[str], **kwargs: object) -> list[str]:
                 live_embeddings=bool(kwargs.get("live") or kwargs.get("live_embeddings")),
             )
             bank[scenario.scenario_id] = providers
-            candidates = await freeze_extraction(scenario, providers)
+
+            def persist(candidates, scenario_id=scenario.scenario_id):
+                frozen[scenario_id] = {
+                    key: [candidate.model_dump(mode="json") for candidate in values]
+                    for key, values in candidates.items()
+                }
+                save_json(extraction_path, frozen)
+
+            candidates = await freeze_extraction(
+                scenario,
+                providers,
+                cached={
+                    key: [MemoryCandidate.model_validate(candidate) for candidate in values]
+                    for key, values in frozen.get(scenario.scenario_id, {}).items()
+                },
+                checkpoint=persist,
+            )
             frozen[scenario.scenario_id] = {
                 key: [candidate.model_dump(mode="json") for candidate in values]
                 for key, values in candidates.items()
             }
         artifact = json.dumps(frozen, indent=2, sort_keys=True)
-        (batch / "extractions.json").write_text(artifact + "\n")
+        save_json(extraction_path, frozen)
         manifest["extractions_sha256"] = hashlib.sha256(artifact.encode()).hexdigest()
-        for system in systems:
-            paths.append(str(await run_evaluation(
-                system_name=system, output=str(batch / f"{system}.jsonl"),
-                provider_bank=bank, **kwargs,
-            )))
+        classification = evaluate_scope_classification(
+            scenarios,
+            {
+                scenario_id: {
+                    message_id: [MemoryCandidate.model_validate(candidate) for candidate in values]
+                    for message_id, values in by_message.items()
+                }
+                for scenario_id, by_message in frozen.items()
+            },
+            live_extraction=bool(kwargs.get("live") or kwargs.get("live_extraction")),
+        )
+        save_json(batch / "classification.json", classification.model_dump(mode="json"))
+        manifest["classification_evaluated"] = classification.evaluated
+        semaphore = asyncio.Semaphore(concurrency)
+        total_questions = sum(len(scenario.examples) for scenario in scenarios)
+
+        async def run_system(system: str) -> str:
+            async with semaphore:
+                completed = 0
+
+                def report(record: EvaluationRecord) -> None:
+                    nonlocal completed
+                    completed += 1
+                    print(
+                        f"[{system}] {completed}/{total_questions} | "
+                        f"{record.scenario_id} | {record.question_id} | "
+                        f"retrieval={record.retrieval_latency_ms:.1f}ms",
+                        flush=True,
+                    )
+
+                return str(
+                    await run_evaluation(
+                        system_name=system,
+                        output=str(batch / f"{system}.jsonl"),
+                        provider_bank=bank,
+                        resume=bool(resume_path),
+                        on_progress=report,
+                        **kwargs,
+                    )
+                )
+
+        paths.extend(await asyncio.gather(*(run_system(system) for system in systems)))
         manifest["status"] = "complete"
         return paths
     except Exception:
@@ -81,9 +168,9 @@ async def run_all(*, systems: list[str], **kwargs: object) -> list[str]:
         raise
     finally:
         manifest["paths"] = paths
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        save_json(manifest_path, manifest)
         for providers in bank.values():
-            providers.close()
+            await providers.aclose()
 
 
 def main() -> None:
@@ -91,21 +178,39 @@ def main() -> None:
     parser.add_argument("--dataset", default="cross_scope_mem")
     parser.add_argument("--systems", default="vector_memory,flat_graph,two_level_graph,scopegraph")
     parser.add_argument("--config")
+    parser.add_argument("--output", default="results/batches")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--difficulty", type=int, default=2)
     parser.add_argument("--scenario-count", type=int, default=1)
+    parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--live-answer", action="store_true")
     parser.add_argument("--live-extraction", action="store_true")
     parser.add_argument("--live-embeddings", action="store_true")
     parser.add_argument("--live", action="store_true")
+    parser.add_argument("--profile", choices=["smoke", "research"], default="research")
+    parser.add_argument(
+        "--resume", help="Resume an existing batch directory with identical options"
+    )
     args = parser.parse_args()
     if args.dataset != "cross_scope_mem":
         raise SystemExit("run_all supports cross_scope_mem; use run_external for external datasets")
-    paths = asyncio.run(run_all(systems=[item.strip() for item in args.systems.split(",")],
-                                seed=args.seed, difficulty=args.difficulty,
-                                scenario_count=args.scenario_count, config_path=args.config,
-                                live_answer=args.live_answer, live_extraction=args.live_extraction,
-                                live_embeddings=args.live_embeddings, live=args.live))
+    paths = asyncio.run(
+        run_all(
+            systems=[item.strip() for item in args.systems.split(",")],
+            seed=args.seed,
+            difficulty=args.difficulty,
+            scenario_count=args.scenario_count,
+            concurrency=args.concurrency,
+            config_path=args.config,
+            output=args.output,
+            live_answer=args.live_answer,
+            live_extraction=args.live_extraction,
+            live_embeddings=args.live_embeddings,
+            live=args.live,
+            resume=args.resume,
+            profile=args.profile,
+        )
+    )
     print("\n".join(paths))
 
 

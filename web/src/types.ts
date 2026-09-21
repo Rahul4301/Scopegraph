@@ -100,6 +100,11 @@ export interface MemoryStats {
   relationship_count: number;
 }
 
+export interface ConfigStatus {
+  llm_configured: boolean;
+  embedding_configured: boolean;
+}
+
 export interface PruneImpact {
   memory_id: string;
   relation: string;

@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import hashlib
+import json
 import subprocess
 import time
 from datetime import UTC, datetime
@@ -11,9 +12,10 @@ from pathlib import Path
 import yaml
 
 from evals.adapters.cross_scope_mem import KeywordEmbeddingProvider
-from evals.adapters.external import session_inputs
+from evals.adapters.external import evidence_source_ids, session_inputs
 from evals.adapters.registry import EXTERNAL_DATASETS, external_adapters
 from evals.metrics.storage import logical_storage_stats
+from evals.runners.checkpoint import RecordCheckpoint, source_fingerprint
 from evals.schemas import EvaluationRecord
 from scopegraph.backends.flat_graph import FlatGraphMemory
 from scopegraph.backends.scopegraph import ScopeGraphMemorySystem
@@ -27,6 +29,7 @@ from scopegraph.graph.in_memory import InMemoryMemoryRepository
 from scopegraph.llm.answering import AnswerModel, OpenAICompatibleAnswerer
 from scopegraph.llm.extraction import CandidateExtractor, LLMMemoryExtractor
 from scopegraph.llm.openai_compatible import OpenAICompatibleLLM
+from scopegraph.llm.transport import close_provider
 from scopegraph.memory.retriever import RetrievalConfig, ScopeAwareRetriever
 from scopegraph.models.memory import MemoryCandidate, MemoryType
 from scopegraph.models.scope import ScopeCreate, ScopeRef, ScopeType
@@ -68,8 +71,12 @@ def _config(path: str | None) -> tuple[dict, str]:
 
 async def _answer(model: AnswerModel | None, question: str, items) -> str | None:
     if model is None:
-        return items[0].content if items else None
+        return None
     return await model.generate(question=question, context=items)
+
+
+def _usage(provider: object | None, key: str) -> int | None:
+    return getattr(provider, "last_usage", {}).get(key)
 
 
 async def run_external(
@@ -84,12 +91,14 @@ async def run_external(
     live_extraction: bool = False,
     live_embeddings: bool = False,
     live: bool = False,
+    resume: bool = False,
 ) -> Path:
     live_answer = live_answer or live
     live_extraction = live_extraction or live
     live_embeddings = live_embeddings or live
+    source_path = Path(path)
     adapter = external_adapters()[dataset]
-    examples = adapter.load(path)[:limit]
+    examples = adapter.load(source_path)[:limit]
     config, config_hash = _config(config_path)
     retrieval = RetrievalConfig.from_config(config.get("retrieval", {}))
     answer_model: AnswerModel | None = None
@@ -103,9 +112,63 @@ async def run_external(
     embedding_cache: SQLiteEmbeddingCache | None = None
     if live_embeddings:
         embedding_cache = SQLiteEmbeddingCache(get_settings().embedding_cache_path)
-    records: list[EvaluationRecord] = []
+        settings = get_settings()
+        embedder: EmbeddingProvider = CachedEmbedder(
+            OpenAICompatibleEmbeddingProvider(
+                base_url=settings.embedding_base_url,
+                api_key=settings.embedding_api_key.get_secret_value(),
+                model=settings.embedding_model,
+            ),
+            embedding_cache,
+        )
+    else:
+        embedder = KeywordEmbeddingProvider()
+    if live_extraction:
+        settings = get_settings()
+        extractor: CandidateExtractor = LLMMemoryExtractor(
+            OpenAICompatibleLLM(
+                base_url=settings.llm_base_url,
+                api_key=settings.llm_api_key.get_secret_value(),
+                model=settings.llm_model,
+            )
+        )
+    else:
+        extractor = TurnMemoryExtractor()
+    settings = get_settings()
+    source_bytes = await asyncio.to_thread(source_path.read_bytes)
+    protocol_payload = {
+        "config_hash": config_hash,
+        "dataset_sha256": hashlib.sha256(source_bytes).hexdigest(),
+        "dataset": dataset,
+        "system": system_name,
+        "limit": limit,
+        "live_answer": live_answer,
+        "live_extraction": live_extraction,
+        "live_embeddings": live_embeddings,
+        "llm_model": settings.llm_model if live_answer or live_extraction else None,
+        "embedding_model": settings.embedding_model if live_embeddings else None,
+        "source_fingerprint": source_fingerprint(),
+    }
+    config_hash = hashlib.sha256(
+        json.dumps(protocol_payload, sort_keys=True).encode()
+    ).hexdigest()
+    run_id = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}_{dataset}_{system_name}"
+    destination = Path(output or config.get("output_root", "results/raw"))
+    if destination.suffix != ".jsonl":
+        destination /= f"{run_id}.jsonl"
+    checkpoint = RecordCheckpoint(destination, resume=resume)
+    for record in checkpoint.records.values():
+        if record.config_hash != config_hash or record.system != system_name:
+            raise ValueError(
+                "Checkpoint does not match the dataset, code, config, models or system"
+            )
+    if checkpoint.records:
+        run_id = next(iter(checkpoint.records.values())).run_id
     try:
         for example in examples:
+            key = (example.example_id, example.question_id)
+            if key in checkpoint.records:
+                continue
             repository = InMemoryMemoryRepository()
             global_scope_id = f"external-global-{example.example_id}"
             scope_id = f"external-{dataset}-{example.example_id}"
@@ -120,30 +183,6 @@ async def run_external(
                     parent_scope_id=global_scope_id,
                 )
             )
-            if live_embeddings:
-                settings = get_settings()
-                assert embedding_cache is not None
-                embedder: EmbeddingProvider = CachedEmbedder(
-                    OpenAICompatibleEmbeddingProvider(
-                        base_url=settings.embedding_base_url,
-                        api_key=settings.embedding_api_key.get_secret_value(),
-                        model=settings.embedding_model,
-                    ),
-                    embedding_cache,
-                )
-            else:
-                embedder = KeywordEmbeddingProvider()
-            if live_extraction:
-                settings = get_settings()
-                extractor: CandidateExtractor = LLMMemoryExtractor(
-                    OpenAICompatibleLLM(
-                        base_url=settings.llm_base_url,
-                        api_key=settings.llm_api_key.get_secret_value(),
-                        model=settings.llm_model,
-                    )
-                )
-            else:
-                extractor = TurnMemoryExtractor()
             if system_name == "vector_memory":
                 system = VectorMemory(repository, extractor, embedder, retrieval_config=retrieval)
             elif system_name == "flat_graph":
@@ -162,7 +201,8 @@ async def run_external(
                 )
             else:
                 raise ValueError(f"Unknown evaluation system: {system_name}")
-            inputs = session_inputs(example, scope_id=scope_id)
+            inputs = session_inputs(example, scope_id=scope_id, as_of=example.question_date)
+            gold_sources = evidence_source_ids(example, inputs)
             for session in inputs:
                 await system.ingest_session(
                     session,
@@ -176,7 +216,10 @@ async def run_external(
             retrieval_cfg = config.get("retrieval", {})
             top_k = int(retrieval_cfg.get("top_k", 8))
             token_budget = int(retrieval_cfg.get("token_budget", 1500))
-            started = time.perf_counter()
+            memories = await repository.list_memories(include_inactive=True)
+            preparation_started = time.perf_counter()
+            await embedder.embed([example.question, *(memory.content for memory in memories)])
+            preparation_ms = (time.perf_counter() - preparation_started) * 1000
             result = await system.retrieve(
                 example.question,
                 current_scope=ScopeRef(id=scope_id, scope_type=ScopeType.CUSTOM),
@@ -184,11 +227,17 @@ async def run_external(
                 token_budget=token_budget,
                 now=example.question_date,
             )
+            answer_started = time.perf_counter()
             answer = await _answer(answer_model, example.question, result.items)
+            answer_latency = (
+                (time.perf_counter() - answer_started) * 1000 if answer_model else None
+            )
             stats = await system.stats()
-            records.append(
-                EvaluationRecord(
-                    run_id=f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}_{dataset}_{system_name}",
+            record = EvaluationRecord(
+                protocol_version="external-v2",
+                latency_protocol="warm-embeddings/in-memory-repository",
+                embedding_preparation_ms=preparation_ms,
+                run_id=run_id,
                     dataset=dataset,
                     system=system_name,
                     scenario_id=example.example_id,
@@ -198,6 +247,14 @@ async def run_external(
                     gold_answer=example.answer,
                     hypothesis=answer,
                     current_scope_id=scope_id,
+                    gold_scope_ids=[scope_id] if gold_sources else [],
+                    gold_source_ids=gold_sources,
+                    allowed_scope_ids=[global_scope_id, scope_id],
+                    retrieved_source_ids=[item.source_ids for item in result.items],
+                    retrieved_origin_scope_ids=[
+                        [scope_id] for _ in result.items
+                    ],
+                    retrieved_contents=[item.content for item in result.items],
                     retrieved_memory_ids=[item.memory_id for item in result.items],
                     retrieved_scope_ids=[item.scope_id for item in result.items],
                     retrieved_statuses=[item.status.value for item in result.items],
@@ -205,23 +262,28 @@ async def run_external(
                     retrieval_latency_ms=result.retrieval_latency_ms,
                     retrieved_tokens=result.token_count,
                     answer=answer,
-                    answer_latency_ms=max(0.0, (time.perf_counter() - started) * 1000),
+                    answer_evaluated=live_answer,
+                    answer_latency_ms=answer_latency,
+                    input_tokens=_usage(answer_model, "prompt_tokens"),
+                    output_tokens=_usage(answer_model, "completion_tokens"),
+                    evaluation_mode=(
+                        f"extraction={'live' if live_extraction else 'turn-preserving'};"
+                        f"embeddings={'live' if live_embeddings else 'hash'};"
+                        f"answer={'live' if live_answer else 'not-evaluated'}"
+                    ),
                     storage_stats=logical_storage_stats(stats),
                     trace=[step.model_dump(mode="json") for step in result.trace],
                     config_hash=config_hash,
                     git_commit=_git_commit(),
                     seed=42,
-                )
             )
+            checkpoint.append(record)
     finally:
+        await close_provider(extractor)
+        await close_provider(embedder)
+        await close_provider(answer_model)
         if embedding_cache is not None:
             embedding_cache.close()
-    run_id = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}_{dataset}_{system_name}"
-    destination = Path(output or config.get("output_root", "results/raw"))
-    if destination.suffix != ".jsonl":
-        destination /= f"{run_id}.jsonl"
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text("".join(record.model_dump_json() + "\n" for record in records))
     return destination
 
 
@@ -241,6 +303,7 @@ def main() -> None:
     parser.add_argument("--live-extraction", action="store_true")
     parser.add_argument("--live-embeddings", action="store_true")
     parser.add_argument("--live", action="store_true")
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     print(
         asyncio.run(
@@ -255,6 +318,7 @@ def main() -> None:
                 live_extraction=args.live_extraction,
                 live_embeddings=args.live_embeddings,
                 live=args.live,
+                resume=args.resume,
             )
         )
     )

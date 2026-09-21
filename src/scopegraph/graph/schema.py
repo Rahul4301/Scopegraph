@@ -19,6 +19,7 @@ CONSTRAINTS: tuple[str, ...] = (
 )
 
 INDEXES: tuple[str, ...] = (
+    "CREATE INDEX memory_scope_status_idx IF NOT EXISTS FOR (n:Memory) ON (n.scope_id, n.status)",
     "CREATE INDEX scope_type_idx IF NOT EXISTS FOR (n:Scope) ON (n.scope_type)",
     "CREATE INDEX scope_parent_idx IF NOT EXISTS FOR (n:Scope) ON (n.parent_scope_id)",
     "CREATE INDEX session_scope_idx IF NOT EXISTS FOR (n:Session) ON (n.scope_id)",

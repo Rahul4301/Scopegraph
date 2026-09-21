@@ -1,9 +1,11 @@
 """CrossScopeMem dataset adapter and deterministic offline providers."""
 
 import hashlib
+import json
 import re
 
 from evals.scenarios.generate_cross_scope import candidates_by_message, generate_cross_scope_mem
+from evals.scenarios.research import generate_research_scenario
 from evals.schemas import BenchmarkExample, CrossScopeScenario
 from scopegraph.llm.extraction import CandidateExtractor
 from scopegraph.models.memory import MemoryCandidate
@@ -18,11 +20,12 @@ class ScenarioExtractor(CandidateExtractor):
     async def extract(self, messages: list[SourceMessage], *, current_scope: ScopeRef | None,
                       existing_memories: list[str] | None = None) -> list[MemoryCandidate]:
         del current_scope, existing_memories
-        return [
-            candidate.model_copy(deep=True)
-            for message in messages
-            for candidate in self.candidates.get(message.id, [])
-        ]
+        unique: dict[str, MemoryCandidate] = {}
+        for message in messages:
+            for candidate in self.candidates.get(message.id, []):
+                key = json.dumps(candidate.model_dump(mode="json"), sort_keys=True)
+                unique.setdefault(key, candidate.model_copy(deep=True))
+        return list(unique.values())
 
 
 class KeywordEmbeddingProvider:
@@ -44,10 +47,14 @@ class KeywordEmbeddingProvider:
 class CrossScopeMemAdapter:
     name = "cross_scope_mem"
 
-    def __init__(self, *, seed: int = 42, difficulty: int = 2, scenario_count: int = 1) -> None:
+    def __init__(self, *, seed: int = 42, difficulty: int = 2, scenario_count: int = 1,
+                 profile: str = "research") -> None:
+        if scenario_count < 1 or profile not in {"smoke", "research"}:
+            raise ValueError("Positive scenario count and smoke/research profile required")
+        generator = generate_cross_scope_mem if profile == "smoke" else generate_research_scenario
         self._scenarios = [
-            generate_cross_scope_mem(seed=seed + index, difficulty=difficulty,
-                                     scenario_id=f"cross_scope_mem_{seed + index}_{difficulty}")
+            generator(seed=seed + index, difficulty=difficulty,
+                      scenario_id=f"{profile}_{seed + index}_{difficulty}")
             for index in range(scenario_count)
         ]
 

@@ -14,6 +14,7 @@ data/
 .scopegraph/
 .scopegraph-*.log
 results/raw/*.jsonl
+results/raw/*.json
 results/processed/*
 results/figures/*
 results/tables/*
@@ -22,6 +23,7 @@ results/latest/*
 results/exploratory_*/
 results/live_*/
 results/audit-report/
+results/neo4j-live-report/
 results/batches/
 web/node_modules/
 web/dist/

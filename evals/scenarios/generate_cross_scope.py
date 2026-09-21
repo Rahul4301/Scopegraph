@@ -171,6 +171,9 @@ def _with_canonical_content(scenario: CrossScopeScenario) -> CrossScopeScenario:
 
 def candidates_by_message(scenario: CrossScopeScenario) -> dict[str, list[MemoryCandidate]]:
     """Return deterministic extraction candidates keyed by source-message ID."""
+    if scenario.oracle_candidates:
+        return {key: [candidate.model_copy(deep=True) for candidate in values]
+                for key, values in scenario.oracle_candidates.items()}
     candidates: dict[str, list[MemoryCandidate]] = {}
     for session in scenario.sessions:
         message = session.messages[0]

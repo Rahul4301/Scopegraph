@@ -9,3 +9,8 @@ run_eval -> results/raw/*.jsonl -> run_report -> processed/tables/figures
 ```
 
 The correction-persistence runner uses the same in-memory ScopeGraph correction service as the API and records relapse at fixed future-session offsets. It does not require the UI or a human-subject study.
+
+Synthetic results establish regression behavior only. Claims against hosted systems
+such as Supermemory require the same released dataset, source histories, answer model,
+judge, top-k/context budget, warm-up policy, and latency boundary. Local in-memory
+retrieval timings must never be compared directly with end-to-end hosted API latency.

@@ -1,5 +1,7 @@
 """Provider construction for reproducible offline and live evaluations."""
 
+import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from evals.adapters.cross_scope_mem import KeywordEmbeddingProvider, ScenarioExtractor
@@ -11,6 +13,7 @@ from scopegraph.embeddings.cache import CachedEmbedder, SQLiteEmbeddingCache
 from scopegraph.embeddings.openai_compatible import OpenAICompatibleEmbeddingProvider
 from scopegraph.llm.extraction import CandidateExtractor, LLMMemoryExtractor
 from scopegraph.llm.openai_compatible import OpenAICompatibleLLM
+from scopegraph.llm.transport import close_provider
 from scopegraph.models.memory import MemoryCandidate
 from scopegraph.models.scope import ScopeRef
 from scopegraph.models.source import SourceMessage
@@ -23,31 +26,61 @@ class PreparedEmbedder:
         self.provider = provider
         self.model_name = provider.model_name
         self.vectors: dict[str, list[float]] = {}
+        self._lock = asyncio.Lock()
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        missing = list(dict.fromkeys(text for text in texts if text not in self.vectors))
-        if missing:
-            vectors = await self.provider.embed(missing)
-            self.vectors.update(zip(missing, vectors, strict=True))
-        return [list(self.vectors[text]) for text in texts]
+        async with self._lock:
+            missing = list(dict.fromkeys(text for text in texts if text not in self.vectors))
+            if missing:
+                vectors = await self.provider.embed(missing)
+                self.vectors.update(zip(missing, vectors, strict=True))
+            return [list(self.vectors[text]) for text in texts]
 
 
-async def freeze_extraction(scenario: CrossScopeScenario,
-                            providers: "EvaluationProviders") -> dict[str, list[MemoryCandidate]]:
+async def freeze_extraction(
+    scenario: CrossScopeScenario,
+    providers: "EvaluationProviders",
+    *,
+    cached: dict[str, list[MemoryCandidate]] | None = None,
+    checkpoint: Callable[[dict[str, list[MemoryCandidate]]], None] | None = None,
+) -> dict[str, list[MemoryCandidate]]:
     """Extract each source once, with identical inputs independent of backend state."""
-    by_message: dict[str, list[MemoryCandidate]] = {}
+    by_message: dict[str, list[MemoryCandidate]] = dict(cached or {})
     scopes = {scope.id: scope for scope in scenario.scopes}
     for session in scenario.sessions:
+        if not session.messages or all(message.id in by_message for message in session.messages):
+            continue
         scope = scopes[session.scope_id]
         candidates = await providers.extractor.extract(
             [SourceMessage(**message.model_dump()) for message in session.messages],
-            current_scope=ScopeRef(id=scope.id, name=scope.name, scope_type=scope.scope_type,
-                                   session_id=session.id),
+            current_scope=ScopeRef(
+                id=scope.id, name=scope.name, scope_type=scope.scope_type, session_id=session.id
+            ),
             existing_memories=[],
         )
-        # ScenarioExtractor consumes each candidate exactly once even if it cites
-        # several messages from the same session.
-        by_message[session.messages[0].id] = candidates
+        message_ids = {message.id for message in session.messages}
+        invalid_sources = sorted(
+            {
+                source_id
+                for candidate in candidates
+                for source_id in candidate.source_message_ids
+                if source_id not in message_ids
+            }
+        )
+        if invalid_sources:
+            raise ValueError(
+                f"Extractor returned source IDs outside session {session.id}: "
+                f"{invalid_sources}"
+            )
+        for message in session.messages:
+            by_message[message.id] = [
+                candidate
+                for candidate in candidates
+                if message.id in candidate.source_message_ids
+            ]
+        if checkpoint is not None:
+            checkpoint(by_message)
+    await close_provider(providers.extractor)
     providers.extractor = ScenarioExtractor(by_message)
     return by_message
 
@@ -61,6 +94,11 @@ class EvaluationProviders:
     def close(self) -> None:
         if self.embedding_cache is not None:
             self.embedding_cache.close()
+
+    async def aclose(self) -> None:
+        await close_provider(self.extractor)
+        await close_provider(self.embedder)
+        self.close()
 
 
 def build_cross_scope_providers(
@@ -79,9 +117,7 @@ def build_cross_scope_providers(
             )
         )
     else:
-        extractor = ScenarioExtractor(
-            candidates_by_message(scenario)
-        )
+        extractor = ScenarioExtractor(candidates_by_message(scenario))
 
     if live_embeddings:
         cache = SQLiteEmbeddingCache(settings.embedding_cache_path)

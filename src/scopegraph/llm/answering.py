@@ -1,10 +1,8 @@
 """Answer-model interfaces and an OpenAI-compatible implementation."""
 
-import asyncio
 from typing import Protocol
 
-import httpx
-
+from scopegraph.llm.transport import ModelTransport
 from scopegraph.models.retrieval import RetrievedMemory
 
 
@@ -18,12 +16,22 @@ class OpenAICompatibleAnswerer:
     def __init__(
         self, *, base_url: str, api_key: str, model: str,
         timeout_seconds: float = 60.0, max_retries: int = 3,
+        max_output_tokens: int = 300,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
+        self.max_output_tokens = max_output_tokens
+        self.transport = ModelTransport(timeout=timeout_seconds, retries=max_retries)
+
+    @property
+    def last_usage(self) -> dict[str, int]:
+        return self.transport.last_usage
+
+    async def aclose(self) -> None:
+        await self.transport.aclose()
 
     async def generate(self, *, question: str, context: list[RetrievedMemory]) -> str:
         if not self.api_key or not self.model:
@@ -35,6 +43,7 @@ class OpenAICompatibleAnswerer:
         )
         payload: dict[str, object] = {
             "model": self.model,
+            "max_completion_tokens": self.max_output_tokens,
             "messages": [
                 {"role": "system", "content": (
                     "Answer using only the supplied memory evidence. Return the shortest direct "
@@ -48,22 +57,9 @@ class OpenAICompatibleAnswerer:
         }
         if not self.model.startswith("gpt-5"):
             payload["temperature"] = 0
-        last_error: Exception | None = None
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            for attempt in range(self.max_retries):
-                try:
-                    response = await client.post(
-                        f"{self.base_url}/chat/completions",
-                        json=payload,
-                        headers={"Authorization": f"Bearer {self.api_key}"},
-                    )
-                    response.raise_for_status()
-                    content = response.json()["choices"][0]["message"]["content"]
-                    if not isinstance(content, str):
-                        raise ValueError("Answer content must be a string")
-                    return content.strip()
-                except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
-                    last_error = exc
-                    if attempt + 1 < self.max_retries:
-                        await asyncio.sleep(0.25 * (2**attempt))
-        raise RuntimeError("Answer request failed after retries") from last_error
+        body = await self.transport.post(f"{self.base_url}/chat/completions",
+                                         payload=payload, api_key=self.api_key)
+        content = body["choices"][0]["message"]["content"]
+        if not isinstance(content, str):
+            raise ValueError("Answer content must be a string")
+        return content.strip()

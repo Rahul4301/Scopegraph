@@ -47,6 +47,11 @@ def score_record(record: EvaluationRecord, *, k: int = 8) -> ScoredRecord:
             [{"status": status} for status in record.retrieved_statuses]
         ),
     }
+    if record.question_type == "abstention":
+        metrics[f"precision_at_{k}"] = None
+        metrics[f"recall_at_{k}"] = None
+    if record.question_type in {"temporal_historical", "temporal_historical_state"}:
+        metrics["stale_memory_error_rate"] = None
     return ScoredRecord(**record.model_dump(), metrics=metrics)
 
 

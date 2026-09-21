@@ -1,5 +1,10 @@
+from collections import defaultdict
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from copy import deepcopy
 from datetime import UTC, datetime
 
+from scopegraph.memory.eligibility import eligible_memory
 from scopegraph.memory.traversal import MemoryNeighbor
 from scopegraph.models.correction import (
     CorrectionEvent,
@@ -29,6 +34,7 @@ class InMemoryMemoryRepository:
         self.sessions: dict[str, Session] = {}
         self.messages: dict[str, SourceMessage] = {}
         self.memories: dict[str, Memory] = {}
+        self._scope_memory_ids: dict[str, set[str]] = defaultdict(set)
         self.supersedes: set[tuple[str, str]] = set()
         self.supports: set[tuple[str, str]] = set()
         self.same_as: set[tuple[str, str]] = set()
@@ -36,6 +42,15 @@ class InMemoryMemoryRepository:
         self.relates_to: set[tuple[str, str, RelationKind]] = set()
         self.correction_events: dict[str, CorrectionEvent] = {}
         self.correction_targets: dict[str, set[str]] = {}
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[None]:
+        before = deepcopy(self.__dict__)
+        try:
+            yield
+        except BaseException:
+            self.__dict__.update(before)
+            raise
 
     async def create_scope(self, request: ScopeCreate) -> Scope:
         if request.id in self.scopes:
@@ -86,6 +101,11 @@ class InMemoryMemoryRepository:
         return scope
 
     async def create_session(self, request: SessionCreate) -> Session:
+        if request.id in self.sessions:
+            current = self.sessions[request.id]
+            if current.model_dump(exclude={"ended_at"}) != request.model_dump(exclude={"ended_at"}):
+                raise ValueError("Session ID already exists with different data")
+            return current
         if request.scope_id not in self.scopes:
             raise ValueError(f"Scope {request.scope_id!r} does not exist")
         session = Session.model_validate(request.model_dump())
@@ -104,6 +124,11 @@ class InMemoryMemoryRepository:
         return session
 
     async def create_source_message(self, request: SourceMessageCreate) -> SourceMessage:
+        if request.id in self.messages:
+            current = self.messages[request.id]
+            if current.model_dump() != request.model_dump():
+                raise ValueError("Source message ID already exists with different data")
+            return current
         if request.session_id not in self.sessions:
             raise ValueError(f"Session {request.session_id!r} does not exist")
         message = SourceMessage.model_validate(request.model_dump())
@@ -129,6 +154,8 @@ class InMemoryMemoryRepository:
         )
 
     async def create_memory(self, request: MemoryCreate) -> Memory:
+        if request.id in self.memories:
+            raise ValueError("Memory ID already exists")
         if request.scope_id not in self.scopes:
             raise ValueError(f"Scope {request.scope_id!r} does not exist")
         missing = set(request.source_ids) - self.messages.keys()
@@ -136,6 +163,7 @@ class InMemoryMemoryRepository:
             raise ValueError(f"Source messages do not exist: {sorted(missing)}")
         memory = Memory.model_validate(request.model_dump())
         self.memories[memory.id] = memory
+        self._scope_memory_ids[memory.scope_id].add(memory.id)
         return memory
 
     async def get_memory(self, memory_id: str) -> Memory | None:
@@ -161,7 +189,42 @@ class InMemoryMemoryRepository:
             update={"embedding": embedding, "embedding_model": model_name}
         )
 
-    async def get_memory_neighbors(self, memory_ids: list[str]) -> list[MemoryNeighbor]:
+    async def set_memory_embeddings(
+        self, values: list[tuple[str, str, list[float]]], model_name: str
+    ) -> None:
+        for memory_id, content, vector in values:
+            memory = self.memories.get(memory_id)
+            if memory is not None and memory.content == content:
+                await self.set_memory_embedding(memory_id, vector, model_name)
+
+    async def list_retrieval_memories(
+        self, *, scope_ids: set[str], session_id: str | None,
+        historical: bool, now: datetime,
+    ) -> list[Memory]:
+        return [memory for scope_id in sorted(scope_ids)
+                for memory_id in sorted(self._scope_memory_ids.get(scope_id, ()))
+                if (memory := self.memories[memory_id]) and eligible_memory(
+                    memory, scope_ids=scope_ids, session_id=session_id,
+                    historical=historical, now=now)]
+
+    async def add_memory_sources(
+        self, memory_id: str, source_ids: list[str], confirmed_at: datetime | None
+    ) -> Memory:
+        if set(source_ids) - self.messages.keys():
+            raise ValueError("Source message does not exist")
+        current = self.memories[memory_id]
+        confirmations = [value for value in (current.last_confirmed_at, confirmed_at) if value]
+        updated = current.model_copy(update={
+            "source_ids": list(dict.fromkeys([*current.source_ids, *source_ids])),
+            "last_confirmed_at": max(confirmations) if confirmations else None,
+        })
+        self.memories[memory_id] = updated
+        return updated
+
+    async def get_memory_neighbors(
+        self, memory_ids: list[str], *, eligible_ids: set[str] | None = None,
+        limit: int | None = None,
+    ) -> list[MemoryNeighbor]:
         requested = set(memory_ids)
         neighbors: list[MemoryNeighbor] = []
         relationships = [
@@ -179,7 +242,15 @@ class InMemoryMemoryRepository:
                 neighbors.append(MemoryNeighbor(source, self.memories[target], relation))
             if target in requested and source in self.memories:
                 neighbors.append(MemoryNeighbor(target, self.memories[source], relation))
-        return neighbors
+        neighbors = [neighbor for neighbor in neighbors if eligible_ids is None
+                     or neighbor.memory.id in eligible_ids]
+        # A target can have many incoming edges. Return one deterministic shortest
+        # hop witness, so duplicate edges cannot consume the expansion budget.
+        unique = {neighbor.memory.id: neighbor for neighbor in sorted(
+            neighbors, key=lambda item: (item.memory.id, item.source_id, item.relation),
+            reverse=True,
+        )}
+        return sorted(unique.values(), key=lambda item: item.memory.id)[:limit]
 
     async def update_memory(self, memory_id: str, update: MemoryUpdate) -> Memory | None:
         current = self.memories.get(memory_id)
@@ -189,6 +260,9 @@ class InMemoryMemoryRepository:
         changes.update(updated_at=datetime.now(UTC), revision=current.revision + 1)
         memory = current.model_copy(update=changes)
         self.memories[memory_id] = memory
+        if memory.scope_id != current.scope_id:
+            self._scope_memory_ids[current.scope_id].discard(memory_id)
+            self._scope_memory_ids[memory.scope_id].add(memory_id)
         return memory
 
     async def move_memory(

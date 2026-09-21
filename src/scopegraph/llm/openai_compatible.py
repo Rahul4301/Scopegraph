@@ -1,7 +1,7 @@
-import asyncio
+import json
 from typing import Any, cast
 
-import httpx
+from scopegraph.llm.transport import ModelTransport
 
 
 class OpenAICompatibleLLM:
@@ -19,6 +19,10 @@ class OpenAICompatibleLLM:
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
+        self.transport = ModelTransport(timeout=timeout_seconds, retries=max_retries)
+
+    async def aclose(self) -> None:
+        await self.transport.aclose()
 
     async def complete_json(
         self,
@@ -48,31 +52,13 @@ class OpenAICompatibleLLM:
         }
         if not self.model.startswith("gpt-5"):
             payload["temperature"] = 0
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        last_error: Exception | None = None
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            for attempt in range(self.max_retries):
-                try:
-                    response = await client.post(
-                        f"{self.base_url}/chat/completions", json=payload, headers=headers
-                    )
-                    response.raise_for_status()
-                    body = response.json()
-                    content = body["choices"][0]["message"]["content"]
-                    if isinstance(content, str):
-                        import json
-
-                        parsed = json.loads(content)
-                    else:
-                        parsed = content
-                    if not isinstance(parsed, dict):
-                        raise ValueError("Structured LLM response must be a JSON object")
-                    return parsed
-                except (httpx.HTTPError, KeyError, ValueError) as exc:
-                    last_error = exc
-                    if attempt + 1 < self.max_retries:
-                        await asyncio.sleep(0.25 * (2**attempt))
-        raise RuntimeError("Structured LLM request failed after retries") from last_error
+        body = await self.transport.post(f"{self.base_url}/chat/completions",
+                                         payload=payload, api_key=self.api_key)
+        content = body["choices"][0]["message"]["content"]
+        parsed = json.loads(content) if isinstance(content, str) else content
+        if not isinstance(parsed, dict):
+            raise ValueError("Structured LLM response must be a JSON object")
+        return parsed
 
 
 def _strict_json_schema(schema: dict[str, Any]) -> dict[str, Any]:

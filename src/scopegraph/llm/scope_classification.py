@@ -1,7 +1,7 @@
 from typing import Literal
 
 from scopegraph.models.memory import MemoryCandidate
-from scopegraph.models.scope import ScopeDecision, ScopeRef
+from scopegraph.models.scope import ScopeDecision, ScopeRef, ScopeType
 
 
 def resolve_candidate_scope(
@@ -25,9 +25,11 @@ def resolve_candidate_scope(
             reason="user explicitly indicated cross-context validity",
         )
     if current_scope is not None:
-        level: Literal["session", "scope"] = (
+        level: Literal["session", "scope", "global"] = (
             "session" if candidate.proposed_scope_level == "session" else "scope"
         )
+        if level == "scope" and current_scope.scope_type is ScopeType.GLOBAL:
+            level = "global"
         return ScopeDecision(
             scope_id=current_scope.id,
             scope_level=level,

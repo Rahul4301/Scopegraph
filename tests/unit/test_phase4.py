@@ -76,10 +76,10 @@ class TrackingRepository(InMemoryMemoryRepository):
         self.neighbor_calls = 0
 
     async def get_memory_neighbors(
-        self, memory_ids: list[str]
+        self, memory_ids: list[str], **kwargs
     ) -> list[MemoryNeighbor]:
         self.neighbor_calls += 1
-        return await super().get_memory_neighbors(memory_ids)
+        return await super().get_memory_neighbors(memory_ids, **kwargs)
 
 
 BackendFactory = Callable[

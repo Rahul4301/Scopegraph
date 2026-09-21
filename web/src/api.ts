@@ -1,6 +1,7 @@
 import type {
   CorrectionEvent,
   CorrectionResult,
+  ConfigStatus,
   GraphSubgraph,
   Memory,
   MemoryProvenance,
@@ -35,6 +36,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<{ status: string; neo4j: string }>("/health"),
+  configStatus: () => request<ConfigStatus>("/config/status"),
   scopes: () => request<Scope[]>("/scopes?include_archived=true"),
   stats: () => request<MemoryStats>("/stats"),
   memory: (id: string) => request<Memory>(`/memories/${encodeURIComponent(id)}`),

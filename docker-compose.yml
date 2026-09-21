@@ -19,7 +19,29 @@ services:
       timeout: 5s
       retries: 12
 
+  neo4j-eval:
+    image: neo4j:5.26-community
+    restart: "no"
+    profiles: ["eval"]
+    ports:
+      - "7475:7474"
+      - "7688:7687"
+    environment:
+      NEO4J_AUTH: neo4j/scopegraph-eval
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    volumes:
+      - scopegraph_neo4j_eval_data:/data
+      - scopegraph_neo4j_eval_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
 volumes:
   scopegraph_neo4j_data:
   scopegraph_neo4j_logs:
-
+  scopegraph_neo4j_eval_data:
+  scopegraph_neo4j_eval_logs:

@@ -29,6 +29,10 @@ def candidate_key(candidate: MemoryCandidate) -> str:
 
 
 def conflict_key(candidate: MemoryCandidate) -> str | None:
-    if candidate.subject and candidate.predicate:
+    # A generic relation is multi-valued: using Rust does not contradict using
+    # Neo4j. Only attribute-specific predicates can support automatic replacement.
+    broad_relations = {"uses", "use", "has", "likes", "prefers", "works_on", "uses technology"}
+    if (candidate.subject and candidate.predicate
+            and normalize_text(candidate.predicate) not in broad_relations):
         return f"{candidate.subject}|{candidate.predicate}"
     return None
