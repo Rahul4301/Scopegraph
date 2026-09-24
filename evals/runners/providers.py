@@ -44,7 +44,7 @@ async def freeze_extraction(
     cached: dict[str, list[MemoryCandidate]] | None = None,
     checkpoint: Callable[[dict[str, list[MemoryCandidate]]], None] | None = None,
 ) -> dict[str, list[MemoryCandidate]]:
-    """Extract each source once, with identical inputs independent of backend state."""
+    """Extract each source once, independently of mutable repository state."""
     by_message: dict[str, list[MemoryCandidate]] = dict(cached or {})
     scopes = {scope.id: scope for scope in scenario.scopes}
     for session in scenario.sessions:

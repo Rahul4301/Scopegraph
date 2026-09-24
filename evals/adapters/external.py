@@ -65,9 +65,11 @@ def session_inputs(
     *,
     scope_id: str | None = None,
     as_of: datetime | None = None,
+    source_namespace: str | None = None,
 ) -> list[SessionInput]:
     """Convert normalized sessions into the common MemorySystem ingestion model."""
     target_scope = scope_id or f"external_{example.dataset}_{example.example_id}"
+    namespace = source_namespace or example.example_id
     inputs: list[SessionInput] = []
     ordered_sessions = sorted(
         enumerate(example.sessions),
@@ -80,8 +82,8 @@ def session_inputs(
         started = session.date or example.question_date or datetime.now(UTC)
         messages = [
             SourceMessageCreate(
-                id=f"{example.example_id}:{turn.turn_id or f'{session.session_id}:{index}'}",
-                session_id=f"{example.example_id}:{session.session_id}",
+                id=f"{namespace}:{turn.turn_id or f'{session.session_id}:{index}'}",
+                session_id=f"{namespace}:{session.session_id}",
                 role=MessageRole(turn.role),
                 content=turn.content,
                 timestamp=turn.timestamp or started, turn_index=index,
@@ -93,7 +95,7 @@ def session_inputs(
             continue
         inputs.append(
             SessionInput(
-                id=f"{example.example_id}:{session.session_id}",
+                id=f"{namespace}:{session.session_id}",
                 scope_id=target_scope,
                 started_at=started,
                 messages=messages,
@@ -103,7 +105,10 @@ def session_inputs(
 
 
 def evidence_source_ids(
-    example: ExternalBenchmarkExample, inputs: list[SessionInput]
+    example: ExternalBenchmarkExample,
+    inputs: list[SessionInput],
+    *,
+    source_namespace: str | None = None,
 ) -> list[str]:
     """Resolve release evidence identifiers to normalized source-message IDs.
 
@@ -116,9 +121,10 @@ def evidence_source_ids(
         *(str(item) for item in example.metadata.get("evidence_turn_ids", [])),
     }
     resolved: set[str] = set()
+    namespace = source_namespace or example.example_id
     for normalized in inputs:
         for identifier in evidence:
-            normalized_id = f"{example.example_id}:{identifier}"
+            normalized_id = f"{namespace}:{identifier}"
             if normalized.id == normalized_id:
                 resolved.update(message.id for message in normalized.messages)
             resolved.update(

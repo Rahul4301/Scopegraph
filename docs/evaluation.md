@@ -1,31 +1,31 @@
 # Evaluation
 
-Phase 7 provides an executable, credential-free harness around the shared `MemorySystem` interface. CrossScopeMem creates deterministic global, project, and session memories with scope interference, temporary overrides, and (at higher difficulty) updates and distractors. Phase 9 adds a reproducible smoke command and graph-backed demo/export scripts. The generator records structured gold answers and memory content; it does not fabricate external benchmark data.
+CrossScopeMem is a synthetic developer diagnostic for scope-isolation regressions. It
+is not part of the primary research benchmark set and its generated questions must not
+be combined with external benchmark results. Primary evaluations use the official
+questions supplied by each released dataset.
 
-Run the four architecture variants with the same histories, seed, top-k, token budget, and deterministic hash-bucket embedder:
+Run the synthetic diagnostic only when changing retrieval behavior:
 
 ```bash
-make eval-all
+make eval-diagnostic
 make eval-report
 make smoke
 ```
 
-For a meaningful local comparison, increase the generated histories and keep the
-same difficulty across systems:
+For a larger local regression run, increase the generated histories:
 
 ```bash
-make eval-all SCENARIOS=40 DIFFICULTY=3
+make eval-diagnostic SCENARIOS=40 DIFFICULTY=3
 make eval-report
 ```
 
-`SCENARIOS` defaults to 1 for a fast smoke run. `SYSTEMS` can be narrowed to a
-comma-separated subset, for example `SYSTEMS=scopegraph,vector_memory`.
+`SCENARIOS` defaults to 1 for a fast smoke run.
 
-To measure ScopeGraph through the production Neo4j repository, use the isolated
-evaluation service:
+To run the complete live model pipeline through the same repository:
 
 ```bash
-make eval-neo4j SCENARIOS=10 DIFFICULTY=3 LIVE=1
+make eval-diagnostic-live SCENARIOS=10 DIFFICULTY=3 LIVE=1
 ```
 
 This starts a second Neo4j Community container on Bolt port `7688`, separate from
@@ -33,8 +33,7 @@ the development database on `7687`. The runner clears only that evaluation
 database between scenarios because generated scenarios intentionally reuse fixture
 IDs. Ten live difficulty-3 scenarios are intended as a roughly 30–40 minute pilot;
 provider latency and rate limits can move the wall-clock time outside that range.
-The Neo4j run evaluates ScopeGraph alone and therefore measures its end-to-end
-repository path. Use `eval-all` for controlled comparisons against all baselines.
+The Neo4j run measures ScopeGraph's end-to-end repository path.
 
 The raw JSONL record preserves retrieved IDs, scopes, scores, status, trace paths, latency, token count, logical storage statistics, configuration hash, seed, and git commit. `evals.analysis.aggregate` scores raw records independently of execution; `tables` and `plots` write Markdown and SVG artifacts.
 
@@ -67,14 +66,16 @@ execution optimization, not a change to metrics. A defensible implementation mus
 - record queue time separately from retrieval, answer, and grading latency;
 - apply per-request timeouts, retry only transient failures with jitter, respect
   `Retry-After`, and never convert exhausted retries into incorrect answers;
-- grade only after the corresponding answer is durably checkpointed, with the same
-  judge/model/prompt across systems; and
+- grade only after the corresponding answer is durably checkpointed, with a pinned
+  judge/model/prompt across runs; and
 - report effective concurrency, rate-limit events, failures, retries, and cost so a
   50-way run cannot be mistaken for a serial latency benchmark.
 
-The existing `CONCURRENCY` option only runs the four backend systems in parallel;
-it does not provide per-question concurrency.
+The current runner does not provide per-question concurrency.
 
-No external benchmark results are claimed. External adapters cover LongMemEval,
-LongMemEval-V2, LoCoMo, MemConflict, MemoryAgentBench, RHELM, MemBench,
-Mem2ActBench, and TIME. Releases remain local and must pass validation before replay.
+No external benchmark results are claimed until the live suite completes. The primary
+suite is exactly LongMemEval-S, LoCoMo, and MemoryAgentBench: 6,157 official questions
+under full ScopeGraph, no graph traversal, and no scope weighting. Run `make
+download-benchmarks`, `make validate-benchmarks`, then `make eval-suite
+BATCH=results/batches/<run-id>`. LoCoMo's ten shared histories and each
+MemoryAgentBench corpus are ingested once per ablation, not once per question.

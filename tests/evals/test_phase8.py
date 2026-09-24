@@ -6,13 +6,6 @@ import pytest
 from evals.adapters import (
     LoCoMoAdapter,
     LongMemEvalAdapter,
-    LongMemEvalV2Adapter,
-    Mem2ActBenchAdapter,
-    MemBenchAdapter,
-    MemConflictAdapter,
-    MemoryAgentBenchAdapter,
-    RHELMAdapter,
-    TIMEAdapter,
 )
 from evals.adapters.external import evidence_source_ids, session_inputs
 from evals.runners.run_external import run_external
@@ -77,77 +70,14 @@ def test_locomo_adapter_preserves_evidence_turn_ids(tmp_path) -> None:
         ],
     )
     example = LoCoMoAdapter().load(path)[0]
+    assert len(example.sessions) == 1
     assert example.metadata["evidence_turn_ids"] == ["D1"]
-
-
-def test_memconflict_adapter_accepts_local_interchange(tmp_path) -> None:
-    path = _write_json(
-        tmp_path,
-        "memconflict.json",
-        [
-            {
-                "id": "m1",
-                "question": "What is the current plan?",
-                "gold_answer": "Plan B",
-                "conflict_type": "dynamic",
-                "sessions": [{"id": "s1", "turns": [{"role": "user", "text": "Plan B"}]}],
-            }
-        ],
-    )
-    result = MemConflictAdapter().validate(path)
-    assert result.valid is True
-    assert result.example_count == 1
 
 
 def test_external_validation_reports_missing_file(tmp_path) -> None:
     result = LongMemEvalAdapter().validate(tmp_path / "missing.json")
     assert result.valid is False
     assert result.errors
-
-
-@pytest.mark.parametrize(
-    "adapter",
-    [
-        LongMemEvalV2Adapter(),
-        MemoryAgentBenchAdapter(),
-        RHELMAdapter(),
-        MemBenchAdapter(),
-        Mem2ActBenchAdapter(),
-        TIMEAdapter(),
-    ],
-)
-def test_extended_adapters_normalize_release_interchange(tmp_path, adapter) -> None:
-    path = _write_json(
-        tmp_path,
-        f"{adapter.name}.json",
-        [
-            {
-                "id": "q1",
-                "query": "Which database is current?",
-                "target": "Neo4j",
-                "category": "knowledge_update",
-                "question_date": "2026-01-03",
-                "supporting_evidence": ["session-2:0"],
-                "history": [
-                    {
-                        "id": "session-1",
-                        "date": "2026-01-01",
-                        "messages": [{"role": "user", "text": "We used Postgres."}],
-                    },
-                    {
-                        "id": "session-2",
-                        "date": "2026-01-02",
-                        "messages": [{"role": "user", "text": "Now we use Neo4j."}],
-                    },
-                ],
-            }
-        ],
-    )
-    example = adapter.load(path)[0]
-    assert adapter.validate(path).valid is True
-    assert example.answer == "Neo4j"
-    assert example.answer_session_ids == ["session-2:0"]
-    assert len(example.sessions) == 2
 
 
 @pytest.mark.asyncio
@@ -166,13 +96,63 @@ async def test_external_runner_replays_local_release(tmp_path: Path) -> None:
     )
     output = tmp_path / "records.jsonl"
     created = await run_external(
-        dataset="longmemeval", path=path, system_name="scopegraph", output=output
+        dataset="longmemeval",
+        path=path,
+        system_name="scopegraph",
+        output=output,
+        storage="memory",
     )
     record = json.loads(created.read_text())
     assert record["dataset"] == "longmemeval"
     assert record["retrieved_memory_ids"]
     assert record["answer"] is None
     assert record["answer_evaluated"] is False
+
+
+@pytest.mark.asyncio
+async def test_locomo_runner_ingests_shared_history_once(tmp_path: Path) -> None:
+    path = _write_json(
+        tmp_path,
+        "locomo.json",
+        [
+            {
+                "sample_id": "conversation-1",
+                "conversation": {
+                    "session_1_date_time": "2024-01-01",
+                    "session_1": [
+                        {"speaker": "A", "dia_id": "D1", "text": "We use Neo4j."}
+                    ],
+                },
+                "qa": [
+                    {
+                        "question": "Which database?",
+                        "answer": "Neo4j",
+                        "category": "1",
+                        "evidence": ["D1"],
+                    },
+                    {
+                        "question": "What do we use?",
+                        "answer": "Neo4j",
+                        "category": "1",
+                        "evidence": ["D1"],
+                    },
+                ],
+            }
+        ],
+    )
+    output = tmp_path / "locomo-records.jsonl"
+    created = await run_external(
+        dataset="locomo",
+        path=path,
+        system_name="scopegraph",
+        output=output,
+        storage="memory",
+    )
+    records = [json.loads(line) for line in created.read_text().splitlines()]
+    assert len(records) == 2
+    assert {record["scenario_id"] for record in records} == {"conversation-1"}
+    assert records[0]["retrieved_memory_ids"] == records[1]["retrieved_memory_ids"]
+    assert records[0]["gold_source_ids"] == ["conversation-1:D1"]
 
 
 def test_external_replay_excludes_future_turns(tmp_path) -> None:

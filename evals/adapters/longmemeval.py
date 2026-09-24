@@ -39,6 +39,7 @@ class LongMemEvalAdapter:
                 normalized_turns = [
                     normalize_turn(turn, fallback_id=f"{session_id}:{turn_index}")
                     for turn_index, turn in enumerate(turns)
+                    if isinstance(turn.get("content"), str) and turn["content"].strip()
                 ]
                 sessions.append(
                     ExternalSession(

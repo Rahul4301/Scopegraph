@@ -9,7 +9,10 @@ from pathlib import Path
 from evals.adapters.cross_scope_mem import KeywordEmbeddingProvider, ScenarioExtractor
 from evals.metrics.correction_persistence import error_relapse_rate
 from scopegraph.backends.scopegraph import ScopeGraphMemorySystem
-from scopegraph.graph.in_memory import InMemoryMemoryRepository
+from scopegraph.config import get_settings
+from scopegraph.graph.client import Neo4jClient
+from scopegraph.graph.repository import Neo4jMemoryRepository
+from scopegraph.graph.schema import ensure_schema
 from scopegraph.memory.retriever import ScopeAwareRetriever
 from scopegraph.models.correction import MemoryEditRequest
 from scopegraph.models.memory import MemoryCandidate, MemoryType
@@ -19,7 +22,13 @@ from scopegraph.models.source import MessageRole, SourceMessageCreate
 
 
 async def _condition(condition: str, probes: tuple[int, ...]) -> dict[str, object]:
-    repository = InMemoryMemoryRepository()
+    client = Neo4jClient(get_settings())
+    if not await client.health():
+        await client.close()
+        raise RuntimeError("Neo4j evaluation database is unavailable")
+    await ensure_schema(client)
+    await client.execute_write("MATCH (n) DETACH DELETE n")
+    repository = Neo4jMemoryRepository(client)
     await repository.create_scope(ScopeCreate(
         id="global", name="Global", scope_type=ScopeType.GLOBAL,
         created_at=datetime(2026, 6, 10, tzinfo=UTC),
@@ -106,9 +115,14 @@ async def _condition(condition: str, probes: tuple[int, ...]) -> dict[str, objec
             relapse.append(evidence)
             probe_results.append({"after_sessions": count, "evidence": evidence,
                                   "relapsed": "PostgreSQL" in evidence})
-    return {"condition": condition, "probes": list(probes), "relapses": relapse,
-            "probe_results": probe_results,
-            "error_relapse_rate": error_relapse_rate(relapse, "PostgreSQL")}
+    result = {"condition": condition, "probes": list(probes), "relapses": relapse,
+              "probe_results": probe_results,
+              "error_relapse_rate": error_relapse_rate(relapse, "PostgreSQL")}
+    try:
+        await client.execute_write("MATCH (n) DETACH DELETE n")
+    finally:
+        await client.close()
+    return result
 
 
 async def run_correction_evaluation(
@@ -125,7 +139,17 @@ def main() -> None:
     parser.add_argument(
         "--output", type=Path, default=Path("results/raw/correction_persistence.jsonl")
     )
+    parser.add_argument(
+        "--allow-neo4j-reset",
+        action="store_true",
+        help="allow clearing the configured evaluation-only Neo4j database",
+    )
     args = parser.parse_args()
+    if not args.allow_neo4j_reset:
+        raise SystemExit(
+            "Correction evaluation clears Neo4j; pass --allow-neo4j-reset only "
+            "for a disposable evaluation database"
+        )
     results = asyncio.run(run_correction_evaluation())
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("".join(json.dumps(result) + "\n" for result in results))

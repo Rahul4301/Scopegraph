@@ -4,7 +4,7 @@ import json
 import pytest
 
 from evals.adapters.cross_scope_mem import KeywordEmbeddingProvider, ScenarioExtractor
-from evals.analysis.aggregate import aggregate_records, confidence_intervals, score_record
+from evals.analysis.aggregate import aggregate_records, score_record
 from evals.analysis.scope_classification import evaluate_scope_classification
 from evals.runners.providers import EvaluationProviders, PreparedEmbedder
 from evals.runners.run_all import run_all
@@ -88,9 +88,7 @@ def test_reports_reject_mixed_or_duplicate_runs():
     with pytest.raises(ValueError, match="Duplicate"):
         aggregate_records([record(), record()])
     with pytest.raises(ValueError, match="incompatible"):
-        aggregate_records([record(), record(system="flat_graph", evaluation_mode="live")])
-    with pytest.raises(ValueError, match="identical question"):
-        confidence_intervals([record(), record(system="flat_graph", question_id="other")])
+        aggregate_records([record(), record(question_id="other", evaluation_mode="live")])
 
 
 @pytest.mark.asyncio
@@ -125,7 +123,6 @@ async def test_replay_excludes_future_update_and_preserves_override():
 @pytest.mark.asyncio
 async def test_batch_artifact_is_shared_and_reportable(tmp_path):
     paths = await run_all(
-        systems=["vector_memory", "scopegraph"],
         scenario_count=1,
         difficulty=3,
         output=str(tmp_path),

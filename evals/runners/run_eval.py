@@ -24,10 +24,7 @@ from evals.runners.providers import (
     freeze_extraction,
 )
 from evals.schemas import CrossScopeScenario, EvaluationRecord
-from scopegraph.backends.flat_graph import FlatGraphMemory
 from scopegraph.backends.scopegraph import ScopeGraphMemorySystem
-from scopegraph.backends.two_level_graph import TwoLevelGraphMemory
-from scopegraph.backends.vector_memory import VectorMemory
 from scopegraph.config import get_settings
 from scopegraph.graph.client import Neo4jClient
 from scopegraph.graph.in_memory import InMemoryMemoryRepository
@@ -89,26 +86,13 @@ async def _system(
             await repository.create_scope(scope)
         embedder = providers.embedder
         extractor = providers.extractor
-        if name == "vector_memory":
-            system = VectorMemory(
-                repository, extractor, embedder, retrieval_config=retrieval_config
-            )
-        elif name == "flat_graph":
-            system = FlatGraphMemory(
-                repository, extractor, embedder, retrieval_config=retrieval_config
-            )
-        elif name == "two_level_graph":
-            system = TwoLevelGraphMemory(
-                repository, extractor, embedder, retrieval_config=retrieval_config
-            )
-        elif name == "scopegraph":
-            system = ScopeGraphMemorySystem(
-                repository,
-                extractor,
-                retriever=ScopeAwareRetriever(repository, embedder, retrieval_config),
-            )
-        else:
-            raise ValueError(f"Unknown evaluation system: {name}")
+        if name != "scopegraph":
+            raise ValueError(f"Unsupported evaluation system: {name}")
+        system = ScopeGraphMemorySystem(
+            repository,
+            extractor,
+            retriever=ScopeAwareRetriever(repository, embedder, retrieval_config),
+        )
     except BaseException:
         if client is not None:
             await client.close()
@@ -462,7 +446,6 @@ async def run_evaluation(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="cross_scope_mem")
-    parser.add_argument("--system", required=True)
     parser.add_argument("--config")
     parser.add_argument("--output")
     parser.add_argument("--seed", type=int, default=42)
@@ -475,7 +458,6 @@ def main() -> None:
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--profile", choices=["smoke", "research"], default="research")
-    parser.add_argument("--storage", choices=["memory", "neo4j"], default="memory")
     parser.add_argument(
         "--allow-neo4j-reset",
         action="store_true",
@@ -497,7 +479,7 @@ def main() -> None:
     print(
         asyncio.run(
             run_evaluation(
-                system_name=args.system,
+                system_name="scopegraph",
                 seed=args.seed,
                 difficulty=args.difficulty,
                 scenario_count=args.scenario_count,
@@ -509,7 +491,7 @@ def main() -> None:
                 live_answer=args.live_answer or args.live,
                 live_extraction=args.live_extraction or args.live,
                 live_embeddings=args.live_embeddings or args.live,
-                storage=args.storage,
+                storage="neo4j",
                 allow_neo4j_reset=args.allow_neo4j_reset,
                 on_progress=report,
             )

@@ -1,11 +1,11 @@
 """Score raw JSONL independently from benchmark execution."""
 
 import json
+import random
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 
-from evals.analysis.statistics import bootstrap_mean_difference
 from evals.metrics.answer_accuracy import exact_match, token_f1
 from evals.metrics.latency import latency_summary
 from evals.metrics.retrieval_precision import precision_at_k
@@ -13,6 +13,20 @@ from evals.metrics.retrieval_recall import recall_at_k
 from evals.metrics.scope_contamination import cross_scope_contamination
 from evals.metrics.stale_memory import stale_memory_error_rate
 from evals.schemas import EvaluationRecord, ScoredRecord
+
+
+def _bootstrap_ci(values: list[float], *, samples: int = 10_000) -> tuple[float, float]:
+    if not values:
+        raise ValueError("Cannot bootstrap an empty sample")
+    if len(values) == 1:
+        return values[0], values[0]
+    generator = random.Random(42)
+    size = len(values)
+    means = sorted(
+        sum(values[generator.randrange(size)] for _ in range(size)) / size
+        for _ in range(samples)
+    )
+    return means[int(samples * 0.025)], means[min(samples - 1, int(samples * 0.975))]
 
 
 def score_record(record: EvaluationRecord, *, k: int = 8) -> ScoredRecord:
@@ -47,6 +61,8 @@ def score_record(record: EvaluationRecord, *, k: int = 8) -> ScoredRecord:
             [{"status": status} for status in record.retrieved_statuses]
         ),
     }
+    if record.official_metric is not None:
+        metrics[f"official_{record.official_metric}"] = record.official_score
     if record.question_type == "abstention":
         metrics[f"precision_at_{k}"] = None
         metrics[f"recall_at_{k}"] = None
@@ -65,19 +81,34 @@ def load_jsonl(paths: Iterable[str | Path]) -> list[EvaluationRecord]:
 
 
 def aggregate_records(records: Iterable[EvaluationRecord]) -> dict[str, dict[str, float]]:
+    records = list(records)
+    multiple_datasets = len({record.dataset for record in records}) > 1
     grouped: dict[str, list[ScoredRecord]] = defaultdict(list)
     identities: set[tuple[str, str, str, str]] = set()
-    protocols: set[tuple[str, str, str, str]] = set()
+    protocols: dict[tuple[str, str, str], set[tuple[str, str, str]]] = defaultdict(set)
     for record in records:
-        identity = (record.dataset, record.system, record.scenario_id, record.question_id)
+        identity = (
+            record.dataset,
+            f"{record.system}/{record.ablation}",
+            record.scenario_id,
+            record.question_id,
+        )
         if identity in identities:
             raise ValueError(f"Duplicate evaluation question: {identity}; select one run batch")
         identities.add(identity)
-        protocols.add((record.dataset, record.protocol_version,
-                       record.evaluation_mode, record.config_hash))
-        if len(protocols) > 1:
+        protocol_group = (record.dataset, record.system, record.ablation)
+        protocols[protocol_group].add(
+            (record.protocol_version, record.evaluation_mode, record.config_hash)
+        )
+        if len(protocols[protocol_group]) > 1:
             raise ValueError("Cannot aggregate incompatible datasets, protocols, modes or configs")
-        grouped[record.system].append(score_record(record))
+        system_name = (
+            record.system
+            if record.ablation == "full"
+            else f"{record.system}/{record.ablation}"
+        )
+        group_name = f"{record.dataset}/{system_name}" if multiple_datasets else system_name
+        grouped[group_name].append(score_record(record))
     summary: dict[str, dict[str, float]] = {}
     for system, values in grouped.items():
         metric_names = sorted({name for value in values for name in value.metrics})
@@ -86,8 +117,16 @@ def aggregate_records(records: Iterable[EvaluationRecord]) -> dict[str, dict[str
             measured = [value.metrics[name] for value in values
                         if value.metrics.get(name) is not None]
             if measured:
-                summary[system][name] = sum(float(value) for value in measured) / len(measured)
+                numeric = [float(value) for value in measured]
+                summary[system][name] = sum(numeric) / len(numeric)
+                lower, upper = _bootstrap_ci(numeric)
+                summary[system][f"{name}_ci95_low"] = lower
+                summary[system][f"{name}_ci95_high"] = upper
         summary[system]["query_count"] = float(len(values))
+        summary[system]["failure_count"] = float(
+            sum(value.failure_type is not None for value in values)
+        )
+        summary[system]["failure_rate"] = summary[system]["failure_count"] / len(values)
         summary[system]["retrieval_p50_ms"] = latency_summary(
             value.retrieval_latency_ms for value in values
         )["p50"]
@@ -104,6 +143,22 @@ def aggregate_records(records: Iterable[EvaluationRecord]) -> dict[str, dict[str
                            if value.output_tokens is not None]
         if measured_tokens:
             summary[system]["answer_tokens_mean"] = sum(measured_tokens) / len(measured_tokens)
+            summary[system]["answer_tokens_total"] = float(sum(measured_tokens))
+        prompt_tokens = [value.input_tokens for value in values if value.input_tokens is not None]
+        if prompt_tokens:
+            summary[system]["answer_input_tokens_total"] = float(sum(prompt_tokens))
+        judge_tokens = [
+            (value.judge_input_tokens or 0) + (value.judge_output_tokens or 0)
+            for value in values
+            if value.judge_input_tokens is not None or value.judge_output_tokens is not None
+        ]
+        if judge_tokens:
+            summary[system]["judge_tokens_total"] = float(sum(judge_tokens))
+        usage_keys = sorted({key for value in values for key in value.token_usage})
+        for key in usage_keys:
+            summary[system][f"{key}_total"] = float(
+                sum(value.token_usage.get(key, 0) for value in values)
+            )
         storage = [value.storage_stats for value in values if value.storage_stats]
         if storage:
             summary[system]["logical_bytes_mean"] = sum(
@@ -116,8 +171,6 @@ def aggregate_records(records: Iterable[EvaluationRecord]) -> dict[str, dict[str
                 float(item.get("edges", 0)) for item in storage
             ) / len(storage)
     return summary
-
-
 def aggregate_files(
     paths: Iterable[str | Path], output: str | Path | None = None
 ) -> dict[str, dict[str, float]]:
@@ -126,44 +179,3 @@ def aggregate_files(
         Path(output).parent.mkdir(parents=True, exist_ok=True)
         Path(output).write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     return summary
-
-
-def confidence_intervals(
-    records: Iterable[EvaluationRecord], *, reference_system: str = "scopegraph",
-    seed: int = 42,
-) -> dict[str, dict[str, dict[str, float]]]:
-    """Return paired bootstrap intervals against a reference system."""
-    scored = [score_record(record) for record in records]
-    by_system = defaultdict(dict)
-    for record in scored:
-        key = (record.scenario_id, record.question_id)
-        if key in by_system[record.system]:
-            raise ValueError("Duplicate question in confidence interval inputs")
-        by_system[record.system][key] = record
-    reference = by_system.get(reference_system, {})
-    result: dict[str, dict[str, dict[str, float]]] = {}
-    metric_names = sorted({name for record in scored for name in record.metrics})
-    for system, values in by_system.items():
-        if system == reference_system:
-            continue
-        if set(reference) != set(values):
-            raise ValueError("Paired comparisons require identical question sets")
-        keys = sorted(reference)
-        system_result: dict[str, dict[str, float]] = {}
-        for metric in metric_names:
-            paired = [key for key in keys if reference[key].metrics.get(metric) is not None
-                      and values[key].metrics.get(metric) is not None]
-            if not paired:
-                continue
-            # Resample scenarios, not dependent questions from the same history.
-            clusters = sorted({key[0] for key in paired})
-            left, right = [], []
-            for scenario in clusters:
-                cluster = [key for key in paired if key[0] == scenario]
-                left.append(sum(float(reference[key].metrics[metric]) for key in cluster)
-                            / len(cluster))
-                right.append(sum(float(values[key].metrics[metric]) for key in cluster)
-                             / len(cluster))
-            system_result[metric] = bootstrap_mean_difference(left, right, seed=seed)
-        result[system] = system_result
-    return result

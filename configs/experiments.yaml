@@ -7,18 +7,11 @@ retrieval:
 models:
   temperature: 0.0
   max_output_tokens: 300
-systems: [vector_memory, flat_graph, two_level_graph, scopegraph]
+system: scopegraph
 datasets:
-  - cross_scope_mem
   - longmemeval
-  - longmemeval_v2
   - locomo
-  - memconflict
   - memoryagentbench
-  - rhelm
-  - membench
-  - mem2actbench
-  - time
 runs:
   repetitions: 1
 output_root: results/raw

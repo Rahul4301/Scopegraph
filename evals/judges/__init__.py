@@ -1,6 +1,5 @@
-"""Answer judges."""
+"""Official benchmark judges."""
 
-from evals.judges.exact_match import ExactMatchJudge
-from evals.judges.llm_judge import LLMJudge
+from evals.judges.official import JudgeResult, OfficialBenchmarkJudge
 
-__all__ = ["ExactMatchJudge", "LLMJudge"]
+__all__ = ["JudgeResult", "OfficialBenchmarkJudge"]

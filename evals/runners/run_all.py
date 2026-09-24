@@ -1,4 +1,4 @@
-"""Run CrossScopeMem across all controlled memory systems."""
+"""Run a reproducible ScopeGraph CrossScopeMem batch."""
 
 import argparse
 import asyncio
@@ -22,14 +22,7 @@ from scopegraph.config import get_settings
 from scopegraph.models.memory import MemoryCandidate
 
 
-async def run_all(*, systems: list[str], **kwargs: object) -> list[str]:
-    if not systems or len(systems) != len(set(systems)):
-        raise ValueError("Supply distinct evaluation systems")
-    if set(systems) - {"vector_memory", "flat_graph", "two_level_graph", "scopegraph"}:
-        raise ValueError("Unknown evaluation system")
-    concurrency = int(str(kwargs.pop("concurrency", 1)))
-    if concurrency < 1 or concurrency > len(systems):
-        raise ValueError("concurrency must be between 1 and the number of systems")
+async def run_all(**kwargs: object) -> list[str]:
     resume_path = kwargs.pop("resume", None)
     output_root = kwargs.pop("output", "results/batches")
     batch = (
@@ -54,8 +47,7 @@ async def run_all(*, systems: list[str], **kwargs: object) -> list[str]:
     manifest = {
         "protocol": f"cross-scope-v3/{kwargs.get('profile', 'research')}",
         "status": "preparing",
-        "systems": systems,
-        "concurrency": concurrency,
+        "system": "scopegraph",
         "options": kwargs,
         "paths": [],
         "llm_model": settings.llm_model,
@@ -63,7 +55,9 @@ async def run_all(*, systems: list[str], **kwargs: object) -> list[str]:
         "working_diff_sha256": hashlib.sha256(diff).hexdigest(),
         "source_fingerprint": source_fingerprint(),
         "extraction_policy": "frozen once per source; no backend-specific existing memories",
-        "latency_protocol": "warm-embeddings/in-memory-repository",
+        "latency_protocol": (
+            f"warm-embeddings/{kwargs.get('storage', 'memory')}-repository"
+        ),
         "limitations": [
             "synthetic templates; use external datasets before generalizing",
             "offline runs evaluate retrieval, not model answer quality",
@@ -73,7 +67,7 @@ async def run_all(*, systems: list[str], **kwargs: object) -> list[str]:
     manifest_path = batch / "manifest.json"
     if resume_path:
         previous = json.loads(manifest_path.read_text())
-        for key in ("options", "systems", "source_fingerprint", "llm_model", "embedding_model"):
+        for key in ("options", "system", "source_fingerprint", "llm_model", "embedding_model"):
             if previous.get(key) != manifest[key]:
                 raise ValueError(f"Cannot resume: {key} changed from the original batch")
     save_json(manifest_path, manifest)
@@ -132,35 +126,31 @@ async def run_all(*, systems: list[str], **kwargs: object) -> list[str]:
         )
         save_json(batch / "classification.json", classification.model_dump(mode="json"))
         manifest["classification_evaluated"] = classification.evaluated
-        semaphore = asyncio.Semaphore(concurrency)
         total_questions = sum(len(scenario.examples) for scenario in scenarios)
+        completed = 0
 
-        async def run_system(system: str) -> str:
-            async with semaphore:
-                completed = 0
+        def report(record: EvaluationRecord) -> None:
+            nonlocal completed
+            completed += 1
+            print(
+                f"[scopegraph] {completed}/{total_questions} | "
+                f"{record.scenario_id} | {record.question_id} | "
+                f"retrieval={record.retrieval_latency_ms:.1f}ms",
+                flush=True,
+            )
 
-                def report(record: EvaluationRecord) -> None:
-                    nonlocal completed
-                    completed += 1
-                    print(
-                        f"[{system}] {completed}/{total_questions} | "
-                        f"{record.scenario_id} | {record.question_id} | "
-                        f"retrieval={record.retrieval_latency_ms:.1f}ms",
-                        flush=True,
-                    )
-
-                return str(
-                    await run_evaluation(
-                        system_name=system,
-                        output=str(batch / f"{system}.jsonl"),
-                        provider_bank=bank,
-                        resume=bool(resume_path),
-                        on_progress=report,
-                        **kwargs,
-                    )
+        paths.append(
+            str(
+                await run_evaluation(
+                    system_name="scopegraph",
+                    output=str(batch / "scopegraph.jsonl"),
+                    provider_bank=bank,
+                    resume=bool(resume_path),
+                    on_progress=report,
+                    **kwargs,
                 )
-
-        paths.extend(await asyncio.gather(*(run_system(system) for system in systems)))
+            )
+        )
         manifest["status"] = "complete"
         return paths
     except Exception:
@@ -176,13 +166,11 @@ async def run_all(*, systems: list[str], **kwargs: object) -> list[str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="cross_scope_mem")
-    parser.add_argument("--systems", default="vector_memory,flat_graph,two_level_graph,scopegraph")
     parser.add_argument("--config")
     parser.add_argument("--output", default="results/batches")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--difficulty", type=int, default=2)
     parser.add_argument("--scenario-count", type=int, default=1)
-    parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--live-answer", action="store_true")
     parser.add_argument("--live-extraction", action="store_true")
     parser.add_argument("--live-embeddings", action="store_true")
@@ -191,16 +179,19 @@ def main() -> None:
     parser.add_argument(
         "--resume", help="Resume an existing batch directory with identical options"
     )
+    parser.add_argument(
+        "--allow-neo4j-reset",
+        action="store_true",
+        help="allow clearing the configured evaluation-only Neo4j database",
+    )
     args = parser.parse_args()
     if args.dataset != "cross_scope_mem":
         raise SystemExit("run_all supports cross_scope_mem; use run_external for external datasets")
     paths = asyncio.run(
         run_all(
-            systems=[item.strip() for item in args.systems.split(",")],
             seed=args.seed,
             difficulty=args.difficulty,
             scenario_count=args.scenario_count,
-            concurrency=args.concurrency,
             config_path=args.config,
             output=args.output,
             live_answer=args.live_answer,
@@ -209,6 +200,8 @@ def main() -> None:
             live=args.live,
             resume=args.resume,
             profile=args.profile,
+            storage="neo4j",
+            allow_neo4j_reset=args.allow_neo4j_reset,
         )
     )
     print("\n".join(paths))

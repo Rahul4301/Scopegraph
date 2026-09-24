@@ -60,11 +60,11 @@ class LoCoMoAdapter:
 
 def _sessions(conversation: dict[str, Any]) -> list[ExternalSession]:
     sessions: list[ExternalSession] = []
-    session_numbers = sorted(
+    session_numbers = sorted({
         int(key.removeprefix("session_").removesuffix("_date_time"))
         for key in conversation
         if _session_number(key) is not None
-    )
+    })
     for number in session_numbers:
         turns = conversation.get(f"session_{number}", [])
         if not isinstance(turns, list):

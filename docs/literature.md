@@ -12,8 +12,10 @@ ScopeGraph combines established ideas to isolate two experimental variables: exp
 - [Memory Sandbox](https://arxiv.org/abs/2308.01542) treats conversational memories as visible, manipulable data objects. ScopeGraph extends this interaction idea into a controlled correction-persistence experiment; a graph UI alone is not claimed as novel.
 - [ChronoMem](https://arxiv.org/abs/2607.27773) motivates version histories and rollback after correction or corruption. ScopeGraph uses append-only correction events, revisions, soft deletion, and undo instead of destructive mutation.
 - [Supermemory](https://supermemory.ai/research/longmembench/) combines chunk ingestion, relational versioning, temporal grounding, and hybrid search. Its published LongMemEval-S report gives ScopeGraph a strong external target, while its open-source [MemoryBench](https://github.com/supermemoryai/memorybench) supplies a useful provider-neutral ingest/search/answer/judge pipeline and the accuracy/latency/context-token MemScore triple. ScopeGraph's differentiator to test is explicit nested validity scope and reversible structural correction—not simply graph retrieval. No head-to-head result is claimed until both systems run the same released examples and answer/judge protocol.
-- LoCoMo and LongMemEval establish difficult long-term conversational recall settings. They will test general behavior, while the planned CrossScopeMem benchmark specifically controls cross-context interference and local overrides.
+- LoCoMo, LongMemEval, RHELM, and MemoryAgentBench already cover difficult long-term,
+  temporal, and multi-hop retrieval. CrossScopeMem is retained only as a synthetic
+  implementation diagnostic and is not counted as an external research benchmark.
 
 ## Intended contribution
 
-The contribution is empirical: compare vector-only, flat-graph, two-level, and three-level scoped memory under controlled retrieval budgets, then compare no correction, conversational correction, and direct memory repair. The defensible result is a measured accuracy, contamination, persistence, latency, token, and storage tradeoff, including a negative result if explicit scope does not help.
+The contribution is empirical: evaluate ScopeGraph on released long-term-memory benchmarks and test no correction, conversational correction, and direct memory repair under a documented protocol. The defensible result is a measured accuracy, contamination, persistence, latency, token, and storage profile, including negative results.

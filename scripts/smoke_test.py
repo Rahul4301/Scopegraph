@@ -10,7 +10,6 @@ from evals.runners.run_all import run_all
 
 async def _run() -> list[Path]:
     paths = await run_all(
-        systems=["vector_memory", "flat_graph", "two_level_graph", "scopegraph"],
         seed=42,
         difficulty=1,
         scenario_count=1,
@@ -35,7 +34,7 @@ def main() -> None:
     args.output_root.mkdir(parents=True, exist_ok=True)
     manifest = args.output_root / "manifest.json"
     manifest.write_text(json.dumps({"paths": [str(path) for path in paths]}, indent=2) + "\n")
-    print(f"Smoke test passed for {len(paths)} systems.")
+    print("Smoke test passed for ScopeGraph.")
     print(args.output_root / "manifest.json")
 
 

@@ -8,7 +8,7 @@ from scopegraph.models.session import SessionInput
 
 
 class MemorySystem(ABC):
-    """Fair-comparison contract shared by every experimental memory backend."""
+    """Contract implemented by the ScopeGraph memory service."""
 
     @abstractmethod
     async def reset(self) -> None: ...
@@ -34,4 +34,3 @@ class MemorySystem(ABC):
 
     @abstractmethod
     async def stats(self) -> MemoryStats: ...
-

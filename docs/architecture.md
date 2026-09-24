@@ -2,7 +2,7 @@
 
 ## Purpose and research boundary
 
-ScopeGraph is a model-agnostic memory service built to test two claims rather than assume them: whether explicit contextual scope reduces retrieval interference, and whether structural correction persists better than conversational correction. Every experimental backend will share the same ingestion, retrieval, correction, statistics, model, prompt, and budget interfaces so the evaluation can also show that ScopeGraph loses.
+ScopeGraph is a model-agnostic memory service built to test two claims rather than assume them: whether explicit contextual scope reduces retrieval interference, and whether structural correction persists better than conversational correction. Live evaluations run the ScopeGraph implementation against released benchmark questions and report failures as well as successes.
 
 ## Memory hierarchy
 
@@ -51,17 +51,6 @@ Prune preview distinguishes graph neighbors from directed evidentiary dependenci
 
 Merging copies source-message provenance to the canonical target, tombstones the duplicate, and retains `SAME_AS`; it never deletes either memory. Semantic relation edits are restricted to fixed relationship types and the existing `RELATES_TO.kind` allowlist.
 
-## Baseline boundaries
-
-- Vector memory stores independent embedded records, ranks by cosine similarity, and performs no graph traversal or scope filtering.
-- Flat graph uses semantic anchors and bounded typed graph traversal but treats every contextual scope as one validity domain.
-- Two-level graph retains matching current-session memories and global memories; durable contextual facts are collapsed into the global level.
-- ScopeGraph uses session, arbitrary context scopes, and global memory with scope-aware filtering.
-
-All four systems implement `MemorySystem`, consume the same structured extractor output, preserve source provenance, and share embedding models, temporal utilities, token counting, top-k, and token budgets. The graph systems also share ranking weights and bounded traversal controls. VectorMemory intentionally uses raw semantic similarity because adding graph/scope ranking components would no longer represent a vector-only baseline. Backend-specific traces populate the common result schema and explicitly identify disabled scope semantics.
-
-See [baselines.md](baselines.md) for the controlled representation differences and isolation requirement.
-
 ## Inspection surface
 
 The React Memory Explorer consumes explicit FastAPI schemas for graph slices, provenance, correction history, statistics, and retrieval traces. The browser can filter a bounded subgraph by scope or center it on one memory, but cannot submit Cypher. Memory and source-message nodes retain their full typed API record for inspection; corrections always pass through the audited correction service.
@@ -70,4 +59,4 @@ Status is communicated with written labels plus node shape, border pattern, and 
 
 ## Implemented components
 
-The Python package contains validated domain models, configuration loading, an asynchronous Neo4j client, schema creation, CRUD repositories, structured extraction, scope resolution, provenance-aware ingestion, consolidation, conflict handling, promotion, embeddings, scoped retrieval, bounded traversal, temporal filtering, ranking, token packing, retrieval traces, three comparison baselines, reversible correction workflows, graph inspection/export queries, and FastAPI routes. The React application provides the scope tree, graph explorer, inspector, correction dialogs, and retrieval debugger. The in-memory repository, static extractor, and deterministic test embedder keep tests credential-free; Neo4j and the OpenAI-compatible providers are the production paths.
+The Python package contains validated domain models, configuration loading, an asynchronous Neo4j client, schema creation, CRUD repositories, structured extraction, scope resolution, provenance-aware ingestion, consolidation, conflict handling, promotion, embeddings, scoped retrieval, bounded traversal, temporal filtering, ranking, token packing, retrieval traces, reversible correction workflows, graph inspection/export queries, and FastAPI routes. The React application provides the scope tree, graph explorer, inspector, correction dialogs, and retrieval debugger. The in-memory repository, static extractor, and deterministic test embedder keep tests credential-free; Neo4j and the OpenAI-compatible providers are the production paths.

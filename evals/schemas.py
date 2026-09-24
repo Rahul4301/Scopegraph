@@ -106,6 +106,7 @@ class EvaluationRecord(BaseModel):
     run_id: str
     dataset: str
     system: str
+    ablation: str = "full"
     scenario_id: str
     question_id: str
     question_type: str
@@ -131,6 +132,16 @@ class EvaluationRecord(BaseModel):
     answer_latency_ms: float | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    benchmark_metadata: dict[str, Any] = Field(default_factory=dict)
+    official_metric: str | None = None
+    official_score: float | None = None
+    judge_model: str | None = None
+    judge_latency_ms: float | None = None
+    judge_input_tokens: int | None = None
+    judge_output_tokens: int | None = None
+    token_usage: dict[str, int] = Field(default_factory=dict)
+    failure_type: str | None = None
+    failure_message: str | None = None
     storage_stats: dict[str, Any] = Field(default_factory=dict)
     trace: list[dict[str, Any]] = Field(default_factory=list)
     config_hash: str

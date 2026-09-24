@@ -14,7 +14,9 @@ class ModelTransport:
         self.retries = retries
         self._client = client
         self.calls = 0
+        self.retry_count = 0
         self.last_usage: dict[str, int] = {}
+        self.total_usage: dict[str, int] = {}
 
     async def post(self, url: str, *, payload: dict[str, Any], api_key: str) -> dict[str, Any]:
         if self._client is None:
@@ -35,6 +37,8 @@ class ModelTransport:
                     for key, value in body.get("usage", {}).items()
                     if isinstance(value, int)
                 }
+                for key, value in self.last_usage.items():
+                    self.total_usage[key] = self.total_usage.get(key, 0) + value
                 return body
             except httpx.HTTPStatusError as exc:
                 retryable = (
@@ -44,12 +48,14 @@ class ModelTransport:
                     raise RuntimeError(
                         f"Model endpoint returned HTTP {exc.response.status_code}"
                     ) from None
+                self.retry_count += 1
                 retry_after = exc.response.headers.get("retry-after", "")
                 delay = min(float(retry_after), 30.0) if retry_after.isdigit() else 0.5 * 2**attempt
                 await asyncio.sleep(delay)
             except httpx.TransportError:
                 if attempt + 1 == self.retries:
                     raise RuntimeError("Model endpoint connection failed after retries") from None
+                self.retry_count += 1
                 await asyncio.sleep(0.5 * 2**attempt)
         raise RuntimeError("Model request exhausted its retry budget")
 

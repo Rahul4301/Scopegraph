@@ -1,32 +1,32 @@
 # Evaluations
 
-Phase 7 implements the credential-free CrossScopeMem benchmark and a reproducible evaluation harness. External local-file adapters cover LongMemEval, LongMemEval-V2, LoCoMo, MemConflict, MemoryAgentBench, RHELM, MemBench, Mem2ActBench, and TIME; benchmark data is never committed or fabricated.
+CrossScopeMem is a credential-free synthetic diagnostic used by tests and retrieval
+development. It is not a primary research benchmark. Reported evaluations use the
+official questions from LongMemEval-S, LoCoMo, and MemoryAgentBench. Benchmark data
+is never fabricated and downloaded artifacts remain ignored by Git.
 
-Run all four controlled backends:
+Run the ScopeGraph evaluation batch:
 
 ```bash
-make eval-all
+make eval-diagnostic
 ```
 
-Run ScopeGraph against an isolated real Neo4j database (default: 10 scenarios at
-difficulty 3):
+Run ScopeGraph's complete live model path (default: 10 scenarios at difficulty 3):
 
 ```bash
-make eval-neo4j LIVE=1
+make eval-diagnostic-live LIVE=1
 ```
 
 The evaluation container uses Bolt port `7688` and separate Docker volumes. Its
 contents are reset between scenarios; the normal application database is not
 touched.
 
-Run one backend or an ablation:
+Run the synthetic ScopeGraph diagnostic directly when debugging retrieval:
 
 ```bash
+NEO4J_URI=bolt://localhost:7688 NEO4J_PASSWORD=scopegraph-eval \
 PYTHONPATH=src uv run python -m evals.runners.run_eval \
-  --dataset cross_scope_mem --system scopegraph --config configs/experiments.yaml
-
-PYTHONPATH=src uv run python -m evals.runners.run_ablation \
-  --dataset cross_scope_mem --system scopegraph --ablation no_graph_traversal
+  --dataset cross_scope_mem --config configs/experiments.yaml --allow-neo4j-reset
 ```
 
 Generate processed JSON, Markdown, and SVG output from raw JSONL:
@@ -46,28 +46,16 @@ retrieval recall and contamination.
 For end-to-end answer evaluation with the configured provider, add `LIVE_ANSWER=1`:
 
 ```bash
-make eval-all LIVE_ANSWER=1
+make eval-diagnostic-live LIVE_ANSWER=1
 ```
 
-Use `--scenario-count` with the module runner to control the number of generated histories. Keep the default deterministic mode for retrieval-only comparisons and use the same live answer model across every architecture when comparing answer accuracy.
+Use `--scenario-count` with the module runner to control the number of generated histories. Keep the default deterministic mode for retrieval-only regression checks and pin the live answer model for reported runs.
 
 For the complete live pipeline, use real extraction, cached OpenAI embeddings, and the configured answer model together:
 
 ```bash
-make eval-all LIVE=1
+make eval-diagnostic-live LIVE=1
 ```
-
-Run independent backend evaluations concurrently with a bounded worker count:
-
-```bash
-make eval-all SCENARIOS=40 DIFFICULTY=3 LIVE=1 LIVE_ANSWER=1 CONCURRENCY=4
-```
-
-`CONCURRENCY` may be from `1` to `4`, matching the four backends. Backend runs are
-parallelized, while each backend preserves chronological session replay so temporal
-snapshots remain valid. Use `CONCURRENCY=1` for serial execution or lower API pressure.
-
-Reports also write paired bootstrap intervals to `results/processed/confidence_intervals.json`, comparing each system with ScopeGraph by scenario and question.
 
 The correction-persistence experiment compares no correction, conversational correction, and direct graph correction at +1, +5, +10, and +20 sessions:
 
@@ -75,27 +63,26 @@ The correction-persistence experiment compares no correction, conversational cor
 PYTHONPATH=src uv run python -m evals.runners.run_correction_eval
 ```
 
-Validate an acquired external release before replay:
+Fetch and validate every selected official release:
 
 ```bash
-make validate-external DATASET=longmemeval DATA_PATH=data/longmemeval/longmemeval_s_cleaned.json
+make download-benchmarks
+make validate-benchmarks
 ```
 
-Replay a validated release through one backend and write the same JSONL trace format:
+Run all 6,157 questions under all three ablations with live extraction, embeddings,
+answers, and official judges:
 
 ```bash
-make eval-external DATASET=longmemeval \
-  DATA_PATH=data/longmemeval/longmemeval_s_cleaned.json SYSTEM=scopegraph
+make eval-suite BATCH=results/batches/paper-v1
 ```
 
-The external runner uses a credential-free turn-preserving extractor by default. Add
-`LIVE_ANSWER=1` to call the configured OpenAI-compatible answer model; retrieval and
-answer scoring remain separate. Sessions and turns after a question timestamp are
-excluded. When a release supplies evidence session/turn IDs, the runner records them
-as retrieval gold. Embeddings are prepared before the timed retrieval region and the
-preparation duration is reported separately.
-
-Use `LIVE=1` for external replay with live extraction, cached real embeddings, and the configured answer model. Run it with `--limit` first because full external releases can require many provider calls.
+The external runner uses the isolated Neo4j service and a credential-free
+turn-preserving extractor by default for local plumbing tests. The paper target uses
+`--live`, which enables live extraction, cached real embeddings, live answers, and
+the required official judge. There is no CLI subset flag: research commands run every
+official question. Sessions after a question timestamp are excluded, and supplied
+evidence IDs are retained as retrieval gold.
 
 Pass `--resume` with the same output path to continue an interrupted external run;
 the checkpoint rejects changes to the dataset bytes, code, configuration, models, or

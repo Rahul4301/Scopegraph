@@ -1,80 +1,43 @@
-# Audit status (2026-09-21)
+# Implementation audit (2026-09-23)
 
-This audit checked the research proposal and master prompt against the implementation,
-historical result artifacts, the Python and web test gates, and a live Neo4j round trip.
-It is an engineering and protocol audit, not an independent replication.
+This is an audit of the checked-in implementation and locally acquired benchmark
+files. The research proposal and master prompt are not present in this repository or
+its Git history, so this document does not claim a line-by-line proposal comparison.
 
-## Result interpretation
+## Confirmed alignment
 
-| Artifact | What it can support | Important limitation |
-| --- | --- | --- |
-| `20260920T054404792447Z` | diagnosis of the original 3-scenario live run | old v2 generator, only 15 questions per system |
-| `audit-report/frozen-replay` | effect of retrieval fixes on the exact saved extraction and embeddings | no new extraction, answer generation, or judge calls |
-| `20260921T051029657338Z` | small v3 live-pipeline smoke result | only 3 synthetic scenarios; predates this final protocol audit |
-| `20260921T154349106767Z` | current offline retrieval regression result | deterministic oracle extraction and hash embeddings, not model quality |
+- ScopeGraph is the only memory system implemented and exported.
+- Production and research-facing evaluation commands use the isolated Neo4j
+  evaluation service. The in-memory repository remains only as a unit-test and smoke
+  test double.
+- Memory records retain scope, temporal state, source-message provenance, graph
+  relations, and reversible correction history.
+- Raw evaluation records retain configuration and source fingerprints, model names,
+  retrieval traces, latency, token counts, and storage statistics.
 
-The current 10-scenario, difficulty-3 offline batch contains 190 questions per
-system. ScopeGraph reached 0.9944 Recall@8, 0 cross-scope contamination, and a
-0.392 ms median warm in-memory retrieval time. The vector baseline reached 0.7306
-recall, 0.7507 contamination, and 0.813 ms median retrieval. Two missed gold items
-were both multi-answer comparison cases where the deliberately weak hash embedder
-ranked same-scope release distractors above one required fact. These numbers are
-useful regression evidence only.
+## Remaining evaluation cautions
 
-The retained 3-scenario live smoke batch reports 0.9825 exact match for ScopeGraph
-versus 0.3684 for vector and flat graph and 0.4035 for two-level graph. It is too
-small and synthetic to support a paper or product superiority claim.
+1. All three selected complete releases validate and their official scoring protocols
+   are wired in, but no full live result should be claimed until `make eval-suite`
+   completes and its output is audited.
+2. External examples are mapped to one custom scope beneath a global root. That tests
+   retrieval over a memory history, but it does not test ScopeGraph's central claim
+   about interference among multiple project/context scopes.
+3. The no-scope-weighting ablation may be uninformative on single-scope corpora. This
+   null result must be reported, not hidden or replaced with generated questions.
+4. Retrieval timing excludes ingestion, extraction, embedding preparation, answer
+   generation, and grading. It must not be presented as end-to-end latency.
+5. The external runner is serial. Provider retries exist, but question-level
+   concurrency and explicit monetary cost accounting do not.
 
-The local scaling microbenchmark keeps 50 eligible memories in the current scope
-while increasing total unrelated memories from 500 to 50,000. The final medians
-were 0.261, 0.295, and 0.470 ms. This measures warm Python/in-memory scope indexing;
-it is not Neo4j, network, ingestion, answer-model, or hosted-service latency.
+## Engineering limits
 
-## Position relative to Supermemory
+- Exact cosine scoring scans every eligible memory in the selected scopes. Very large
+  individual scopes need a measured vector-index design before scalability claims.
+- The API has no authentication, tenant authorization, quotas, distributed workers,
+  or production backup policy.
 
-Supermemory's published [LongMemEval-S report](https://supermemory.ai/research/longmembench/)
-reports 95% Recall@15 with aggregation and roughly 720 mean context tokens. Its
-open-source [MemoryBench](https://github.com/supermemoryai/memorybench) checkpoints
-ingest, index, search, answer, evaluation, and reporting and compares accuracy,
-search latency, and context tokens. ScopeGraph does not currently have an
-apples-to-apples result against those numbers.
-
-ScopeGraph's testable distinction is explicit nested session/context/global validity,
-origin-scope contamination measurement, source provenance, and reversible structural
-correction. Supermemory already provides temporal/relational memory, hybrid search,
-and container isolation, so “uses a graph” or “supports scoped tags” is not a
-defensible differentiator by itself.
-
-Before claiming parity or superiority, run both systems on the same released
-LongMemEval/LoCoMo examples with the same ingestion cutoff, answer model, judge,
-top-k/context budget, warm-up policy, and latency boundary. Report confidence
-intervals, failures, provider costs, and both warm and cold paths. A Supermemory API
-key or a pinned self-hosted version is required for that external comparison.
-
-## Remaining limits
-
-- Exact cosine scoring still scans every eligible memory inside a selected scope.
-  Unrelated scopes are now indexed away, but very large single scopes need a measured
-  ANN/vector-index design before production-scale claims.
-- The API has no authentication, tenant authorization, quotas, production backup
-  policy, or distributed job execution. It should remain on trusted local networks.
-- External adapters and resumable replay exist, but full released-dataset results
-  have not been run in this repository.
-- Scope-classification accuracy is emitted as a separate ingestion-stage artifact,
-  rather than being duplicated across per-question retrieval records. It requires a
-  live-extraction run; oracle-extraction runs explicitly mark it as not evaluated.
-- The proposed 50-question parallel runner is intentionally not implemented. Its
-  fairness and safety requirements are recorded in `docs/evaluation.md`.
-
-## Verified gates
-
-- Ruff: pass
-- mypy strict mode: pass
-- non-integration suite: 88 passed
-- live Neo4j integration suite: 4 passed
-- frontend TypeScript and production build: pass
-- npm production dependency audit: 0 known vulnerabilities
-- schema application, `/health`, `/config/status`, `/stats`, and Vite serving: pass
-
-Two deprecation warnings come from the Starlette test client's current `httpx`
-compatibility layer; they do not represent failing application behavior.
+These gaps must be resolved before describing the outputs as official benchmark
+scores or as proof of general usefulness. A small, clearly labeled pilot can support
+an undergraduate prototype/feasibility claim, but not benchmark parity, superiority,
+or broad generalization.
