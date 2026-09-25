@@ -1,11 +1,11 @@
 # Evaluations
 
-CrossScopeMem is a credential-free synthetic diagnostic used by tests and retrieval
-development. It is not a primary research benchmark. Reported evaluations use the
-official questions from LongMemEval-S, LoCoMo, and MemoryAgentBench. Benchmark data
-is never fabricated and downloaded artifacts remain ignored by Git.
+CrossScopeMem is the controlled thesis benchmark for account-level scope isolation.
+It is reported separately from the official LongMemEval-S, LoCoMo, and
+MemoryAgentBench results. External benchmark data is never fabricated and downloaded
+artifacts remain ignored by Git.
 
-Run the ScopeGraph evaluation batch:
+Run the paired ScopeGraph controls and ablations over account-shaped scenarios:
 
 ```bash
 make eval-diagnostic
@@ -17,7 +17,9 @@ Run ScopeGraph's complete live model path (default: 10 scenarios at difficulty 3
 make eval-diagnostic-live LIVE=1
 ```
 
-The evaluation container uses Bolt port `7688` and separate Docker volumes. Its
+The batch uses one frozen extraction per source and runs full ScopeGraph, vector-only,
+flat-graph, two-level session/global, no graph traversal, and no
+temporal/status filtering. The evaluation container uses Bolt port `7688` and separate Docker volumes. Its
 contents are reset between scenarios; the normal application database is not
 touched.
 
@@ -63,6 +65,10 @@ The correction-persistence experiment compares no correction, conversational cor
 PYTHONPATH=src uv run python -m evals.runners.run_correction_eval
 ```
 
+The default run contains 30 injected-error cases and writes both raw JSONL and a
+bootstrap-confidence-interval summary. Use `--cases` only for a labeled smoke test or
+a pre-registered final sample size.
+
 Fetch and validate every selected official release:
 
 ```bash
@@ -70,7 +76,7 @@ make download-benchmarks
 make validate-benchmarks
 ```
 
-Run all 6,157 questions under all three ablations with live extraction, embeddings,
+Run all 6,157 questions through full ScopeGraph with live extraction, embeddings,
 answers, and official judges:
 
 ```bash
@@ -84,6 +90,11 @@ the required official judge. There is no CLI subset flag: research commands run 
 official question. Sessions after a question timestamp are excluded, and supplied
 evidence IDs are retained as retrieval gold.
 
+`make eval-suite` writes one extraction cache per dataset for reproducibility and safe
+resume. A cache is rejected if the dataset hash or extraction model does not match.
+
 Pass `--resume` with the same output path to continue an interrupted external run;
 the checkpoint rejects changes to the dataset bytes, code, configuration, models, or
 system.
+The runner stops at the first recorded question failure. Diagnose that failure and
+start a new result file; a matching extraction cache can still be reused.

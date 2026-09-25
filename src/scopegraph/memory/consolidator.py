@@ -8,7 +8,9 @@ from scopegraph.memory.deduplicator import find_duplicate
 from scopegraph.memory.normalizer import candidate_key, conflict_key, normalize_candidate
 from scopegraph.memory.promoter import PromotionPolicy
 from scopegraph.memory.provenance import validate_provenance
+from scopegraph.models.correction import CorrectionRelation
 from scopegraph.models.memory import Memory, MemoryCandidate, MemoryCreate, ScopeLevel
+from scopegraph.models.relationship import RelationKind
 from scopegraph.models.scope import ScopeRef
 
 
@@ -25,6 +27,14 @@ class ConsolidationRepository(Protocol):
 
     async def add_memory_sources(
         self, memory_id: str, source_ids: list[str], confirmed_at: datetime | None
+    ) -> Memory: ...
+
+    async def add_memory_relation(
+        self,
+        source_memory_id: str,
+        target_memory_id: str,
+        relation: CorrectionRelation,
+        kind: RelationKind | None = None,
     ) -> Memory: ...
 
 
@@ -125,6 +135,7 @@ class Consolidator:
                     await self.repository.supersede_memory(old_memory.id, memory.id)
             outcome.conflict_count += len(conflicts)
             outcome.memories.append(memory)
+            await self._link_entity_bridges(candidate, memory, existing)
             # Mutations may return detached objects (Neo4j), so refresh only when
             # a conflict changed state; normal multi-fact sessions reuse one read.
             if conflicts:
@@ -137,6 +148,47 @@ class Consolidator:
             if level is ScopeLevel.SCOPE and global_scope_id is not None:
                 await self._maybe_promote(candidate, memory, global_scope_id, outcome)
         return outcome
+
+    @staticmethod
+    def _relation_kind(predicate: str | None) -> RelationKind:
+        normalized = (predicate or "").replace(" ", "_")
+        if "depends_on" in normalized:
+            return RelationKind.DEPENDS_ON
+        if "prefer" in normalized:
+            return RelationKind.PREFERS
+        if "works_on" in normalized:
+            return RelationKind.WORKS_ON
+        if "use" in normalized:
+            return RelationKind.USES
+        return RelationKind.ASSOCIATED_WITH
+
+    async def _link_entity_bridges(
+        self, candidate: MemoryCandidate, memory: Memory, existing: list[Memory]
+    ) -> None:
+        """Connect facts whose object and subject identify the same entity.
+
+        This creates the minimal memory-to-memory structure needed for bounded
+        traversal without inventing relationships from lexical co-occurrence.
+        """
+        if not candidate.subject:
+            return
+        for other in existing:
+            other_subject = other.metadata.get("subject")
+            other_object = other.metadata.get("object")
+            if other_object and other_object == candidate.subject:
+                await self.repository.add_memory_relation(
+                    other.id,
+                    memory.id,
+                    CorrectionRelation.RELATES_TO,
+                    self._relation_kind(other.metadata.get("predicate")),
+                )
+            if candidate.object and other_subject and candidate.object == other_subject:
+                await self.repository.add_memory_relation(
+                    memory.id,
+                    other.id,
+                    CorrectionRelation.RELATES_TO,
+                    self._relation_kind(candidate.predicate),
+                )
 
     async def _maybe_promote(
         self,

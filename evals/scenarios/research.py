@@ -39,6 +39,24 @@ def generate_research_scenario(
         )
         for name in names
     ]
+    # Every scenario is one product-shaped account: several projects, a nested
+    # repository, and a durable home for otherwise ungrouped conversations.
+    scopes += [
+        ScopeCreate(
+            id="scope_alpha_backend",
+            name="Alpha Backend",
+            scope_type=ScopeType.REPOSITORY,
+            parent_scope_id="scope_alpha",
+            created_at=base,
+        ),
+        ScopeCreate(
+            id="scope_standalone",
+            name="Standalone Conversations",
+            scope_type=ScopeType.PROJECT,
+            parent_scope_id="global",
+            created_at=base,
+        ),
+    ]
     sessions: list[SessionInput] = []
     candidates: dict[str, list[MemoryCandidate]] = {}
     evidence: dict[tuple[str, str], tuple[str, str]] = {}
@@ -125,6 +143,24 @@ def generate_research_scenario(
                 f"{name}_{attribute}", f"scope_{name.lower()}", text, f"uses_{attribute}", value
             )
             evidence[(name, attribute)] = (value, source)
+    repository_db = rng.choice(databases)
+    repository_source = add(
+        "alpha_backend_database",
+        "scope_alpha_backend",
+        f"The Alpha Backend repository uses {repository_db} for integration tests.",
+        "uses_test_database",
+        repository_db,
+        subject="alpha_backend",
+    )
+    standalone_editor = rng.choice(["VS Code", "Zed", "Neovim", "IntelliJ"])
+    standalone_source = add(
+        "standalone_editor",
+        "scope_standalone",
+        f"In an ungrouped conversation, I chose {standalone_editor} as my editor.",
+        "chosen_editor",
+        standalone_editor,
+        subject="standalone_conversation",
+    )
     beta_old, beta_old_source = evidence[("Beta", "database")]
     beta_new = rng.choice([db for db in databases if db != beta_old])
     if difficulty >= 3:
@@ -138,10 +174,11 @@ def generate_research_scenario(
         )
         evidence[("Beta", "database")] = (beta_new, source)
     # A two-fact dependency chain inside one scope.
-    worker_source = db_source = None
+    worker_source = alias_source = db_source = None
     worker_db = rng.choice(databases)
     if difficulty >= 2:
         worker = f"worker-{rng.randrange(1000, 9999)}"
+        worker_alias = f"shard-{rng.randrange(1000, 9999)}"
         worker_source = add(
             "worker",
             "scope_alpha",
@@ -150,13 +187,21 @@ def generate_research_scenario(
             worker,
             subject="alpha",
         )
+        alias_source = add(
+            "worker_alias",
+            "scope_alpha",
+            f"Service {worker} is deployed as {worker_alias}.",
+            "deployment_alias",
+            worker_alias,
+            subject=worker,
+        )
         db_source = add(
             "worker_db",
             "scope_alpha",
-            f"Service {worker} uses {worker_db} as its database.",
+            f"Persistence target for {worker_alias}: {worker_db}.",
             "uses_database",
             worker_db,
-            subject=worker,
+            subject=worker_alias,
         )
     # Leave one session for the temporary override. Filler is meaningful, durable,
     # unrelated project state and creates genuine interference under tight budgets.
@@ -241,6 +286,31 @@ def generate_research_scenario(
             [source],
             f"scope_{name.lower()}",
         )
+    question(
+        "q_nested_repository",
+        "nested_scope_recall",
+        "What database does this repository use for integration tests?",
+        repository_db,
+        [repository_source],
+        "scope_alpha_backend",
+    )
+    alpha_project_db, alpha_project_source = evidence[("Alpha", "database")]
+    question(
+        "q_parent_from_nested",
+        "parent_scope_fallback",
+        "What database does the parent Alpha project use normally?",
+        alpha_project_db,
+        [alpha_project_source],
+        "scope_alpha_backend",
+    )
+    question(
+        "q_standalone",
+        "standalone_scope_recall",
+        "Which editor did I choose in this standalone conversation?",
+        standalone_editor,
+        [standalone_source],
+        "scope_standalone",
+    )
     value, source = evidence[("Beta", "database")]
     question(
         "q_beta_normal",
@@ -300,13 +370,13 @@ def generate_research_scenario(
             "scope_beta",
             timestamp=beta_update_time - timedelta(microseconds=1),
         )
-    if worker_source and db_source:
+    if worker_source and alias_source and db_source:
         question(
             "q_dependency",
             "multi_hop",
             "What database is used by the service Alpha depends on?",
             worker_db,
-            [worker_source, db_source],
+            [worker_source, alias_source, db_source],
             "scope_alpha",
         )
     return CrossScopeScenario(

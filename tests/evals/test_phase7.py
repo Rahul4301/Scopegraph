@@ -2,7 +2,11 @@ import json
 
 import pytest
 
-from evals.analysis.aggregate import aggregate_records, score_record
+from evals.analysis.aggregate import (
+    aggregate_records,
+    paired_ablation_comparisons,
+    score_record,
+)
 from evals.metrics.answer_accuracy import exact_match, token_f1
 from evals.metrics.retrieval_precision import precision_at_k
 from evals.metrics.retrieval_recall import recall_at_k
@@ -48,3 +52,24 @@ def test_record_is_jsonl_serializable() -> None:
         config_hash="hash", seed=42,
     )
     assert json.loads(record.model_dump_json())["system"] == "scopegraph"
+
+
+def test_paired_ablation_comparison_uses_matching_questions() -> None:
+    full = EvaluationRecord(
+        run_id="full", dataset="cross_scope_mem", system="scopegraph", ablation="full",
+        scenario_id="account", question_id="q", question_type="recall", question="What?",
+        gold_answer="x", answer="x", answer_evaluated=True, config_hash="full", seed=42,
+    )
+    ablated = full.model_copy(
+        update={
+            "run_id": "ablated",
+            "ablation": "no_scope_hierarchy",
+            "answer": "wrong",
+            "config_hash": "ablated",
+        }
+    )
+    comparison = paired_ablation_comparisons([full, ablated])
+    values = comparison["cross_scope_mem/scopegraph/full-minus-no_scope_hierarchy"]
+    assert values["paired_question_count"] == 1
+    assert values["exact_match_mean_difference"] == 1
+    assert values["exact_match_mcnemar_full_wins"] == 1

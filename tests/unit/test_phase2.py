@@ -351,3 +351,33 @@ async def test_explicit_global_statement_is_stored_globally() -> None:
     assert memory is not None
     assert memory.scope_id == "global"
     assert memory.scope_level is ScopeLevel.GLOBAL
+
+
+@pytest.mark.asyncio
+async def test_structured_entity_bridge_creates_traversable_relation() -> None:
+    repository = InMemoryMemoryRepository()
+    await repository.create_scope(
+        ScopeCreate(id="alpha", name="Alpha", scope_type=ScopeType.PROJECT)
+    )
+    depends = candidate(
+        source_id="m1", content="Alpha depends on worker-42", object_value="worker-42"
+    ).model_copy(update={"subject": "alpha", "predicate": "depends_on"})
+    uses = candidate(
+        source_id="m2", content="worker-42 uses Neo4j", object_value="Neo4j"
+    ).model_copy(update={"subject": "worker-42", "predicate": "uses_database"})
+    first = ScopeGraphMemorySystem(repository, StaticMemoryExtractor([depends]))
+    first_result = await first.ingest_session(
+        session("s1", "alpha", "m1", depends.content),
+        current_scope=ScopeRef(id="alpha"),
+    )
+    second = ScopeGraphMemorySystem(repository, StaticMemoryExtractor([uses]))
+    second_result = await second.ingest_session(
+        session("s2", "alpha", "m2", uses.content),
+        current_scope=ScopeRef(id="alpha"),
+    )
+    neighbors = await repository.get_memory_neighbors(first_result.memory_ids)
+    assert any(
+        neighbor.memory.id in second_result.memory_ids
+        and neighbor.relation == "RELATES_TO:DEPENDS_ON"
+        for neighbor in neighbors
+    )

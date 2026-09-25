@@ -9,10 +9,12 @@ from evals.analysis.scope_classification import evaluate_scope_classification
 from evals.runners.providers import EvaluationProviders, PreparedEmbedder
 from evals.runners.run_all import run_all
 from evals.runners.run_eval import run_scenario
+from evals.runners.run_external import _freeze_external_extraction
 from evals.scenarios.generate_cross_scope import candidates_by_message, generate_cross_scope_mem
 from evals.scenarios.research import generate_research_scenario
 from evals.schemas import EvaluationRecord
 from scopegraph.memory.retriever import RetrievalConfig
+from scopegraph.models.scope import ScopeRef
 
 
 def record(**updates):
@@ -142,8 +144,93 @@ async def test_batch_artifact_is_shared_and_reportable(tmp_path):
     for path in paths:
         text = await asyncio.to_thread(Path(path).read_text)
         rows.extend(EvaluationRecord.model_validate_json(line) for line in text.splitlines())
-    assert len({row.config_hash for row in rows}) == 1
-    assert aggregate_records(rows)["scopegraph"]["recall_at_8"] == 1
+    assert {row.ablation for row in rows} == {
+        "full",
+        "vector_only_control",
+        "flat_graph_control",
+        "two_level_control",
+        "no_graph_traversal",
+        "no_temporal_status",
+    }
+    assert len({row.config_hash for row in rows}) == 6
+    summary = aggregate_records(rows)
+    assert summary["scopegraph"]["recall_at_8"] == 1
+    assert "scopegraph/flat_graph_control" in summary
+
+
+def test_research_profile_is_one_multi_project_account():
+    scenario = generate_research_scenario(seed=42, difficulty=1)
+    by_id = {scope.id: scope for scope in scenario.scopes}
+    assert len([scope for scope in scenario.scopes if scope.parent_scope_id == "global"]) >= 4
+    assert by_id["scope_alpha_backend"].parent_scope_id == "scope_alpha"
+    assert "scope_standalone" in by_id
+    assert {example.question_type for example in scenario.examples} >= {
+        "nested_scope_recall",
+        "parent_scope_fallback",
+        "standalone_scope_recall",
+    }
+
+
+@pytest.mark.asyncio
+async def test_no_scope_hierarchy_exposes_competing_projects():
+    scenario = generate_research_scenario(seed=42, difficulty=1)
+    providers = EvaluationProviders(
+        ScenarioExtractor(candidates_by_message(scenario)),
+        PreparedEmbedder(KeywordEmbeddingProvider()),
+    )
+    config = RetrievalConfig.from_config(
+        {
+            "scope_access_mode": "all",
+            "weights": {
+                "semantic": 0.65,
+                "scope": 0.0,
+                "temporal": 0.15,
+                "confidence": 0.08,
+                "graph": 0.07,
+                "recency": 0.05,
+            },
+        }
+    )
+    rows = await run_scenario(
+        scenario,
+        system_name="scopegraph",
+        run_id="run",
+        config={},
+        config_hash="test",
+        providers=providers,
+        retrieval_config=config,
+        ablation="no_scope_hierarchy",
+    )
+    alpha = next(row for row in rows if row.question_id == "q_alpha_database")
+    assert alpha.ablation == "no_scope_hierarchy"
+    assert any(
+        scope not in alpha.allowed_scope_ids for scope in alpha.retrieved_scope_ids
+    )
+
+
+@pytest.mark.asyncio
+async def test_external_extraction_is_frozen_once_per_source_session():
+    scenario = generate_research_scenario(seed=42, difficulty=1)
+    session = scenario.sessions[0]
+    expected = candidates_by_message(scenario)
+    checkpoints = []
+    frozen = await _freeze_external_extraction(
+        [session],
+        ScenarioExtractor(expected),
+        scope=ScopeRef(id=session.scope_id),
+        cached={},
+        checkpoint=lambda values: checkpoints.append(dict(values)),
+    )
+    assert set(frozen) == {message.id for message in session.messages}
+    assert checkpoints
+    reused = await _freeze_external_extraction(
+        [session],
+        ScenarioExtractor({}),
+        scope=ScopeRef(id=session.scope_id),
+        cached=frozen,
+        checkpoint=lambda values: checkpoints.append(dict(values)),
+    )
+    assert reused == frozen
 
 
 def test_config_preserves_historical_terms_by_default():
@@ -168,6 +255,55 @@ async def test_research_historical_question_uses_an_as_of_snapshot():
     )
     historical = next(row for row in rows if row.question_id == "q_beta_history")
     assert score_record(historical).metrics["recall_at_8"] == 1
+
+
+@pytest.mark.asyncio
+async def test_research_multihop_question_uses_graph_traversal():
+    scenario = generate_research_scenario(seed=42, difficulty=2)
+    providers = EvaluationProviders(
+        ScenarioExtractor(candidates_by_message(scenario)),
+        PreparedEmbedder(KeywordEmbeddingProvider()),
+    )
+    rows = await run_scenario(
+        scenario,
+        system_name="scopegraph",
+        run_id="run",
+        config={},
+        config_hash="test",
+        providers=providers,
+    )
+    multihop = next(row for row in rows if row.question_id == "q_dependency")
+    assert score_record(multihop).metrics["recall_at_8"] == 1
+    assert any(step["relation"].startswith("RELATES_TO") for step in multihop.trace)
+    no_graph_providers = EvaluationProviders(
+        ScenarioExtractor(candidates_by_message(scenario)),
+        PreparedEmbedder(KeywordEmbeddingProvider()),
+    )
+    no_graph_rows = await run_scenario(
+        scenario,
+        system_name="scopegraph",
+        run_id="no-graph",
+        config={},
+        config_hash="test-no-graph",
+        providers=no_graph_providers,
+        retrieval_config=RetrievalConfig.from_config(
+            {
+                "max_graph_hops": 0,
+                "max_expanded_nodes": 0,
+                "weights": {
+                    "semantic": 0.47,
+                    "scope": 0.25,
+                    "temporal": 0.15,
+                    "confidence": 0.08,
+                    "graph": 0.0,
+                    "recency": 0.05,
+                },
+            }
+        ),
+        ablation="no_graph_traversal",
+    )
+    no_graph = next(row for row in no_graph_rows if row.question_id == "q_dependency")
+    assert score_record(no_graph).metrics["recall_at_8"] < 1
 
 
 def test_live_scope_classification_records_confusion_missing_and_extra_candidates():

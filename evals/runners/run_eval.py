@@ -31,10 +31,42 @@ from scopegraph.graph.in_memory import InMemoryMemoryRepository
 from scopegraph.graph.repository import Neo4jMemoryRepository
 from scopegraph.graph.schema import ensure_schema
 from scopegraph.llm.answering import AnswerModel, OpenAICompatibleAnswerer
+from scopegraph.llm.extraction import CandidateExtractor
 from scopegraph.llm.transport import close_provider
 from scopegraph.memory.retriever import RetrievalConfig, ScopeAwareRetriever
 from scopegraph.models.memory import MemoryCandidate
-from scopegraph.models.scope import ScopeRef
+from scopegraph.models.scope import ScopeRef, ScopeType
+from scopegraph.models.source import SourceMessage
+
+
+class TwoLevelControlExtractor:
+    """Project durable memories into global, retaining only session/global levels."""
+
+    def __init__(self, wrapped: CandidateExtractor) -> None:
+        self.wrapped = wrapped
+
+    async def extract(
+        self,
+        messages: list[SourceMessage],
+        *,
+        current_scope: ScopeRef | None,
+        existing_memories: list[str] | None = None,
+    ) -> list[MemoryCandidate]:
+        candidates = await self.wrapped.extract(
+            messages,
+            current_scope=current_scope,
+            existing_memories=existing_memories,
+        )
+        if current_scope is None or current_scope.scope_type is ScopeType.GLOBAL:
+            return candidates
+        return [
+            candidate
+            if candidate.proposed_scope_level == "session"
+            else candidate.model_copy(
+                update={"proposed_scope_level": "global", "explicit_global_signal": True}
+            )
+            for candidate in candidates
+        ]
 
 
 def _config(path: str | Path | None) -> tuple[dict[str, Any], str]:
@@ -62,6 +94,7 @@ async def _system(
     *,
     storage: str = "memory",
     allow_neo4j_reset: bool = False,
+    ablation: str = "full",
 ):
     client: Neo4jClient | None = None
     if storage == "memory":
@@ -85,7 +118,9 @@ async def _system(
         for scope in scenario.scopes:
             await repository.create_scope(scope)
         embedder = providers.embedder
-        extractor = providers.extractor
+        extractor: CandidateExtractor = providers.extractor
+        if ablation == "two_level_control":
+            extractor = TwoLevelControlExtractor(extractor)
         if name != "scopegraph":
             raise ValueError(f"Unsupported evaluation system: {name}")
         system = ScopeGraphMemorySystem(
@@ -115,6 +150,7 @@ async def run_scenario(
     on_progress: Callable[[EvaluationRecord], None] | None = None,
     storage: str = "memory",
     allow_neo4j_reset: bool = False,
+    ablation: str = "full",
 ) -> list[EvaluationRecord]:
     system, repository, client = await _system(
         system_name,
@@ -123,6 +159,7 @@ async def run_scenario(
         retrieval_config,
         storage=storage,
         allow_neo4j_reset=allow_neo4j_reset,
+        ablation=ablation,
     )
     scope_by_id = {scope.id: scope for scope in scenario.scopes}
     source_scopes = {
@@ -207,7 +244,7 @@ async def run_scenario(
             )
             records.append(
                 EvaluationRecord(
-                    protocol_version=f"cross-scope-v3/{scenario.profile}",
+                    protocol_version=f"cross-scope-v4/{scenario.profile}",
                     answer_evaluated=answer_model is not None,
                     embedding_preparation_ms=preparation_ms,
                     latency_protocol=f"warm-embeddings/{storage}-repository",
@@ -215,6 +252,7 @@ async def run_scenario(
                     run_id=run_id,
                     dataset="cross_scope_mem",
                     system=system_name,
+                    ablation=ablation,
                     scenario_id=scenario.scenario_id,
                     question_id=example.question_id,
                     question_type=example.question_type,
@@ -299,13 +337,16 @@ async def run_evaluation(
         f"answer={'live' if live_answer else 'not-evaluated'};storage={storage}"
     )
     retrieval_config_data = deepcopy(config.get("retrieval", {}))
-    if ablation == "no_scope_weighting":
+    effective_ablation = ablation or "full"
+    if effective_ablation in {"no_scope_hierarchy", "flat_graph_control"}:
         weights = retrieval_config_data.setdefault("weights", {})
         weights["semantic"] = float(weights.get("semantic", 0.40)) + float(
             weights.get("scope", 0.25)
         )
         weights["scope"] = 0.0
-    elif ablation == "no_graph_traversal":
+        retrieval_config_data["scope_access_mode"] = "all"
+        retrieval_config_data["enforce_session_access"] = False
+    elif effective_ablation == "no_graph_traversal":
         weights = retrieval_config_data.setdefault("weights", {})
         weights["semantic"] = float(weights.get("semantic", 0.40)) + float(
             weights.get("graph", 0.07)
@@ -313,8 +354,30 @@ async def run_evaluation(
         weights["graph"] = 0.0
         retrieval_config_data["max_graph_hops"] = 0
         retrieval_config_data["max_expanded_nodes"] = 0
-    elif ablation not in {None, "full"}:
-        raise ValueError(f"Unsupported Phase 7 ablation: {ablation}")
+    elif effective_ablation == "no_temporal_status":
+        weights = retrieval_config_data.setdefault("weights", {})
+        weights["semantic"] = float(weights.get("semantic", 0.40)) + float(
+            weights.get("temporal", 0.15)
+        )
+        weights["temporal"] = 0.0
+        retrieval_config_data["enforce_temporal_status"] = False
+    elif effective_ablation == "vector_only_control":
+        retrieval_config_data["weights"] = {
+            "semantic": 1.0,
+            "scope": 0.0,
+            "temporal": 0.0,
+            "confidence": 0.0,
+            "graph": 0.0,
+            "recency": 0.0,
+        }
+        retrieval_config_data["scope_access_mode"] = "all"
+        retrieval_config_data["enforce_session_access"] = False
+        retrieval_config_data["max_graph_hops"] = 0
+        retrieval_config_data["max_expanded_nodes"] = 0
+    elif effective_ablation == "two_level_control":
+        pass
+    elif effective_ablation != "full":
+        raise ValueError(f"Unsupported cross-scope ablation: {effective_ablation}")
     settings = get_settings()
     config_hash = hashlib.sha256(
         json.dumps(
@@ -323,7 +386,8 @@ async def run_evaluation(
                 "retrieval": retrieval_config_data,
                 "difficulty": difficulty,
                 "scenario_count": scenario_count,
-                "protocol": f"cross-scope-v3/{profile}",
+                "protocol": f"cross-scope-v4/{profile}",
+                "ablation": effective_ablation,
                 "storage": storage,
                 "source_fingerprint": source_fingerprint(),
                 "models": {
@@ -425,6 +489,7 @@ async def run_evaluation(
                 on_progress=on_progress,
                 storage=storage,
                 allow_neo4j_reset=allow_neo4j_reset,
+                ablation=effective_ablation,
             )
         finally:
             if provider_bank is None:
@@ -451,7 +516,19 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--difficulty", type=int, default=2)
     parser.add_argument("--scenario-count", type=int, default=1)
-    parser.add_argument("--ablation", default=None)
+    parser.add_argument(
+        "--ablation",
+        choices=[
+            "full",
+            "no_scope_hierarchy",
+            "flat_graph_control",
+            "no_graph_traversal",
+            "no_temporal_status",
+            "vector_only_control",
+            "two_level_control",
+        ],
+        default="full",
+    )
     parser.add_argument("--live-answer", action="store_true")
     parser.add_argument("--live-extraction", action="store_true")
     parser.add_argument("--live-embeddings", action="store_true")

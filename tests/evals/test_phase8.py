@@ -110,6 +110,44 @@ async def test_external_runner_replays_local_release(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_external_runner_exits_nonzero_when_question_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _write_json(
+        tmp_path,
+        "longmemeval.json",
+        [
+            {
+                "question_id": question_id,
+                "question": "Which database?",
+                "answer": "Neo4j",
+                "haystack_sessions": [[{"role": "user", "content": "We use Neo4j."}]],
+            }
+            for question_id in ("q1", "q2")
+        ],
+    )
+    output = tmp_path / "failed.jsonl"
+
+    async def broken_embed(self, texts):
+        raise RuntimeError("embedding unavailable")
+
+    monkeypatch.setattr(
+        "evals.runners.run_external.KeywordEmbeddingProvider.embed", broken_embed
+    )
+    with pytest.raises(RuntimeError, match="1 of 2 questions failed"):
+        await run_external(
+            dataset="longmemeval",
+            path=path,
+            system_name="scopegraph",
+            output=output,
+            storage="memory",
+        )
+    record = json.loads(output.read_text())
+    assert record["failure_type"] == "RuntimeError"
+    assert "embedding unavailable" in record["failure_message"]
+
+
+@pytest.mark.asyncio
 async def test_locomo_runner_ingests_shared_history_once(tmp_path: Path) -> None:
     path = _write_json(
         tmp_path,

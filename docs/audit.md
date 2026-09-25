@@ -23,8 +23,9 @@ its Git history, so this document does not claim a line-by-line proposal compari
 2. External examples are mapped to one custom scope beneath a global root. That tests
    retrieval over a memory history, but it does not test ScopeGraph's central claim
    about interference among multiple project/context scopes.
-3. The no-scope-weighting ablation may be uninformative on single-scope corpora. This
-   null result must be reported, not hidden or replaced with generated questions.
+3. External corpora contain no meaningful competing-project structure, so architecture
+   controls are not run on them. The separate CrossScopeMem account suite supplies the
+   required competing scopes and reports vector-only, flat-graph, and two-level controls.
 4. Retrieval timing excludes ingestion, extraction, embedding preparation, answer
    generation, and grading. It must not be presented as end-to-end latency.
 5. The external runner is serial. Provider retries exist, but question-level
@@ -34,7 +35,7 @@ its Git history, so this document does not claim a line-by-line proposal compari
 
 - Exact cosine scoring scans every eligible memory in the selected scopes. Very large
   individual scopes need a measured vector-index design before scalability claims.
-- The API has no authentication, tenant authorization, quotas, distributed workers,
+- The API has no authentication, account/tenant authorization, quotas, distributed workers,
   or production backup policy.
 
 These gaps must be resolved before describing the outputs as official benchmark

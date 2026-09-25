@@ -43,29 +43,31 @@ validate-benchmarks:
 	uv run python -m evals.runners.validate_external --dataset locomo --path data/locomo/locomo10.json
 	uv run python -m evals.runners.validate_external --dataset memoryagentbench --path data/memoryagentbench
 
-# Complete research protocol: all 6,157 official questions, live extraction,
-# embeddings, answers and official judges, across all three ScopeGraph ablations.
+# Complete external-validity protocol: all 6,157 official questions through full
+# ScopeGraph with live extraction, embeddings, answers, and official judges.
+# Architecture controls and component ablations run only in CrossScopeMem.
 # Set BATCH to a fresh directory for each run; --resume is intentionally omitted.
 eval-suite:
 	@test -n "$(BATCH)" || (echo 'Set BATCH=results/batches/<run-id>'; exit 1)
 	docker compose --profile eval up -d --wait neo4j-eval
-	@set -e; for ablation in full no_graph_traversal no_scope_weighting; do \
-		NEO4J_URI=bolt://localhost:7688 NEO4J_PASSWORD=scopegraph-eval \
+	NEO4J_URI=bolt://localhost:7688 NEO4J_PASSWORD=scopegraph-eval \
 		uv run python -m evals.runners.run_external --dataset longmemeval \
 			--path data/longmemeval/longmemeval_s_cleaned.json --live \
-			--ablation $$ablation --config configs/experiments.yaml --allow-neo4j-reset \
-			--output $(BATCH)/longmemeval-$$ablation.jsonl; \
-		NEO4J_URI=bolt://localhost:7688 NEO4J_PASSWORD=scopegraph-eval \
+			--extraction-cache $(BATCH)/longmemeval-extractions.json \
+			--ablation full --config configs/experiments.yaml --allow-neo4j-reset \
+			--output $(BATCH)/longmemeval-full.jsonl
+	NEO4J_URI=bolt://localhost:7688 NEO4J_PASSWORD=scopegraph-eval \
 		uv run python -m evals.runners.run_external --dataset locomo \
 			--path data/locomo/locomo10.json --live \
-			--ablation $$ablation --config configs/experiments.yaml --allow-neo4j-reset \
-			--output $(BATCH)/locomo-$$ablation.jsonl; \
-		NEO4J_URI=bolt://localhost:7688 NEO4J_PASSWORD=scopegraph-eval \
+			--extraction-cache $(BATCH)/locomo-extractions.json \
+			--ablation full --config configs/experiments.yaml --allow-neo4j-reset \
+			--output $(BATCH)/locomo-full.jsonl
+	NEO4J_URI=bolt://localhost:7688 NEO4J_PASSWORD=scopegraph-eval \
 		uv run python -m evals.runners.run_external --dataset memoryagentbench \
 			--path data/memoryagentbench --live \
-			--ablation $$ablation --config configs/experiments.yaml --allow-neo4j-reset \
-			--output $(BATCH)/memoryagentbench-$$ablation.jsonl; \
-	done
+			--extraction-cache $(BATCH)/memoryagentbench-extractions.json \
+			--ablation full --config configs/experiments.yaml --allow-neo4j-reset \
+			--output $(BATCH)/memoryagentbench-full.jsonl
 
 web-install:
 	npm --prefix web install
@@ -90,7 +92,7 @@ eval-diagnostic:
 eval-diagnostic-live:
 	docker compose --profile eval up -d --wait neo4j-eval
 	NEO4J_URI=bolt://localhost:7688 NEO4J_PASSWORD=scopegraph-eval \
-	uv run python -m evals.runners.run_eval --dataset cross_scope_mem \
+	uv run python -m evals.runners.run_all --dataset cross_scope_mem \
 		--allow-neo4j-reset --config configs/experiments.yaml \
 		--scenario-count $(if $(SCENARIOS),$(SCENARIOS),10) \
 		--difficulty $(if $(DIFFICULTY),$(DIFFICULTY),3) \

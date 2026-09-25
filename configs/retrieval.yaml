@@ -3,6 +3,9 @@ token_budget: 1500
 max_graph_hops: 2
 max_expanded_nodes: 40
 max_traversal_time_ms: 100
+scope_access_mode: hierarchical
+enforce_temporal_status: true
+enforce_session_access: true
 weights:
   semantic: 0.40
   scope: 0.25

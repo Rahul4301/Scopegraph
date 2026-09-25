@@ -70,11 +70,14 @@ class RetrievalConfig:
     parent_scope_score: float = 0.7
     explicit_named_scope_score: float = 0.85
     global_scope_score: float = 0.5
+    scope_access_mode: str = "hierarchical"
+    enforce_temporal_status: bool = True
+    enforce_session_access: bool = True
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "RetrievalConfig":
         scope = config.get("scope", {})
-        return cls(
+        result = cls(
             weights=RankingWeights.from_config(config),
             max_graph_hops=int(config.get("max_graph_hops", 2)),
             max_expanded_nodes=int(config.get("max_expanded_nodes", 40)),
@@ -87,7 +90,13 @@ class RetrievalConfig:
             parent_scope_score=float(scope.get("parent_scope", 0.7)),
             explicit_named_scope_score=float(scope.get("explicit_named_scope", 0.85)),
             global_scope_score=float(scope.get("global", 0.5)),
+            scope_access_mode=str(config.get("scope_access_mode", "hierarchical")),
+            enforce_temporal_status=bool(config.get("enforce_temporal_status", True)),
+            enforce_session_access=bool(config.get("enforce_session_access", True)),
         )
+        if result.scope_access_mode not in {"hierarchical", "all"}:
+            raise ValueError("scope_access_mode must be 'hierarchical' or 'all'")
+        return result
 
 
 @dataclass(frozen=True)
@@ -120,7 +129,10 @@ class ScopeAwareRetriever:
         started = time.perf_counter()
         effective_now = now or datetime.now(UTC)
         access = await self._scope_access(query, current_scope)
-        historical = is_historical_query(query, self.config.historical_query_terms)
+        historical = (
+            self.config.enforce_temporal_status
+            and is_historical_query(query, self.config.historical_query_terms)
+        )
         candidates = await self._eligible_memories(
             access, current_scope=current_scope, historical=historical, now=effective_now
         )
@@ -133,7 +145,14 @@ class ScopeAwareRetriever:
             memory.id: cosine_similarity(query_vector, memory.embedding or [])
             for memory in candidates
         }
-        anchor_limit = min(len(candidates), max(top_k * 3, top_k))
+        traversal_enabled = self.config.max_graph_hops > 0 and self.config.max_expanded_nodes > 0
+        # Reserve part of the result budget for structurally related memories.
+        # Remaining slots are backfilled semantically after traversal, so sparse
+        # graphs still return up to ``top_k`` results.
+        anchor_limit = min(
+            len(candidates),
+            max(1, top_k // 2) if traversal_enabled else top_k,
+        )
         anchors = nlargest(
             anchor_limit,
             candidates,
@@ -156,14 +175,33 @@ class ScopeAwareRetriever:
         all_memories = {memory.id: memory for memory in anchors}
         all_memories.update({memory.id: memory for memory in expanded_memories})
         anchor_ids = {memory.id for memory in anchors}
+        if len(all_memories) < top_k:
+            fallbacks = nlargest(
+                top_k,
+                candidates,
+                key=lambda memory: (
+                    0.65 * semantic[memory.id] + 0.35 * access[memory.scope_id].score
+                ),
+            )
+            for fallback in fallbacks:
+                if fallback.id in all_memories:
+                    continue
+                all_memories[fallback.id] = fallback
+                anchor_ids.add(fallback.id)
+                if len(all_memories) >= top_k:
+                    break
         step_by_id = {step.to_id: step for step in traversal_steps}
         ranked: list[tuple[RetrievedMemory, TraversalStep]] = []
         for memory in all_memories.values():
-            temporal = temporal_score(memory, now=effective_now, historical=historical)
+            temporal = (
+                temporal_score(memory, now=effective_now, historical=historical)
+                if self.config.enforce_temporal_status
+                else 1.0
+            )
             if temporal == 0:
                 continue
             depth = expanded.get(memory.id, (memory, 0))[1]
-            graph = 1.0 if memory.id in anchor_ids else 1.0 / (depth + 1)
+            graph = 0.0 if memory.id in anchor_ids else 1.0 / depth
             scope_access = access[memory.scope_id]
             recency = recency_score(memory, now=effective_now)
             score = final_score(
@@ -249,23 +287,32 @@ class ScopeAwareRetriever:
         historical: bool,
         now: datetime,
     ) -> list[Memory]:
-        memories = await self.repository.list_retrieval_memories(
-            scope_ids=set(access), session_id=current_scope.session_id if current_scope else None,
-            historical=historical, now=now,
-        )
+        if self.config.enforce_temporal_status:
+            memories = await self.repository.list_retrieval_memories(
+                scope_ids=set(access),
+                session_id=current_scope.session_id if current_scope else None,
+                historical=historical,
+                now=now,
+            )
+        else:
+            # Deliberately expose inactive and out-of-date candidates for the
+            # temporal/status ablation. Tombstones remain excluded because they
+            # represent deletion, not temporal ranking behavior.
+            memories = await self.repository.list_memories(include_inactive=True)
         eligible: list[Memory] = []
         for memory in memories:
             if memory.scope_id not in access or memory.status is MemoryStatus.TOMBSTONED:
                 continue
-            if not historical and memory.status is not MemoryStatus.ACTIVE:
-                continue
-            if historical and memory.status not in {
-                MemoryStatus.ACTIVE,
-                MemoryStatus.SUPERSEDED,
-                MemoryStatus.ARCHIVED,
-            }:
-                continue
-            if memory.scope_level is ScopeLevel.SESSION:
+            if self.config.enforce_temporal_status:
+                if not historical and memory.status is not MemoryStatus.ACTIVE:
+                    continue
+                if historical and memory.status not in {
+                    MemoryStatus.ACTIVE,
+                    MemoryStatus.SUPERSEDED,
+                    MemoryStatus.ARCHIVED,
+                }:
+                    continue
+            if self.config.enforce_session_access and memory.scope_level is ScopeLevel.SESSION:
                 if current_scope is None or current_scope.session_id is None:
                     continue
                 if memory.metadata.get("session_id") != current_scope.session_id:
@@ -280,6 +327,11 @@ class ScopeAwareRetriever:
         scopes = {scope.id: scope for scope in await self.repository.list_scopes(
             include_archived=False
         )}
+        if self.config.scope_access_mode == "all":
+            return {
+                scope.id: ScopeAccess(self.config.current_scope_score, "scope hierarchy disabled")
+                for scope in scopes.values()
+            }
         if current_scope is not None:
             if current_scope.id not in scopes:
                 raise ValueError("Current scope does not exist or is archived")

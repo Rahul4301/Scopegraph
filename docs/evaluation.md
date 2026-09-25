@@ -1,11 +1,13 @@
 # Evaluation
 
-CrossScopeMem is a synthetic developer diagnostic for scope-isolation regressions. It
-is not part of the primary research benchmark set and its generated questions must not
-be combined with external benchmark results. Primary evaluations use the official
-questions supplied by each released dataset.
+CrossScopeMem is the controlled, thesis-specific benchmark for scope isolation. Each
+scenario is one account containing a global root, simultaneous projects, a nested
+repository, standalone conversations, and chronological sessions. Its generated
+questions must never be combined with external benchmark scores. LongMemEval-S,
+LoCoMo, and MemoryAgentBench supply complementary external-validity evidence using
+only their official questions and answers.
 
-Run the synthetic diagnostic only when changing retrieval behavior:
+Run a fast controlled smoke test:
 
 ```bash
 make eval-diagnostic
@@ -13,14 +15,15 @@ make eval-report
 make smoke
 ```
 
-For a larger local regression run, increase the generated histories:
+The proposal target is 40–60 complete accounts. For example:
 
 ```bash
 make eval-diagnostic SCENARIOS=40 DIFFICULTY=3
 make eval-report
 ```
 
-`SCENARIOS` defaults to 1 for a fast smoke run.
+`SCENARIOS` defaults to 1 to prevent an accidental expensive live run. A reportable
+run must explicitly select its pre-registered account count.
 
 To run the complete live model pipeline through the same repository:
 
@@ -35,9 +38,20 @@ IDs. Ten live difficulty-3 scenarios are intended as a roughly 30–40 minute pi
 provider latency and rate limits can move the wall-clock time outside that range.
 The Neo4j run measures ScopeGraph's end-to-end repository path.
 
-The raw JSONL record preserves retrieved IDs, scopes, scores, status, trace paths, latency, token count, logical storage statistics, configuration hash, seed, and git commit. `evals.analysis.aggregate` scores raw records independently of execution; `tables` and `plots` write Markdown and SVG artifacts.
+The batch freezes extraction once per source and runs six paired conditions: full
+ScopeGraph; vector-only, flat-graph, and two-level session/global controls; and
+no-graph-traversal and no-temporal/status ablations. Flat graph is also the no-hierarchy
+ablation, so it is not executed twice. The raw JSONL
+record preserves retrieved IDs, scopes, scores, status, trace paths, latency, token
+count, logical storage statistics, configuration hash, seed, and git commit.
+`evals.analysis.aggregate` scores raw records independently of execution and resamples
+complete accounts for confidence intervals. Reports also write paired full-minus-
+control differences and exact McNemar results for binary outcomes.
 
 Implemented aggregate metrics include exact match, normalized token F1, Precision@K, Recall@K, Cross-Scope Contamination Rate, stale-memory rate, p50/p95 latency, token summaries, and logical storage counts. The correction runner measures error relapse after no correction, conversational correction, and direct graph correction at +1, +5, +10, and +20 sessions.
+It defaults to 30 injected-error cases, appends real distractor memories between
+probes, and reports account/case-bootstrap confidence intervals. A null difference
+between conversational and structural correction must be reported if observed.
 
 Live extraction also writes `classification.json` with one gold/predicted pair per
 source-memory candidate. It reports candidate coverage, strict and matched-only
@@ -75,7 +89,9 @@ The current runner does not provide per-question concurrency.
 
 No external benchmark results are claimed until the live suite completes. The primary
 suite is exactly LongMemEval-S, LoCoMo, and MemoryAgentBench: 6,157 official questions
-under full ScopeGraph, no graph traversal, and no scope weighting. Run `make
+under full ScopeGraph. Run `make
 download-benchmarks`, `make validate-benchmarks`, then `make eval-suite
 BATCH=results/batches/<run-id>`. LoCoMo's ten shared histories and each
-MemoryAgentBench corpus are ingested once per ablation, not once per question.
+Each LoCoMo history and MemoryAgentBench corpus is ingested once, not once per
+question. Live extraction is checkpointed once per official source session into one
+artifact per dataset so an interrupted full run resumes without re-extracting sources.

@@ -1,6 +1,7 @@
 """Score raw JSONL independently from benchmark execution."""
 
 import json
+import math
 import random
 from collections import defaultdict
 from collections.abc import Iterable
@@ -15,17 +16,28 @@ from evals.metrics.stale_memory import stale_memory_error_rate
 from evals.schemas import EvaluationRecord, ScoredRecord
 
 
-def _bootstrap_ci(values: list[float], *, samples: int = 10_000) -> tuple[float, float]:
-    if not values:
+def _cluster_bootstrap_ci(
+    values_by_cluster: dict[str, list[float]], *, samples: int = 10_000
+) -> tuple[float, float]:
+    """Bootstrap whole histories/accounts so related questions stay together."""
+    if not values_by_cluster:
         raise ValueError("Cannot bootstrap an empty sample")
-    if len(values) == 1:
-        return values[0], values[0]
+    clusters = sorted(values_by_cluster)
+    values = [value for cluster in clusters for value in values_by_cluster[cluster]]
+    if len(clusters) == 1:
+        mean = sum(values) / len(values)
+        return mean, mean
     generator = random.Random(42)
-    size = len(values)
-    means = sorted(
-        sum(values[generator.randrange(size)] for _ in range(size)) / size
-        for _ in range(samples)
-    )
+    size = len(clusters)
+    means: list[float] = []
+    for _ in range(samples):
+        sampled = [
+            value
+            for _ in range(size)
+            for value in values_by_cluster[clusters[generator.randrange(size)]]
+        ]
+        means.append(sum(sampled) / len(sampled))
+    means.sort()
     return means[int(samples * 0.025)], means[min(samples - 1, int(samples * 0.975))]
 
 
@@ -114,12 +126,19 @@ def aggregate_records(records: Iterable[EvaluationRecord]) -> dict[str, dict[str
         metric_names = sorted({name for value in values for name in value.metrics})
         summary[system] = {}
         for name in metric_names:
-            measured = [value.metrics[name] for value in values
-                        if value.metrics.get(name) is not None]
+            measured_records = [
+                value for value in values if value.metrics.get(name) is not None
+            ]
+            measured = [value.metrics[name] for value in measured_records]
             if measured:
                 numeric = [float(value) for value in measured]
                 summary[system][name] = sum(numeric) / len(numeric)
-                lower, upper = _bootstrap_ci(numeric)
+                clusters: dict[str, list[float]] = defaultdict(list)
+                for value in measured_records:
+                    metric = value.metrics[name]
+                    assert metric is not None
+                    clusters[value.scenario_id].append(float(metric))
+                lower, upper = _cluster_bootstrap_ci(dict(clusters))
                 summary[system][f"{name}_ci95_low"] = lower
                 summary[system][f"{name}_ci95_high"] = upper
         summary[system]["query_count"] = float(len(values))
@@ -171,6 +190,95 @@ def aggregate_records(records: Iterable[EvaluationRecord]) -> dict[str, dict[str
                 float(item.get("edges", 0)) for item in storage
             ) / len(storage)
     return summary
+
+
+def _exact_mcnemar_p(full_wins: int, ablation_wins: int) -> float:
+    discordant = full_wins + ablation_wins
+    if discordant == 0:
+        return 1.0
+    tail = sum(
+        math.comb(discordant, index) * 0.5**discordant
+        for index in range(min(full_wins, ablation_wins) + 1)
+    )
+    return min(1.0, 2.0 * tail)
+
+
+def paired_ablation_comparisons(
+    records: Iterable[EvaluationRecord],
+) -> dict[str, dict[str, float]]:
+    """Compare each ablation with full ScopeGraph on identical questions."""
+    scored = [score_record(record) for record in records]
+    grouped: dict[tuple[str, str, str], dict[tuple[str, str], ScoredRecord]] = defaultdict(dict)
+    for record in scored:
+        grouped[(record.dataset, record.system, record.ablation)][
+            (record.scenario_id, record.question_id)
+        ] = record
+    output: dict[str, dict[str, float]] = {}
+    architectures = sorted({(dataset, system) for dataset, system, _ in grouped})
+    for dataset, system in architectures:
+        full = grouped.get((dataset, system, "full"), {})
+        if not full:
+            continue
+        ablations = sorted(
+            ablation
+            for ds, candidate_system, ablation in grouped
+            if ds == dataset and candidate_system == system and ablation != "full"
+        )
+        for ablation in ablations:
+            comparison = grouped[(dataset, system, ablation)]
+            paired_keys = sorted(set(full) & set(comparison))
+            label = f"{dataset}/{system}/full-minus-{ablation}"
+            values: dict[str, float] = {"paired_question_count": float(len(paired_keys))}
+            metric_names = sorted(
+                {
+                    metric
+                    for key in paired_keys
+                    for metric in set(full[key].metrics) & set(comparison[key].metrics)
+                }
+            )
+            for metric in metric_names:
+                pairs = [
+                    (key, full[key].metrics.get(metric), comparison[key].metrics.get(metric))
+                    for key in paired_keys
+                ]
+                measured = [
+                    (key, float(full_value), float(ablation_value))
+                    for key, full_value, ablation_value in pairs
+                    if full_value is not None and ablation_value is not None
+                ]
+                if not measured:
+                    continue
+                differences_by_account: dict[str, list[float]] = defaultdict(list)
+                for (scenario_id, _), full_value, ablation_value in measured:
+                    differences_by_account[scenario_id].append(full_value - ablation_value)
+                differences = [
+                    difference
+                    for account in differences_by_account.values()
+                    for difference in account
+                ]
+                values[f"{metric}_mean_difference"] = sum(differences) / len(differences)
+                lower, upper = _cluster_bootstrap_ci(dict(differences_by_account))
+                values[f"{metric}_difference_ci95_low"] = lower
+                values[f"{metric}_difference_ci95_high"] = upper
+                if all(
+                    full_value in {0.0, 1.0} and ablation_value in {0.0, 1.0}
+                    for _, full_value, ablation_value in measured
+                ):
+                    full_wins = sum(
+                        full_value == 1.0 and ablation_value == 0.0
+                        for _, full_value, ablation_value in measured
+                    )
+                    ablation_wins = sum(
+                        full_value == 0.0 and ablation_value == 1.0
+                        for _, full_value, ablation_value in measured
+                    )
+                    values[f"{metric}_mcnemar_full_wins"] = float(full_wins)
+                    values[f"{metric}_mcnemar_ablation_wins"] = float(ablation_wins)
+                    values[f"{metric}_mcnemar_exact_p"] = _exact_mcnemar_p(
+                        full_wins, ablation_wins
+                    )
+            output[label] = values
+    return output
 def aggregate_files(
     paths: Iterable[str | Path], output: str | Path | None = None
 ) -> dict[str, dict[str, float]]:

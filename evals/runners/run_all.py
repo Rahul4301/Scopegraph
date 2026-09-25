@@ -21,6 +21,15 @@ from evals.schemas import EvaluationRecord
 from scopegraph.config import get_settings
 from scopegraph.models.memory import MemoryCandidate
 
+ABLATIONS = (
+    "full",
+    "vector_only_control",
+    "flat_graph_control",
+    "two_level_control",
+    "no_graph_traversal",
+    "no_temporal_status",
+)
+
 
 async def run_all(**kwargs: object) -> list[str]:
     resume_path = kwargs.pop("resume", None)
@@ -45,7 +54,7 @@ async def run_all(**kwargs: object) -> list[str]:
     )
     diff = diff_result.stdout
     manifest = {
-        "protocol": f"cross-scope-v3/{kwargs.get('profile', 'research')}",
+        "protocol": f"cross-scope-v4/{kwargs.get('profile', 'research')}",
         "status": "preparing",
         "system": "scopegraph",
         "options": kwargs,
@@ -55,6 +64,7 @@ async def run_all(**kwargs: object) -> list[str]:
         "working_diff_sha256": hashlib.sha256(diff).hexdigest(),
         "source_fingerprint": source_fingerprint(),
         "extraction_policy": "frozen once per source; no backend-specific existing memories",
+        "ablations": list(ABLATIONS),
         "latency_protocol": (
             f"warm-embeddings/{kwargs.get('storage', 'memory')}-repository"
         ),
@@ -126,31 +136,33 @@ async def run_all(**kwargs: object) -> list[str]:
         )
         save_json(batch / "classification.json", classification.model_dump(mode="json"))
         manifest["classification_evaluated"] = classification.evaluated
-        total_questions = sum(len(scenario.examples) for scenario in scenarios)
+        total_questions = sum(len(scenario.examples) for scenario in scenarios) * len(ABLATIONS)
         completed = 0
 
         def report(record: EvaluationRecord) -> None:
             nonlocal completed
             completed += 1
             print(
-                f"[scopegraph] {completed}/{total_questions} | "
+                f"[scopegraph/{record.ablation}] {completed}/{total_questions} | "
                 f"{record.scenario_id} | {record.question_id} | "
                 f"retrieval={record.retrieval_latency_ms:.1f}ms",
                 flush=True,
             )
 
-        paths.append(
-            str(
-                await run_evaluation(
-                    system_name="scopegraph",
-                    output=str(batch / "scopegraph.jsonl"),
-                    provider_bank=bank,
-                    resume=bool(resume_path),
-                    on_progress=report,
-                    **kwargs,
+        for ablation in ABLATIONS:
+            paths.append(
+                str(
+                    await run_evaluation(
+                        system_name="scopegraph",
+                        output=str(batch / f"scopegraph_{ablation}.jsonl"),
+                        provider_bank=bank,
+                        resume=bool(resume_path),
+                        on_progress=report,
+                        ablation=ablation,
+                        **kwargs,
+                    )
                 )
             )
-        )
         manifest["status"] = "complete"
         return paths
     except Exception:

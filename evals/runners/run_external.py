@@ -12,13 +12,13 @@ from pathlib import Path
 
 import yaml
 
-from evals.adapters.cross_scope_mem import KeywordEmbeddingProvider
+from evals.adapters.cross_scope_mem import KeywordEmbeddingProvider, ScenarioExtractor
 from evals.adapters.external import evidence_source_ids, session_inputs
 from evals.adapters.registry import EXTERNAL_DATASETS, external_adapters
 from evals.judges import OfficialBenchmarkJudge
 from evals.metrics.official import official_score
 from evals.metrics.storage import logical_storage_stats
-from evals.runners.checkpoint import RecordCheckpoint, source_fingerprint
+from evals.runners.checkpoint import RecordCheckpoint, save_json, source_fingerprint
 from evals.schemas import EvaluationRecord, ExternalBenchmarkExample
 from scopegraph.backends.scopegraph import ScopeGraphMemorySystem
 from scopegraph.config import get_settings
@@ -36,6 +36,7 @@ from scopegraph.llm.transport import close_provider
 from scopegraph.memory.retriever import RetrievalConfig, ScopeAwareRetriever
 from scopegraph.models.memory import MemoryCandidate, MemoryType
 from scopegraph.models.scope import ScopeCreate, ScopeRef, ScopeType
+from scopegraph.models.source import SourceMessage
 
 
 class TurnMemoryExtractor:
@@ -54,6 +55,48 @@ class TurnMemoryExtractor:
             )
             for message in messages
         ]
+
+
+async def _freeze_external_extraction(
+    inputs,
+    extractor: CandidateExtractor,
+    *,
+    scope: ScopeRef,
+    cached: dict[str, list[MemoryCandidate]],
+    checkpoint,
+) -> dict[str, list[MemoryCandidate]]:
+    """Extract each source session once, independent of mutable graph state."""
+    by_message = dict(cached)
+    for session in inputs:
+        if not session.messages or all(message.id in by_message for message in session.messages):
+            continue
+        messages = [SourceMessage(**message.model_dump()) for message in session.messages]
+        candidates = await extractor.extract(
+            messages,
+            current_scope=scope.model_copy(update={"session_id": session.id}),
+            existing_memories=[],
+        )
+        message_ids = {message.id for message in session.messages}
+        invalid = sorted(
+            {
+                source_id
+                for candidate in candidates
+                for source_id in candidate.source_message_ids
+                if source_id not in message_ids
+            }
+        )
+        if invalid:
+            raise ValueError(
+                f"Extractor returned source IDs outside session {session.id}: {invalid}"
+            )
+        for message in session.messages:
+            by_message[message.id] = [
+                candidate
+                for candidate in candidates
+                if message.id in candidate.source_message_ids
+            ]
+        checkpoint(by_message)
+    return by_message
 
 
 def _git_commit() -> str | None:
@@ -240,6 +283,7 @@ async def run_external(
     storage: str = "neo4j",
     allow_neo4j_reset: bool = False,
     ablation: str = "full",
+    extraction_cache: str | Path | None = None,
 ) -> Path:
     live_answer = live_answer or live
     live_extraction = live_extraction or live
@@ -249,22 +293,8 @@ async def run_external(
     examples = adapter.load(source_path)[:limit]
     config, config_hash = _config(config_path)
     retrieval_config_data = deepcopy(config.get("retrieval", {}))
-    if ablation == "no_scope_weighting":
-        weights = retrieval_config_data.setdefault("weights", {})
-        weights["semantic"] = float(weights.get("semantic", 0.40)) + float(
-            weights.get("scope", 0.25)
-        )
-        weights["scope"] = 0.0
-    elif ablation == "no_graph_traversal":
-        weights = retrieval_config_data.setdefault("weights", {})
-        weights["semantic"] = float(weights.get("semantic", 0.40)) + float(
-            weights.get("graph", 0.07)
-        )
-        weights["graph"] = 0.0
-        retrieval_config_data["max_graph_hops"] = 0
-        retrieval_config_data["max_expanded_nodes"] = 0
-    elif ablation != "full":
-        raise ValueError(f"Unsupported ablation: {ablation}")
+    if ablation != "full":
+        raise ValueError("Official external benchmarks run full ScopeGraph only")
     retrieval = RetrievalConfig.from_config(retrieval_config_data)
     answer_model: AnswerModel | None = None
     if live_answer:
@@ -307,6 +337,18 @@ async def run_external(
         extractor = TurnMemoryExtractor()
     settings = get_settings()
     dataset_sha256 = await asyncio.to_thread(_source_digest, source_path)
+    extraction_cache_path = Path(extraction_cache) if extraction_cache else None
+    frozen_extractions: dict[str, dict[str, list[dict]]] = {}
+    if extraction_cache_path is not None and extraction_cache_path.exists():
+        cache_payload = json.loads(extraction_cache_path.read_text())
+        expected_metadata = {
+            "dataset": dataset,
+            "dataset_sha256": dataset_sha256,
+            "llm_model": settings.llm_model if live_extraction else None,
+        }
+        if cache_payload.get("metadata") != expected_metadata:
+            raise ValueError("Extraction cache does not match dataset bytes or extraction model")
+        frozen_extractions = cache_payload.get("corpora", {})
     protocol_payload = {
         "config_hash": config_hash,
         "dataset_sha256": dataset_sha256,
@@ -318,6 +360,7 @@ async def run_external(
         "live_embeddings": live_embeddings,
         "storage": storage,
         "ablation": ablation,
+        "extraction_policy": "frozen-shared" if extraction_cache_path else "per-run",
         "llm_model": settings.llm_model if live_answer or live_extraction else None,
         "embedding_model": settings.embedding_model if live_embeddings else None,
         "official_judges": live_answer,
@@ -336,6 +379,19 @@ async def run_external(
             raise ValueError(
                 "Checkpoint does not match the dataset, code, config, models or system"
             )
+
+    def raise_on_failure() -> None:
+        failures = [record for record in checkpoint.records.values() if record.failure_type]
+        if failures:
+            first = failures[0]
+            raise RuntimeError(
+                f"{dataset}: {len(failures)} of {len(examples)} questions failed; "
+                f"first failure: {first.scenario_id}/{first.question_id} "
+                f"({first.failure_type}: {first.failure_message}). "
+                f"Failure records are preserved in {destination}"
+            )
+
+    raise_on_failure()
     if checkpoint.records:
         run_id = next(iter(checkpoint.records.values())).run_id
     client: Neo4jClient | None = None
@@ -394,25 +450,69 @@ async def run_external(
                     )
                     if system_name != "scopegraph":
                         raise ValueError(f"Unsupported evaluation system: {system_name}")
-                    system = ScopeGraphMemorySystem(
-                        repository,
-                        extractor,
-                        retriever=ScopeAwareRetriever(repository, embedder, retrieval),
-                    )
                     inputs = session_inputs(
                         example,
                         scope_id=scope_id,
                         as_of=example.question_date,
                         source_namespace=corpus_id,
                     )
+                    scope_ref = ScopeRef(
+                        id=scope_id,
+                        name=f"{dataset}:{corpus_id}",
+                        scope_type=ScopeType.CUSTOM,
+                    )
+                    corpus_extractor: CandidateExtractor = extractor
+                    if live_extraction and extraction_cache_path is not None:
+
+                        def persist_external(
+                            candidates: dict[str, list[MemoryCandidate]],
+                            frozen_corpus_id: str = corpus_id,
+                        ) -> None:
+                            frozen_extractions[frozen_corpus_id] = {
+                                message_id: [
+                                    candidate.model_dump(mode="json") for candidate in values
+                                ]
+                                for message_id, values in candidates.items()
+                            }
+                            save_json(
+                                extraction_cache_path,
+                                {
+                                    "metadata": {
+                                        "dataset": dataset,
+                                        "dataset_sha256": dataset_sha256,
+                                        "llm_model": settings.llm_model,
+                                    },
+                                    "corpora": frozen_extractions,
+                                },
+                            )
+
+                        frozen = await _freeze_external_extraction(
+                            inputs,
+                            extractor,
+                            scope=scope_ref,
+                            cached={
+                                message_id: [
+                                    MemoryCandidate.model_validate(candidate)
+                                    for candidate in values
+                                ]
+                                for message_id, values in frozen_extractions.get(
+                                    corpus_id, {}
+                                ).items()
+                            },
+                            checkpoint=persist_external,
+                        )
+                        persist_external(frozen)
+                        corpus_extractor = ScenarioExtractor(frozen)
+                    system = ScopeGraphMemorySystem(
+                        repository,
+                        corpus_extractor,
+                        retriever=ScopeAwareRetriever(repository, embedder, retrieval),
+                    )
                     for session in inputs:
                         await system.ingest_session(
                             session,
-                            current_scope=ScopeRef(
-                                id=scope_id,
-                                name=f"{dataset}:{corpus_id}",
-                                scope_type=ScopeType.CUSTOM,
-                                session_id=session.id,
+                            current_scope=scope_ref.model_copy(
+                                update={"session_id": session.id}
                             ),
                         )
                     memories = await repository.list_memories(include_inactive=True)
@@ -436,7 +536,7 @@ async def run_external(
                         error=corpus_failure,
                     )
                 )
-                continue
+                raise_on_failure()
             gold_sources = evidence_source_ids(
                 example,
                 inputs,
@@ -469,7 +569,7 @@ async def run_external(
                 )
                 if judged is not None:
                     scored = (judged.metric, judged.score)
-            except Exception as exc:  # checkpoint provider/query failures and continue
+            except Exception as exc:  # preserve failure before stopping the batch
                 checkpoint.append(
                     _failure_record(
                         run_id=run_id,
@@ -486,7 +586,7 @@ async def run_external(
                         error=exc,
                     )
                 )
-                continue
+                raise_on_failure()
             token_usage = {
                 **_usage_delta(
                     extraction_usage_before, _total_usage(extractor), "extraction"
@@ -577,8 +677,13 @@ def main() -> None:
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument(
+        "--extraction-cache",
+        type=Path,
+        help="checkpointed live extraction for this dataset",
+    )
+    parser.add_argument(
         "--ablation",
-        choices=["full", "no_graph_traversal", "no_scope_weighting"],
+        choices=["full"],
         default="full",
     )
     parser.add_argument(
@@ -604,6 +709,7 @@ def main() -> None:
                 storage="neo4j",
                 allow_neo4j_reset=args.allow_neo4j_reset,
                 ablation=args.ablation,
+                extraction_cache=args.extraction_cache,
             )
         )
     )

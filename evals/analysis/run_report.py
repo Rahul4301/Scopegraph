@@ -3,10 +3,15 @@
 import argparse
 from pathlib import Path
 
-from evals.analysis.aggregate import aggregate_files
+from evals.analysis.aggregate import (
+    aggregate_records,
+    load_jsonl,
+    paired_ablation_comparisons,
+)
 from evals.analysis.plots import metric_bar_svg
 from evals.analysis.scope_classification import write_scope_classification_report
 from evals.analysis.tables import write_markdown_table
+from evals.runners.checkpoint import save_json
 from evals.schemas import ScopeClassificationEvaluation
 
 
@@ -16,7 +21,22 @@ def main() -> None:
     parser.add_argument("--output-root", type=Path, default=Path("results"))
     parser.add_argument("--metric", default="recall_at_8")
     args = parser.parse_args()
-    summary = aggregate_files(args.inputs, args.output_root / "processed" / "summary.json")
+    records = load_jsonl(args.inputs)
+    summary = aggregate_records(records)
+    save_json(args.output_root / "processed" / "summary.json", summary)
+    save_json(
+        args.output_root / "processed" / "summary_by_question_type.json",
+        {
+            question_type: aggregate_records(
+                record for record in records if record.question_type == question_type
+            )
+            for question_type in sorted({record.question_type for record in records})
+        },
+    )
+    save_json(
+        args.output_root / "processed" / "paired_ablation_comparisons.json",
+        paired_ablation_comparisons(records),
+    )
     write_markdown_table(summary, args.output_root / "tables" / "summary.md")
     metric_bar_svg(summary, args.metric, args.output_root / "figures" / f"{args.metric}.svg")
     classification_candidates = []

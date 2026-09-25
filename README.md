@@ -173,7 +173,8 @@ Complete in Phase 8:
 - complete official adapters for LongMemEval-S, LoCoMo, and MemoryAgentBench;
 - selective API acquisition with pinned checksums and no repository snapshots;
 - official deterministic scorers and pinned LLM judges;
-- full, no-graph-traversal, and no-scope-weighting ScopeGraph runs.
+- full ScopeGraph runs on all official external questions; architecture controls and
+  component ablations run separately on account-shaped CrossScopeMem scenarios.
 
 Phase 9 reproducibility tooling is included through `make smoke`, `make migrate`, `make demo`, `make export-graph`, resumable benchmark checkpoints, bootstrap confidence intervals, and the documented full-check workflow. No full live released-dataset result is claimed until `make eval-suite` completes.
 
