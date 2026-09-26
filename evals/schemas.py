@@ -120,6 +120,8 @@ class EvaluationRecord(BaseModel):
     allowed_scope_ids: list[str] = Field(default_factory=list)
     retrieved_source_ids: list[list[str]] = Field(default_factory=list)
     retrieved_source_contents: list[list[str]] = Field(default_factory=list)
+    delivered_source_ids: list[list[str]] = Field(default_factory=list)
+    delivered_source_contents: list[list[str]] = Field(default_factory=list)
     retrieved_origin_scope_ids: list[list[str]] = Field(default_factory=list)
     retrieved_contents: list[str] = Field(default_factory=list)
     retrieved_memory_ids: list[str] = Field(default_factory=list)

@@ -1,9 +1,13 @@
 seed: 42
 retrieval:
-  top_k: 12
-  token_budget: 1500
+  top_k: 16
+  token_budget: 3000
   max_graph_hops: 2
   max_expanded_nodes: 40
+  candidate_pool_size: 64
+  raw_source_candidates: 24
+  lexical_weight: 0.25
+  historical_query_terms: [before, previous, previously, used to, history, historical, formerly, ago, last]
 models:
   temperature: 0.0
   max_output_tokens: 300

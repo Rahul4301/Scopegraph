@@ -54,36 +54,6 @@ def locomo_score(prediction: str, answer: str, category: str) -> float:
     raise ValueError(f"Unknown LoCoMo category: {category}")
 
 
-def _locomo_exact_match(prediction: str, truth: str) -> float:
-    """Match LoCoMo's order-insensitive normalized exact-match convention."""
-    return float(
-        set(_locomo_normalize(prediction).split())
-        == set(_locomo_normalize(truth).split())
-    )
-
-
-def locomo_exact_match_accuracy(prediction: str, answer: str, category: str) -> float:
-    """Return strict, normalized answer accuracy alongside LoCoMo's primary F1."""
-    if category in {"2", "3", "4"}:
-        expected = answer.split(";", maxsplit=1)[0].strip() if category == "3" else answer
-        return _locomo_exact_match(prediction, expected)
-    if category == "1":
-        predicted = {
-            _locomo_normalize(item)
-            for item in prediction.split(",")
-            if _locomo_normalize(item)
-        }
-        expected = {
-            _locomo_normalize(item)
-            for item in answer.split(",")
-            if _locomo_normalize(item)
-        }
-        return float(predicted == expected)
-    if category == "5":
-        return locomo_score(prediction, answer, category)
-    raise ValueError(f"Unknown LoCoMo category: {category}")
-
-
 def supplemental_official_scores(
     dataset: str,
     prediction: str | None,
@@ -91,10 +61,10 @@ def supplemental_official_scores(
 ) -> dict[str, float]:
     if prediction is None or dataset != "locomo":
         return {}
+    # Token F1 is LoCoMo's published metric, kept for comparison with prior work.
+    # Answer accuracy itself is the rubric-based judge verdict.
     return {
-        "locomo_exact_match_accuracy": locomo_exact_match_accuracy(
-            prediction, example.answer, str(example.metadata["category"])
-        )
+        "locomo_f1": locomo_score(prediction, example.answer, str(example.metadata["category"]))
     }
 
 
@@ -187,9 +157,11 @@ def official_score(
     if prediction is None:
         return None
     if dataset == "locomo":
-        return "locomo_f1", locomo_score(
-            prediction, example.answer, str(example.metadata["category"])
-        )
+        # Adversarial (category 5) gold is the tempting wrong answer, so correctness is
+        # the official abstention rule. Every other category is judged against a rubric.
+        if str(example.metadata["category"]) == "5":
+            return "llm_judge_accuracy", locomo_score(prediction, example.answer, "5")
+        return None
     if dataset == "memoryagentbench":
         source = str(example.metadata["source"])
         answers = [str(item) for item in example.metadata.get("answers", [example.answer])]

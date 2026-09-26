@@ -45,8 +45,12 @@ class ModelTransport:
                     exc.response.status_code in {408, 429} or exc.response.status_code >= 500
                 )
                 if not retryable or attempt + 1 == self.retries:
+                    # Provider error bodies explain rejections (bad parameter, context
+                    # length, content policy) and do not echo credentials.
+                    detail = exc.response.text[:500].strip()
                     raise RuntimeError(
                         f"Model endpoint returned HTTP {exc.response.status_code}"
+                        + (f": {detail}" if detail else "")
                     ) from None
                 self.retry_count += 1
                 retry_after = exc.response.headers.get("retry-after", "")

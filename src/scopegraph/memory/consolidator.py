@@ -72,7 +72,11 @@ class Consolidator:
                     for source_id in candidate.source_message_ids
                     if source_id in source_timestamps
                 ]
-                if timestamps:
+                # A retrospective event ("camping the week before") can end before
+                # it is mentioned; its start is then unknown, not the message time.
+                if timestamps and (
+                    candidate.valid_to is None or min(timestamps) <= candidate.valid_to
+                ):
                     candidate = candidate.model_copy(update={"valid_from": min(timestamps)})
             decision = resolve_candidate_scope(
                 candidate, current_scope=current_scope, global_scope_id=global_scope_id

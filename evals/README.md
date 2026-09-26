@@ -43,9 +43,17 @@ statistics, configuration hash, seed, and git commit. Retrieval packs memory sum
 their supporting chat messages into one shared token budget; it never supplies a whole
 conversation merely because it was ingested. Scoring is a separate pass. The default answer
 field uses a transparent deterministic fact extractor; no LLM answer is claimed.
-LoCoMo reports its official token F1 as the primary score and a separate normalized,
-order-insensitive exact-match accuracy diagnostic; adversarial questions use the official
-binary abstention rule for both.
+External runs also search original source turns independently, union semantic, lexical, and
+graph candidates before reranking, and include adjacent turns for conversational context.
+Long source documents are reduced to query-relevant spans during packing. Raw records separate
+a memory's linked provenance from the exact source IDs and text delivered to the answer model.
+LoCoMo uses category-specific answer instructions; LongMemEval and synthesis-heavy
+MemoryAgentBench tasks receive larger retrieval and evidence budgets.
+LoCoMo answer accuracy is binary, rubric-based correctness from a pinned GPT-4o judge
+(`LOCOMO_JUDGE_PROMPT`), which grades meaning rather than wording and supports paired
+McNemar comparisons. Adversarial questions use the official binary abstention rule instead,
+because their stored answer is the tempting wrong one. LoCoMo's official token F1 is
+reported alongside for comparison with prior work.
 
 Each batch also writes `classification.json`. Live extraction compares effective
 predicted memory placement against the scenario oracle, including missing and extra

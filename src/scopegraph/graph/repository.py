@@ -19,6 +19,12 @@ from scopegraph.models.scope import Scope, ScopeCreate, ScopeType, ScopeUpdate
 from scopegraph.models.session import Session, SessionCreate
 from scopegraph.models.source import SourceMessage, SourceMessageCreate
 
+# Memory-to-memory relation types. Queries filter with ``type(r) IN $relation_types``
+# instead of a typed pattern: a corpus may never create some types (LoCoMo has no
+# SAME_AS or SUPPORTS edges), and Neo4j warns on every typed pattern naming an
+# unused relationship type (01N51) even though the match result is identical.
+MEMORY_RELATION_TYPES = ["SUPERSEDES", "CONTRADICTS", "SAME_AS", "SUPPORTS", "RELATES_TO"]
+
 
 def _json(value: Mapping[str, Any]) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
@@ -214,6 +220,33 @@ class Neo4jMemoryRepository:
         )
         return [SourceMessage.model_validate(_node(row, "m")) for row in rows]
 
+    async def list_source_messages_for_scopes(
+        self, scope_ids: set[str], *, now: datetime, session_id: str | None
+    ) -> list[tuple[SourceMessage, str]]:
+        if not scope_ids:
+            return []
+        rows = await self.client.execute_read(
+            """
+            MATCH (message:SourceMessage)-[:PART_OF]->(session:Session)-[:BELONGS_TO]->(scope:Scope)
+            WHERE scope.id IN $scope_ids AND datetime(message.timestamp) <= datetime($now)
+              AND (session.id = $session_id OR NOT EXISTS {
+                  MATCH (memory:Memory {scope_level: 'session'})-[:DERIVED_FROM]->(message)
+              } OR EXISTS {
+                  // A scope-level memory already exposes this turn as provenance.
+                  MATCH (shared:Memory)-[:DERIVED_FROM]->(message)
+                  WHERE shared.scope_level <> 'session' AND shared.status <> 'tombstoned'
+              })
+            RETURN message AS m, scope.id AS scope_id
+            ORDER BY message.timestamp, message.turn_index, message.id
+            """,
+            {"scope_ids": sorted(scope_ids), "now": now.isoformat(),
+             "session_id": session_id},
+        )
+        return [
+            (SourceMessage.model_validate(_node(row, "m")), str(row["scope_id"]))
+            for row in rows
+        ]
+
     async def create_memory(self, request: MemoryCreate) -> Memory:
         payload = request.model_dump(mode="json", exclude={"source_ids"})
         payload["metadata_json"] = _json(payload.pop("metadata"))
@@ -350,8 +383,8 @@ class Neo4jMemoryRepository:
             return []
         rows = await self.client.execute_read(
             """
-            MATCH (source:Memory)-[r:SUPERSEDES|CONTRADICTS|SAME_AS|SUPPORTS|RELATES_TO]-(m:Memory)
-            WHERE source.id IN $memory_ids
+            MATCH (source:Memory)-[r]-(m:Memory)
+            WHERE source.id IN $memory_ids AND type(r) IN $relation_types
               AND ($eligible_ids IS NULL OR m.id IN $eligible_ids)
             WITH m, source, r ORDER BY source.id, type(r)
             WITH m, head(collect({source_id: source.id, relation: type(r)})) AS edge
@@ -360,8 +393,8 @@ class Neo4jMemoryRepository:
             ORDER BY m.id
             LIMIT $limit
             """,
-            {"memory_ids": memory_ids, "eligible_ids": sorted(eligible_ids)
-             if eligible_ids is not None else None,
+            {"memory_ids": memory_ids, "relation_types": MEMORY_RELATION_TYPES,
+             "eligible_ids": sorted(eligible_ids) if eligible_ids is not None else None,
              "limit": limit if limit is not None else 2**31-1},
         )
         return [
@@ -530,9 +563,11 @@ class Neo4jMemoryRepository:
     async def get_support_dependents(self, memory_id: str) -> list[SupportDependency]:
         rows = await self.client.execute_read(
             """
-            MATCH (:Memory {id: $memory_id})-[:SUPPORTS]->(dependent:Memory)
-            OPTIONAL MATCH (other:Memory)-[:SUPPORTS]->(dependent)
-            WHERE other.id <> $memory_id AND other.status = 'active'
+            MATCH (:Memory {id: $memory_id})-[support]->(dependent:Memory)
+            WHERE type(support) = 'SUPPORTS'
+            OPTIONAL MATCH (other:Memory)-[other_support]->(dependent)
+            WHERE type(other_support) = 'SUPPORTS'
+              AND other.id <> $memory_id AND other.status = 'active'
             RETURN dependent AS m,
                    [(dependent)-[:DERIVED_FROM]->(source) | source.id] AS source_ids,
                    [id IN collect(DISTINCT other.id) WHERE id IS NOT NULL]
@@ -566,8 +601,8 @@ class Neo4jMemoryRepository:
               AND ($include_inactive OR m.status = 'active')
               AND (
                 $memory_id IS NULL OR m.id = $memory_id OR EXISTS {
-                  MATCH (m)-[:SUPERSEDES|CONTRADICTS|SAME_AS|SUPPORTS|RELATES_TO]-
-                        (:Memory {id: $memory_id})
+                  MATCH (m)-[r]-(:Memory {id: $memory_id})
+                  WHERE type(r) IN $relation_types
                 }
               )
             RETURN m, [(m)-[:DERIVED_FROM]->(source) | source.id] AS source_ids
@@ -579,6 +614,7 @@ class Neo4jMemoryRepository:
                 "memory_id": memory_id,
                 "include_inactive": include_inactive,
                 "limit": limit,
+                "relation_types": MEMORY_RELATION_TYPES,
             },
         )
         memories = [self._memory_from_row(row) for row in rows]
@@ -619,15 +655,14 @@ class Neo4jMemoryRepository:
         if memory_ids:
             relationship_rows = await self.client.execute_read(
                 """
-                MATCH (source:Memory)-
-                      [relation:SUPERSEDES|CONTRADICTS|SAME_AS|SUPPORTS|RELATES_TO]->
-                      (target:Memory)
+                MATCH (source:Memory)-[relation]->(target:Memory)
                 WHERE source.id IN $memory_ids AND target.id IN $memory_ids
+                  AND type(relation) IN $relation_types
                 RETURN source.id AS source, target.id AS target,
                        type(relation) AS relation, relation.kind AS kind
                 ORDER BY source.id, relation, target.id
                 """,
-                {"memory_ids": memory_ids},
+                {"memory_ids": memory_ids, "relation_types": MEMORY_RELATION_TYPES},
             )
             for row in relationship_rows:
                 edge = GraphEdge(

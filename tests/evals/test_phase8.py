@@ -11,9 +11,10 @@ from evals.adapters import (
 )
 from evals.adapters.external import evidence_source_ids, session_inputs
 from evals.analysis.aggregate import aggregate_records, score_record
-from evals.metrics.official import locomo_exact_match_accuracy
+from evals.judges.official import LOCOMO_JUDGE_MODEL, OfficialBenchmarkJudge
+from evals.metrics.official import official_score, supplemental_official_scores
 from evals.runners.run_external import _terminal_summary, run_external
-from evals.schemas import EvaluationRecord
+from evals.schemas import EvaluationRecord, ExternalBenchmarkExample
 from scopegraph.memory.retriever import ScopeAwareRetriever
 
 
@@ -80,6 +81,36 @@ def test_locomo_adapter_preserves_evidence_turn_ids(tmp_path) -> None:
     assert example.metadata["evidence_turn_ids"] == ["D1"]
 
 
+def test_locomo_adapter_keeps_speaker_and_shared_image(tmp_path) -> None:
+    path = _write_json(
+        tmp_path,
+        "locomo.json",
+        [{
+            "sample_id": "conversation-1",
+            "conversation": {
+                "session_1_date_time": "2024-01-01",
+                "session_1": [
+                    {"speaker": "Caroline", "dia_id": "D1:1",
+                     "text": "I went to a support group."},
+                    {"speaker": "Melanie", "dia_id": "D1:2", "text": "Look at this!",
+                     "blip_caption": "a photo of a pottery bowl"},
+                ],
+            },
+            "qa": [{"question": "Who went?", "answer": "Caroline", "category": "4"}],
+        }],
+    )
+    example = LoCoMoAdapter().load(path)[0]
+    contents = [message.content for message in session_inputs(example)[0].messages]
+    assert contents == [
+        "Caroline: I went to a support group.",
+        "Melanie: Look at this! [shared an image: a photo of a pottery bowl]",
+    ]
+    assert evidence_source_ids(
+        example.model_copy(update={"metadata": {"evidence_turn_ids": ["D1:2"]}}),
+        session_inputs(example),
+    ) == ["conversation-1:q0:D1:2"]
+
+
 def test_locomo_adapter_parses_release_session_dates(tmp_path) -> None:
     path = _write_json(
         tmp_path,
@@ -102,11 +133,45 @@ def test_locomo_adapter_parses_release_session_dates(tmp_path) -> None:
     assert len(session_inputs(example, as_of=example.question_date)) == 2
 
 
-def test_locomo_exact_match_accuracy_normalizes_order_and_lists() -> None:
-    assert locomo_exact_match_accuracy("May 7, 2023", "7 May 2023", "2") == 1.0
-    assert locomo_exact_match_accuracy("May 7", "7 May 2023", "2") == 0.0
-    assert locomo_exact_match_accuracy("beta, alpha", "alpha, beta", "1") == 1.0
-    assert locomo_exact_match_accuracy("No information available.", "anything", "5") == 1.0
+def _locomo_question(category: str, answer: str) -> ExternalBenchmarkExample:
+    return ExternalBenchmarkExample(
+        dataset="locomo", example_id="c:q0", question_id="c:q0",
+        question_type=f"category_{category}", question="When did she go?", answer=answer,
+        sessions=[], metadata={"sample_id": "c", "category": category},
+    )
+
+
+def test_locomo_accuracy_is_judged_except_deterministic_abstention(tmp_path) -> None:
+    dated = _locomo_question("2", "The week before 9 June 2023")
+    assert official_score("locomo", "2 June 2023", dated, data_path=tmp_path) is None
+    assert set(supplemental_official_scores("locomo", "2 June 2023", dated)) == {"locomo_f1"}
+    adversarial = _locomo_question("5", "a tempting wrong answer")
+    assert official_score(
+        "locomo", "No information available", adversarial, data_path=tmp_path
+    ) == ("llm_judge_accuracy", 1.0)
+
+
+@pytest.mark.asyncio
+async def test_locomo_judge_grades_meaning_with_pinned_model() -> None:
+    calls: list[dict] = []
+
+    class FakeTransport:
+        last_usage = {"prompt_tokens": 50, "completion_tokens": 1}
+
+        async def post(self, url, *, api_key, payload):
+            calls.append(payload)
+            return {"choices": [{"message": {"content": "Same week.\nVERDICT: CORRECT"}}]}
+
+    judge = OfficialBenchmarkJudge(base_url="https://example.test/v1", api_key="test")
+    judge.transport = FakeTransport()  # type: ignore[assignment]
+    result = await judge.judge(
+        "locomo", _locomo_question("2", "The week before 9 June 2023"), "2 June 2023"
+    )
+    assert result is not None and result.score == 1.0
+    assert result.metric == "llm_judge_accuracy" and result.model == LOCOMO_JUDGE_MODEL
+    assert calls[0]["model"] == LOCOMO_JUDGE_MODEL and calls[0]["temperature"] == 0
+    assert "The week before 9 June 2023" in calls[0]["messages"][0]["content"]
+    assert await judge.judge("locomo", _locomo_question("5", "x"), "anything") is None
 
 
 @pytest.mark.asyncio
@@ -263,15 +328,16 @@ def test_external_terminal_summary_includes_secondary_official_scores() -> None:
             question_type="category_2",
             question="When?",
             gold_answer="7 May 2023",
-            official_metric="locomo_f1",
+            official_metric="llm_judge_accuracy",
             official_score=1.0,
-            official_secondary_scores={"locomo_exact_match_accuracy": 1.0},
+            official_secondary_scores={"locomo_f1": 0.5},
             config_hash="test",
             seed=42,
         )
     ]
     summary = _terminal_summary(records)
-    assert "locomo_exact_match_accuracy: 100.00% (1 questions)" in summary
+    assert "llm_judge_accuracy: 100.00% (1 questions)" in summary
+    assert "locomo_f1: 50.00% (1 questions)" in summary
 
 
 @pytest.mark.asyncio
@@ -344,7 +410,7 @@ async def test_locomo_runner_ingests_shared_history_once(
     assert {record["scenario_id"] for record in records} == {"conversation-1"}
     assert records[0]["retrieved_memory_ids"] == records[1]["retrieved_memory_ids"]
     assert records[0]["gold_source_ids"] == ["conversation-1:D1"]
-    assert records[0]["retrieved_source_contents"] == [["We use Neo4j."]]
+    assert records[0]["retrieved_source_contents"] == [["A: We use Neo4j."]]
     assert observed_query_times == [datetime(2024, 1, 1, tzinfo=UTC)] * 2
 
 
@@ -372,3 +438,4 @@ def test_external_replay_excludes_future_turns(tmp_path) -> None:
     inputs = session_inputs(example, as_of=example.question_date)
     assert [item.id for item in inputs] == ["q1:past"]
     assert evidence_source_ids(example, inputs) == ["q1:past:0"]
+

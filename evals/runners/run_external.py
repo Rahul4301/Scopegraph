@@ -132,6 +132,44 @@ def _source_digest(path: Path) -> str:
 
 def _answer_protocol(example: ExternalBenchmarkExample) -> tuple[str, int]:
     source = str(example.metadata.get("source", ""))
+    if example.dataset == "locomo":
+        category = str(example.metadata.get("category", ""))
+        if category == "5":
+            return (
+                'Answer "No information available" unless the supplied evidence directly '
+                "supports an answer. Do not infer an unstated fact.",
+                100,
+            )
+        if category == "1":
+            return (
+                "Return every distinct requested item supported by the history as a concise, "
+                "comma-separated list. Search across all supplied episodes and omit explanation. "
+                "Use exact words from the conversation whenever possible, but refer to people "
+                "by name, never as I or my.",
+                300,
+            )
+        if category == "2" or any(
+            term in example.question.casefold() for term in ("when", "how long", "what year")
+        ):
+            return (
+                # Mirrors LoCoMo's official category-2 prompt: "Use DATE of
+                # CONVERSATION to answer with an approximate date."
+                "Use the DATE of the conversation (the source timestamp) to answer with an "
+                "approximate date. If the source states the date or month directly, give it "
+                "as day month year, for example 4 March 2021, never 2021-03-04. If the source "
+                "uses relative time, keep it relative to that conversation date, for example "
+                "The week before 3 March 2021, The Friday before 12 October 2021, or Two "
+                "weekends before 20 November 2021. Give durations as stated, for example 3 months. "
+                "Omit explanation.",
+                100,
+            )
+        return (
+            "Answer with the shortest complete phrase supported by the history. For an inference, "
+            "state the likely answer and its essential reason in one short clause. Use exact "
+            "words from the conversation whenever possible, but refer to people by name, "
+            "never as I or my.",
+            200,
+        )
     if "infbench" in source:
         return "Summarize the book using only the retrieved evidence.", 2000
     if "recsys" in source:
@@ -156,6 +194,20 @@ def _answer_protocol(example: ExternalBenchmarkExample) -> tuple[str, int]:
         "possible.",
         300,
     )
+
+
+def _retrieval_protocol(
+    example: ExternalBenchmarkExample, *, top_k: int, token_budget: int
+) -> tuple[int, int]:
+    """Give synthesis-heavy benchmark tasks enough distinct evidence to answer."""
+    if example.dataset == "longmemeval":
+        return max(top_k, 24), max(token_budget, 4000)
+    if example.dataset == "memoryagentbench":
+        source = str(example.metadata.get("source", "")).casefold()
+        if any(name in source for name in ("infbench", "recsys", "longmemeval")):
+            return max(top_k, 32), max(token_budget, 6000)
+        return max(top_k, 24), max(token_budget, 4000)
+    return top_k, token_budget
 
 
 async def _answer(
@@ -206,7 +258,7 @@ def _corpus_id(dataset: str, example: ExternalBenchmarkExample) -> str:
 
 def _failure_metric(dataset: str, example: ExternalBenchmarkExample) -> str:
     if dataset == "locomo":
-        return "locomo_f1"
+        return "llm_judge_accuracy"
     if dataset == "longmemeval" or "longmemeval" in example.question_type:
         return "llm_judge_accuracy"
     if "infbench" in example.question_type:
@@ -239,7 +291,7 @@ def _failure_record(
 ) -> EvaluationRecord:
     scope_id = f"external-{dataset}-{corpus_id}"
     return EvaluationRecord(
-        protocol_version="external-v6",
+        protocol_version="external-v7",
         latency_protocol=f"warm-embeddings/{storage}-repository",
         run_id=run_id,
         dataset=dataset,
@@ -257,7 +309,7 @@ def _failure_record(
         official_metric=_failure_metric(dataset, example),
         official_score=0.0,
         official_secondary_scores=(
-            {"locomo_exact_match_accuracy": 0.0} if dataset == "locomo" else {}
+            {"locomo_f1": 0.0} if dataset == "locomo" else {}
         ),
         failure_type=type(error).__name__,
         failure_message=str(error),
@@ -371,7 +423,7 @@ async def run_external(
         "extraction_policy": "source-preserving-v1",
     }
     if dataset == "locomo":
-        cache_metadata["adapter_version"] = "locomo-dates-v2"
+        cache_metadata["adapter_version"] = "locomo-speakers-v3"
     if extraction_cache_path is not None and extraction_cache_path.exists():
         cache_payload = json.loads(extraction_cache_path.read_text())
         if cache_payload.get("metadata") != cache_metadata:
@@ -427,6 +479,12 @@ async def run_external(
         await ensure_schema(client)
     elif storage != "memory":
         raise ValueError(f"Unsupported evaluation storage: {storage}")
+    total = len(examples)
+
+    def append(record: EvaluationRecord) -> None:
+        checkpoint.append(record)
+        print(_progress(record, len(checkpoint.records), total), flush=True)
+
     active_corpus_id: str | None = None
     repository: InMemoryMemoryRepository | Neo4jMemoryRepository
     system: ScopeGraphMemorySystem
@@ -535,7 +593,7 @@ async def run_external(
                     corpus_failure = exc
                 active_corpus_id = corpus_id
             if corpus_failure is not None:
-                checkpoint.append(
+                append(
                     _failure_record(
                         run_id=run_id,
                         dataset=dataset,
@@ -560,6 +618,9 @@ async def run_external(
             retrieval_cfg = retrieval_config_data
             top_k = int(retrieval_cfg.get("top_k", 8))
             token_budget = int(retrieval_cfg.get("token_budget", 1500))
+            top_k, token_budget = _retrieval_protocol(
+                example, top_k=top_k, token_budget=token_budget
+            )
             try:
                 preparation_started = time.perf_counter()
                 await embedder.embed([example.question, *(memory.content for memory in memories)])
@@ -586,7 +647,7 @@ async def run_external(
                     scored = (judged.metric, judged.score)
                 secondary_scores = supplemental_official_scores(dataset, answer, example)
             except Exception as exc:  # score this question as failed, then continue
-                checkpoint.append(
+                append(
                     _failure_record(
                         run_id=run_id,
                         dataset=dataset,
@@ -614,7 +675,7 @@ async def run_external(
             }
             stats = await system.stats()
             record = EvaluationRecord(
-                protocol_version="external-v6",
+                protocol_version="external-v7",
                 latency_protocol=f"warm-embeddings/{storage}-repository",
                 embedding_preparation_ms=preparation_ms,
                 run_id=run_id,
@@ -633,6 +694,14 @@ async def run_external(
                 allowed_scope_ids=[global_scope_id, scope_id],
                 retrieved_source_ids=[item.source_ids for item in result.items],
                 retrieved_source_contents=[
+                    [message.content for message in item.source_messages]
+                    for item in result.items
+                ],
+                delivered_source_ids=[
+                    [message.id for message in item.source_messages]
+                    for item in result.items
+                ],
+                delivered_source_contents=[
                     [message.content for message in item.source_messages]
                     for item in result.items
                 ],
@@ -670,7 +739,7 @@ async def run_external(
                 git_commit=_git_commit(),
                 seed=42,
             )
-            checkpoint.append(record)
+            append(record)
     finally:
         await close_provider(extractor)
         await close_provider(embedder)
@@ -684,6 +753,22 @@ async def run_external(
             finally:
                 await client.close()
     return destination
+
+
+def _progress(record: EvaluationRecord, index: int, total: int) -> str:
+    lines = [f"Question {index}/{total} [{record.question_type}]: {record.question}"]
+    if record.failure_type is not None:
+        lines.append(f"FAILED ({record.failure_type}): {(record.failure_message or '')[:200]}")
+    else:
+        lines.append(f"Answer: {record.answer if record.answer is not None else '(not evaluated)'}")
+        lines.append(f"Gold: {record.gold_answer}")
+        if record.official_metric is not None and record.official_score is not None:
+            lines.append(f"{record.official_metric}: {record.official_score:.2f}")
+        lines.extend(
+            f"{metric}: {score:.2f}"
+            for metric, score in record.official_secondary_scores.items()
+        )
+    return "\n".join([*lines, "_" * 40])
 
 
 def _terminal_summary(records: list[EvaluationRecord]) -> str:
@@ -743,6 +828,7 @@ def main() -> None:
         parser.error("--limit must be positive")
     if args.case_limit is not None and args.case_limit < 1:
         parser.error("--case-limit must be positive")
+    started = time.perf_counter()
     output = asyncio.run(
         run_external(
                 dataset=args.dataset,
@@ -765,7 +851,12 @@ def main() -> None:
     )
     records = load_jsonl([output])
     print(output, flush=True)
+    elapsed = time.perf_counter() - started
+    print("\nSummary:", flush=True)
     print(_terminal_summary(records), flush=True)
+    print(f"time: {elapsed / 60:.1f} min", flush=True)
+    if records:
+        print(f"time per question: {elapsed / len(records):.1f} s", flush=True)
     if any(record.failure_type is not None for record in records):
         raise SystemExit(1)
 

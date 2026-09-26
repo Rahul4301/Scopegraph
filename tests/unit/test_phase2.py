@@ -512,3 +512,24 @@ async def test_structured_entity_bridge_creates_traversable_relation() -> None:
         and neighbor.relation == "RELATES_TO:DEPENDS_ON"
         for neighbor in neighbors
     )
+
+
+@pytest.mark.asyncio
+async def test_retrospective_event_ending_before_message_is_ingested() -> None:
+    repository = InMemoryMemoryRepository()
+    await repository.create_scope(
+        ScopeCreate(id="beta", name="Beta", scope_type=ScopeType.PROJECT)
+    )
+    ended = datetime(2023, 6, 26, 23, 59, tzinfo=UTC)
+    event = candidate(source_id="m1", content="Went camping last week").model_copy(
+        update={"memory_type": MemoryType.EVENT, "valid_to": ended}
+    )
+    system = ScopeGraphMemorySystem(repository, StaticMemoryExtractor([event]))
+    result = await system.ingest_session(
+        session("s1", "beta", "m1", "We went camping last week"),
+        current_scope=ScopeRef(id="beta", scope_type=ScopeType.PROJECT),
+    )
+    memory = await repository.get_memory(result.memory_ids[0])
+    assert memory is not None
+    assert memory.valid_from is None
+    assert memory.valid_to == ended

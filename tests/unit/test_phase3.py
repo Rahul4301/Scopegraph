@@ -7,7 +7,7 @@ import pytest
 from scopegraph.embeddings.cache import CachedEmbedder, SQLiteEmbeddingCache
 from scopegraph.graph.in_memory import InMemoryMemoryRepository
 from scopegraph.memory.ranker import RankingWeights, cosine_similarity, final_score
-from scopegraph.memory.retriever import ScopeAwareRetriever
+from scopegraph.memory.retriever import RetrievalConfig, ScopeAwareRetriever
 from scopegraph.memory.traversal import bounded_traversal
 from scopegraph.models.memory import (
     MemoryCreate,
@@ -253,6 +253,62 @@ async def test_retrieval_includes_budgeted_verbatim_provenance() -> None:
 
 
 @pytest.mark.asyncio
+async def test_raw_source_channel_recovers_detail_lost_by_summary() -> None:
+    repository = InMemoryMemoryRepository()
+    await repository.create_scope(
+        ScopeCreate(id="alpha", name="Alpha", scope_type=ScopeType.PROJECT)
+    )
+    occurred_at = datetime(2023, 5, 8, 13, 0, tzinfo=UTC)
+    await repository.create_session(
+        SessionCreate(id="session", scope_id="alpha", started_at=occurred_at)
+    )
+    source = await repository.create_source_message(SourceMessageCreate(
+        id="source", session_id="session", role=MessageRole.USER,
+        content="Caroline went to the LGBTQ support group yesterday.",
+        timestamp=occurred_at, turn_index=0,
+    ))
+    await repository.create_memory(MemoryCreate(
+        id="lossy", content="Caroline felt accepted by her community.",
+        memory_type=MemoryType.EVENT, scope_level=ScopeLevel.SCOPE,
+        scope_id="alpha", source_ids=[source.id],
+    ))
+    retriever = ScopeAwareRetriever(
+        repository,
+        KeywordEmbeddingProvider(),
+        RetrievalConfig(raw_source_candidates=8, lexical_weight=0.25),
+    )
+
+    result = await retriever.retrieve(
+        "When did Caroline go to the LGBTQ support group?",
+        current_scope=ScopeRef(id="alpha"), top_k=4, token_budget=100,
+        now=occurred_at,
+    )
+
+    assert result.items[0].memory_id == "source:source"
+    assert result.items[0].source_messages[0].content == source.content
+
+
+def test_token_packing_selects_query_relevant_span_from_long_source() -> None:
+    source = SourceMessageCreate(
+        id="long", session_id="session", role=MessageRole.USER,
+        content=("irrelevant filler " * 300) + "the launch date is Friday",
+        turn_index=0,
+    )
+    item = RetrievedMemory(
+        memory_id="long-memory", content="Original conversation evidence", score=1.0,
+        scope_id="alpha", scope_level=ScopeLevel.SCOPE, status=MemoryStatus.ACTIVE,
+        confidence=1.0, source_messages=[source], source_ids=[source.id],
+    )
+
+    packed, used = pack_to_token_budget(
+        [item], 250, query="When is the launch date?"
+    )
+
+    assert "launch date is Friday" in packed[0].source_messages[0].content
+    assert used <= 250
+
+
+@pytest.mark.asyncio
 async def test_bounded_traversal_expands_allowlisted_edges_without_cycles() -> None:
     repository = InMemoryMemoryRepository()
     await repository.create_scope(
@@ -353,3 +409,36 @@ def test_token_budget_packing_preserves_rank_order() -> None:
     packed, used = pack_to_token_budget(items, 3)
     assert [item.memory_id for item in packed] == ["first"]
     assert used == 3
+
+
+@pytest.mark.asyncio
+async def test_raw_source_search_hides_only_session_exclusive_turns() -> None:
+    repository = InMemoryMemoryRepository()
+    await repository.create_scope(
+        ScopeCreate(id="alpha", name="Alpha", scope_type=ScopeType.PROJECT)
+    )
+    occurred_at = datetime(2023, 5, 8, 13, 0, tzinfo=UTC)
+    await repository.create_session(
+        SessionCreate(id="old", scope_id="alpha", started_at=occurred_at)
+    )
+    for turn_index, message_id in enumerate(("private", "shared")):
+        await repository.create_source_message(SourceMessageCreate(
+            id=message_id, session_id="old", role=MessageRole.USER,
+            content=message_id, timestamp=occurred_at, turn_index=turn_index,
+        ))
+        await repository.create_memory(MemoryCreate(
+            id=f"{message_id}-session", content=f"{message_id} override",
+            memory_type=MemoryType.TASK_STATE, scope_level=ScopeLevel.SESSION,
+            scope_id="alpha", source_ids=[message_id],
+        ))
+    await repository.create_memory(MemoryCreate(
+        id="shared-scope", content="shared durable fact",
+        memory_type=MemoryType.FACT, scope_level=ScopeLevel.SCOPE,
+        scope_id="alpha", source_ids=["shared"],
+    ))
+
+    rows = await repository.list_source_messages_for_scopes(
+        {"alpha"}, now=occurred_at, session_id="later"
+    )
+
+    assert [message.id for message, _ in rows] == ["shared"]

@@ -93,12 +93,30 @@ def _sessions(conversation: dict[str, Any]) -> list[ExternalSession]:
                 ) from exc
         sessions.append(ExternalSession(
             session_id=str(number), date=date,
-            turns=[normalize_turn(turn, fallback_id=f"{number}:{index}")
+            turns=[normalize_turn(_attributed_turn(turn), fallback_id=f"{number}:{index}")
                    for index, turn in enumerate(turns)],
         ))
     if not sessions:
         raise ValueError("LoCoMo conversation contains no session_N arrays")
     return sessions
+
+
+def _attributed_turn(turn: Any) -> Any:
+    """Keep who said each turn and what image they shared.
+
+    LoCoMo is a dialogue between two named people, so ``speaker`` is identity rather
+    than a chat role; role normalization would reduce both speakers to ``user`` and
+    leave first-person turns unattributable. Shared photos exist only as captions.
+    """
+    if not isinstance(turn, dict):
+        return turn
+    speaker = str(turn.get("speaker") or "").strip()
+    text = str(turn.get("text") or "").strip()
+    caption = str(turn.get("blip_caption") or "").strip()
+    content = f"{speaker}: {text}" if speaker else text
+    if caption:
+        content = f"{content} [shared an image: {caption}]"
+    return {**turn, "text": content}
 
 
 def _session_number(key: str) -> int | None:

@@ -1,5 +1,8 @@
 top_k: 12
-token_budget: 1500
+token_budget: 3000
+candidate_pool_size: 64
+raw_source_candidates: 24
+lexical_weight: 0.25
 max_graph_hops: 2
 max_expanded_nodes: 40
 max_traversal_time_ms: 100
@@ -13,7 +16,7 @@ weights:
   confidence: 0.08
   graph: 0.07
   recency: 0.05
-historical_query_terms: [before, previous, previously, used to, history, historical, formerly]
+historical_query_terms: [before, previous, previously, used to, history, historical, formerly, ago, last]
 scope:
   current_session: 1.0
   current_scope: 0.9

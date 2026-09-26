@@ -4,8 +4,8 @@ Every ScopeGraph run records its histories, queries, embedding and answer models
 
 The offline runner uses deterministic providers only for plumbing tests. The external
 suite contains exactly LongMemEval-S, LoCoMo, and MemoryAgentBench and runs all 6,157
-official questions. LongMemEval uses its pinned GPT-4o judge, LoCoMo uses its official
-category-aware F1, and MemoryAgentBench uses its task-specific exact/substring/recall
+official questions. LongMemEval uses its pinned GPT-4o judge, LoCoMo uses a pinned GPT-4o
+rubric judge (with its official category-aware F1 reported alongside), and MemoryAgentBench uses its task-specific exact/substring/recall
 metrics plus its pinned LongMemEval and summarization judges. Raw execution and
 aggregation remain separate:
 

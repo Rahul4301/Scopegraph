@@ -1,4 +1,4 @@
-.PHONY: install test test-integration lint typecheck check smoke demo reset-db export-graph migrate download-benchmarks validate-benchmarks eval-suite eval-diagnostic eval-diagnostic-live eval-external eval-report eval-correction validate-external web-install web-build web-dev neo4j-up neo4j-down schema api
+.PHONY: install eval-smoke test test-integration lint typecheck check smoke demo reset-db export-graph migrate download-benchmarks validate-benchmarks eval-suite eval-diagnostic eval-diagnostic-live eval-external eval-report eval-correction validate-external web-install web-build web-dev neo4j-up neo4j-down schema api
 
 export PYTHONPATH := src:.
 export UV_CACHE_DIR ?= /private/tmp/scopegraph-uv-cache
@@ -104,6 +104,19 @@ eval-external:
 	uv run python -m evals.runners.run_external --dataset $(DATASET) --path $(DATA_PATH) \
 		--config configs/experiments.yaml --allow-neo4j-reset \
 		$(if $(LIVE),--live,) $(if $(LIVE_ANSWER),--live-answer,)
+
+# Live smoke run on the first CASES LoCoMo conversations (default 1 = 199 questions),
+# reusing the frozen extraction cache. Each run writes a new timestamped file unless
+# OUTPUT is set; resume an interrupted run with OUTPUT=<same file> RESUME=1.
+eval-smoke:
+	docker compose --profile eval up -d --wait neo4j-eval
+	NEO4J_URI=bolt://localhost:7688 NEO4J_PASSWORD=scopegraph-eval \
+	uv run python -m evals.runners.run_external --dataset locomo --path data/locomo/locomo10.json \
+		--case-limit $(if $(CASES),$(CASES),1) $(if $(LIMIT),--limit $(LIMIT),) --live \
+		--config configs/experiments.yaml --allow-neo4j-reset \
+		--extraction-cache results/smoke/locomo-case1-speakers-extractions.json \
+		--output $(if $(OUTPUT),$(OUTPUT),results/smoke/locomo-$$(date +%Y%m%d-%H%M%S).jsonl) \
+		$(if $(RESUME),--resume,)
 
 eval-report:
 	@test -n "$(BATCH)" || (echo 'Set BATCH=results/batches/<run-id>'; exit 1)

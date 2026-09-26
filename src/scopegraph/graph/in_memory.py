@@ -153,6 +153,35 @@ class InMemoryMemoryRepository:
             key=lambda message: (message.timestamp, message.turn_index, message.id),
         )
 
+    async def list_source_messages_for_scopes(
+        self, scope_ids: set[str], *, now: datetime, session_id: str | None
+    ) -> list[tuple[SourceMessage, str]]:
+        return sorted(
+            (
+                (message, session.scope_id)
+                for message in self.messages.values()
+                if (session := self.sessions.get(message.session_id)) is not None
+                and session.scope_id in scope_ids
+                and message.timestamp <= now
+                and (
+                    message.session_id == session_id
+                    or not any(
+                        message.id in memory.source_ids
+                        and memory.scope_level is ScopeLevel.SESSION
+                        for memory in self.memories.values()
+                    )
+                    # A scope-level memory already exposes this turn as provenance.
+                    or any(
+                        message.id in memory.source_ids
+                        and memory.scope_level is not ScopeLevel.SESSION
+                        and memory.status is not MemoryStatus.TOMBSTONED
+                        for memory in self.memories.values()
+                    )
+                )
+            ),
+            key=lambda pair: (pair[0].timestamp, pair[0].turn_index, pair[0].id),
+        )
+
     async def create_memory(self, request: MemoryCreate) -> Memory:
         if request.id in self.memories:
             raise ValueError("Memory ID already exists")

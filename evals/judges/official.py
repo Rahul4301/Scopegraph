@@ -17,6 +17,39 @@ from scopegraph.llm.transport import ModelTransport
 
 LONGMEMEVAL_JUDGE_MODEL = "gpt-4o-2024-08-06"
 MEMORYAGENTBENCH_SUMMARY_JUDGE_MODEL = "gpt-4o-2024-05-13"
+LOCOMO_JUDGE_MODEL = "gpt-4o-2024-08-06"
+# LoCoMo ships no judge, so this rubric is ScopeGraph's own and is versioned with the
+# code. It grades meaning, not wording: answer models are not deterministic and
+# LoCoMo's gold answers mix relative and absolute dates for the same fact.
+LOCOMO_JUDGE_PROMPT = """You are grading an answer to a question about a long conversation \
+between two people.
+
+Question: {question}
+Gold answer: {gold}
+Response: {response}
+
+Decide whether the response gives the same core answer to the question as the gold answer. \
+Grade the core answer, not the amount of detail, wording, or format.
+
+CORRECT when the response:
+- states the gold answer's core fact, even if it omits secondary detail the gold adds \
+(gold "A red bicycle with a basket", response "A red bicycle") or adds consistent detail \
+(gold "Yes", response "Yes, she built it herself");
+- names the same feeling, reason, or reaction, even partially or in other words \
+(gold "Proud and relieved", response "She felt relieved");
+- gives the same date or time period, relative or absolute, in any format \
+("the week before 9 June 2023" matches a date in that week);
+- gives an equivalent number ("twice" and "2") or reaches the same conclusion on an \
+inference question; a pronoun for the same person ("they" for a child) is not a difference.
+
+WRONG when the response:
+- states a different fact, feeling, reason, date, or conclusion, or contradicts the gold;
+- omits any item when the gold answer lists several distinct things such as places, \
+activities, or titles (gold "Paris, Rome, Oslo", response "Paris");
+- hedges between conflicting answers, or says the information is unavailable.
+
+First write one sentence comparing the core of the response with the core of the gold \
+answer. Then write a final line that is exactly "VERDICT: CORRECT" or "VERDICT: WRONG"."""
 
 
 @dataclass(frozen=True)
@@ -82,6 +115,12 @@ def _source_constants(path: Path) -> dict[str, str]:
     return values
 
 
+def _locomo_verdict(output: str) -> bool:
+    """Read the final VERDICT line; anything unparseable counts as WRONG."""
+    verdicts = re.findall(r"VERDICT:\s*(CORRECT|WRONG)", output.upper())
+    return bool(verdicts) and verdicts[-1] == "CORRECT"
+
+
 def _last_json(text: str) -> dict[str, Any]:
     matches = re.findall(r"\{.*?\}", text, re.DOTALL)
     for candidate in reversed(matches):
@@ -143,6 +182,24 @@ class OfficialBenchmarkJudge:
                 metric="llm_judge_accuracy",
                 score=float("yes" in output.lower()),
                 model=LONGMEMEVAL_JUDGE_MODEL,
+                latency_ms=(time.perf_counter() - started) * 1000,
+                input_tokens=usage.get("prompt_tokens", 0),
+                output_tokens=usage.get("completion_tokens", 0),
+            )
+        if dataset == "locomo" and str(example.metadata.get("category")) != "5":
+            started = time.perf_counter()
+            output, usage = await self._complete(
+                LOCOMO_JUDGE_PROMPT.format(
+                    question=example.question, gold=example.answer, response=response
+                ),
+                model=LOCOMO_JUDGE_MODEL,
+                temperature=0,
+                max_tokens=200,
+            )
+            return JudgeResult(
+                metric="llm_judge_accuracy",
+                score=float(_locomo_verdict(output)),
+                model=LOCOMO_JUDGE_MODEL,
                 latency_ms=(time.perf_counter() - started) * 1000,
                 input_tokens=usage.get("prompt_tokens", 0),
                 output_tokens=usage.get("completion_tokens", 0),

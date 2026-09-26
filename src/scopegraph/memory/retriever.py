@@ -20,6 +20,13 @@ from scopegraph.models.scope import Scope, ScopeRef, ScopeType
 from scopegraph.models.source import SourceMessage
 from scopegraph.observability.token_counting import pack_to_token_budget
 
+WORD_PATTERN = re.compile(r"[\w']+", re.UNICODE)
+STOP_WORDS = {
+    "a", "an", "and", "are", "did", "do", "does", "for", "from", "has", "have",
+    "how", "in", "is", "it", "of", "on", "the", "to", "was", "were", "what",
+    "when", "where", "which", "who", "why", "would", "could", "likely",
+}
+
 
 class RetrievalRepository(Protocol):
     async def list_scopes(self, *, include_archived: bool = False) -> list[Scope]: ...
@@ -54,6 +61,10 @@ class RetrievalRepository(Protocol):
         self, message_ids: list[str]
     ) -> list[SourceMessage]: ...
 
+    async def list_source_messages_for_scopes(
+        self, scope_ids: set[str], *, now: datetime, session_id: str | None
+    ) -> list[tuple[SourceMessage, str]]: ...
+
 
 @dataclass(frozen=True)
 class RetrievalConfig:
@@ -78,6 +89,9 @@ class RetrievalConfig:
     scope_access_mode: str = "hierarchical"
     enforce_temporal_status: bool = True
     enforce_session_access: bool = True
+    candidate_pool_size: int = 64
+    raw_source_candidates: int = 0
+    lexical_weight: float = 0.0
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "RetrievalConfig":
@@ -98,6 +112,9 @@ class RetrievalConfig:
             scope_access_mode=str(config.get("scope_access_mode", "hierarchical")),
             enforce_temporal_status=bool(config.get("enforce_temporal_status", True)),
             enforce_session_access=bool(config.get("enforce_session_access", True)),
+            candidate_pool_size=int(config.get("candidate_pool_size", 64)),
+            raw_source_candidates=int(config.get("raw_source_candidates", 0)),
+            lexical_weight=float(config.get("lexical_weight", 0.0)),
         )
         if result.scope_access_mode not in {"hierarchical", "all"}:
             raise ValueError("scope_access_mode must be 'hierarchical' or 'all'")
@@ -141,9 +158,11 @@ class ScopeAwareRetriever:
         candidates = await self._eligible_memories(
             access, current_scope=current_scope, historical=historical, now=effective_now
         )
-        if not candidates:
-            return RetrievalResult(items=[], trace=[], token_count=0, backend_name="scopegraph",
-                                   retrieval_latency_ms=(time.perf_counter() - started) * 1000)
+        if not candidates and self.config.raw_source_candidates <= 0:
+            return RetrievalResult(
+                items=[], trace=[], token_count=0, backend_name="scopegraph",
+                retrieval_latency_ms=(time.perf_counter() - started) * 1000,
+            )
         query_vector = (await self.embedder.embed([query]))[0]
         await self._ensure_embeddings(candidates)
         semantic = {
@@ -151,12 +170,10 @@ class ScopeAwareRetriever:
             for memory in candidates
         }
         traversal_enabled = self.config.max_graph_hops > 0 and self.config.max_expanded_nodes > 0
-        # Reserve part of the result budget for structurally related memories.
-        # Remaining slots are backfilled semantically after traversal, so sparse
-        # graphs still return up to ``top_k`` results.
+        pool_size = min(len(candidates), max(top_k, self.config.candidate_pool_size))
         anchor_limit = min(
             len(candidates),
-            max(1, top_k // 2) if traversal_enabled else top_k,
+            max(1, top_k // 2) if traversal_enabled else pool_size,
         )
         anchors = nlargest(
             anchor_limit,
@@ -177,24 +194,12 @@ class ScopeAwareRetriever:
         eligible_ids = {memory.id for memory in candidates}
         expanded = {key: value for key, value in expanded.items() if key in eligible_ids}
         expanded_memories = [value[0] for value in expanded.values()]
-        all_memories = {memory.id: memory for memory in anchors}
+        # Semantic candidates always remain in the final reranking pool. Graph
+        # expansion augments this pool rather than displacing stronger matches.
+        semantic_pool = nlargest(pool_size, candidates, key=lambda memory: semantic[memory.id])
+        all_memories = {memory.id: memory for memory in semantic_pool}
         all_memories.update({memory.id: memory for memory in expanded_memories})
         anchor_ids = {memory.id for memory in anchors}
-        if len(all_memories) < top_k:
-            fallbacks = nlargest(
-                top_k,
-                candidates,
-                key=lambda memory: (
-                    0.65 * semantic[memory.id] + 0.35 * access[memory.scope_id].score
-                ),
-            )
-            for fallback in fallbacks:
-                if fallback.id in all_memories:
-                    continue
-                all_memories[fallback.id] = fallback
-                anchor_ids.add(fallback.id)
-                if len(all_memories) >= top_k:
-                    break
         step_by_id = {step.to_id: step for step in traversal_steps}
         ranked: list[tuple[RetrievedMemory, TraversalStep]] = []
         for memory in all_memories.values():
@@ -206,10 +211,10 @@ class ScopeAwareRetriever:
             if temporal == 0:
                 continue
             depth = expanded.get(memory.id, (memory, 0))[1]
-            graph = 0.0 if memory.id in anchor_ids else 1.0 / depth
+            graph = 0.0 if memory.id in anchor_ids or depth == 0 else 1.0 / depth
             scope_access = access[memory.scope_id]
             recency = recency_score(memory, now=effective_now)
-            score = final_score(
+            base_score = final_score(
                 semantic=semantic[memory.id],
                 scope=self._memory_scope_score(
                     memory, current_scope, scope_access.score
@@ -219,6 +224,11 @@ class ScopeAwareRetriever:
                 graph=graph,
                 recency=recency,
                 weights=self.config.weights,
+            )
+            lexical = self._lexical_score(query, memory.content)
+            score = (
+                (1.0 - self.config.lexical_weight) * base_score
+                + self.config.lexical_weight * lexical
             )
             retrieved = RetrievedMemory(
                 memory_id=memory.id,
@@ -254,8 +264,85 @@ class ScopeAwareRetriever:
             )
             ranked.append((retrieved, item_trace))
 
+        # Search original turns independently so extraction omissions and lossy
+        # summaries cannot make source evidence unreachable.
+        source_rows = (
+            await self.repository.list_source_messages_for_scopes(
+                set(access), now=effective_now,
+                session_id=current_scope.session_id if current_scope else None,
+            )
+            if self.config.raw_source_candidates > 0
+            else []
+        )
+        if source_rows:
+            source_vectors = await self.embedder.embed([row[0].content for row in source_rows])
+            raw_ranked: list[tuple[float, SourceMessage, str, float]] = []
+            for (source, scope_id), vector in zip(source_rows, source_vectors, strict=True):
+                source_semantic = cosine_similarity(query_vector, vector)
+                lexical = self._lexical_score(query, source.content)
+                base_score = final_score(
+                    semantic=source_semantic,
+                    scope=access[scope_id].score,
+                    temporal=1.0,
+                    confidence=1.0,
+                    graph=0.0,
+                    recency=1.0,
+                    weights=self.config.weights,
+                )
+                score = (
+                    (1.0 - self.config.lexical_weight) * base_score
+                    + self.config.lexical_weight * lexical
+                )
+                raw_ranked.append((score, source, scope_id, source_semantic))
+            raw_ranked.sort(key=lambda row: row[0], reverse=True)
+            by_session = {
+                source.session_id: sorted(
+                    [item for item, _ in source_rows if item.session_id == source.session_id],
+                    key=lambda item: item.turn_index,
+                )
+                for source, _ in source_rows
+            }
+            for score, source, scope_id, source_semantic in raw_ranked[
+                : self.config.raw_source_candidates
+            ]:
+                neighbors = [
+                    item for item in by_session[source.session_id]
+                    if abs(item.turn_index - source.turn_index) <= 1
+                ]
+                item = RetrievedMemory(
+                    memory_id=f"source:{source.id}",
+                    content="Original conversation evidence",
+                    score=score,
+                    scope_id=scope_id,
+                    scope_level=ScopeLevel.SCOPE,
+                    status=MemoryStatus.ACTIVE,
+                    source_ids=[source.id],
+                    source_messages=neighbors,
+                    valid_from=source.timestamp,
+                    semantic_score=source_semantic,
+                    scope_score=access[scope_id].score,
+                    temporal_score=1.0,
+                    confidence=1.0,
+                )
+                ranked.append((item, TraversalStep(
+                    from_id=f"scope:{scope_id}", to_id=item.memory_id,
+                    relation="RAW_SOURCE", depth=0,
+                    path=[f"scope:{scope_id}", item.memory_id],
+                    semantic_score=source_semantic, scope_score=access[scope_id].score,
+                    temporal_score=1.0, graph_score=0.0, final_score=score,
+                    reason="original source turn",
+                )))
+
         ranked.sort(key=lambda pair: pair[0].score, reverse=True)
-        top_items = [pair[0] for pair in ranked[:top_k]]
+        top_items: list[RetrievedMemory] = []
+        covered_source_ids: set[str] = set()
+        for item, _ in ranked:
+            if item.source_ids and set(item.source_ids) <= covered_source_ids:
+                continue
+            top_items.append(item)
+            covered_source_ids.update(item.source_ids)
+            if len(top_items) >= top_k:
+                break
         source_ids = list(dict.fromkeys(
             source_id
             for item in top_items
@@ -265,15 +352,13 @@ class ScopeAwareRetriever:
         sources_by_id = {source.id: source for source in sources}
         with_provenance = [
             item.model_copy(update={
-                "source_messages": [
-                    sources_by_id[source_id]
-                    for source_id in item.source_ids
-                    if source_id in sources_by_id
-                ]
+                "source_messages": item.source_messages or [
+                    sources_by_id[source_id] for source_id in item.source_ids
+                    if source_id in sources_by_id]
             })
             for item in top_items
         ]
-        packed, token_count = pack_to_token_budget(with_provenance, token_budget)
+        packed, token_count = pack_to_token_budget(with_provenance, token_budget, query=query)
         selected_ids = {item.memory_id for item in packed}
         selected_trace = [step for item, step in ranked if item.memory_id in selected_ids]
         return RetrievalResult(
@@ -283,6 +368,17 @@ class ScopeAwareRetriever:
             trace=selected_trace,
             backend_name="scopegraph",
         )
+
+    @staticmethod
+    def _lexical_score(query: str, text: str) -> float:
+        query_terms = {
+            term for term in WORD_PATTERN.findall(query.casefold())
+            if len(term) > 1 and term not in STOP_WORDS
+        }
+        if not query_terms:
+            return 0.0
+        text_terms = set(WORD_PATTERN.findall(text.casefold()))
+        return len(query_terms & text_terms) / len(query_terms)
 
     async def _ensure_embeddings(self, memories: list[Memory]) -> None:
         missing = [

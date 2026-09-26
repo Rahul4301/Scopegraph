@@ -15,6 +15,7 @@ from scopegraph.memory.retriever import ScopeAwareRetriever
 from scopegraph.memory.traversal import bounded_traversal
 from scopegraph.models.correction import MemoryEditRequest
 from scopegraph.models.memory import (
+    Memory,
     MemoryCandidate,
     MemoryCreate,
     MemoryStatus,
@@ -305,3 +306,41 @@ async def test_scope_index_follows_move():
         == []
     )
     assert (await repo.get_memory(result.memory_ids[0])).status is MemoryStatus.ACTIVE
+
+
+@pytest.mark.parametrize(
+    ("memory_type", "predicate", "flagged", "replaces"),
+    [
+        (MemoryType.FACT, "uses_database", False, True),
+        (MemoryType.FACT, "uses_test_database", False, True),
+        (MemoryType.PREFERENCE, "preferred_language", False, True),
+        (MemoryType.EVENT, "attended_event", False, False),
+        (MemoryType.ENTITY_ATTRIBUTE, "has_pet", False, False),
+        (MemoryType.PREFERENCE, "enjoys_activity", False, False),
+        (MemoryType.FACT, "uses_art_for", False, False),
+        (MemoryType.EVENT, "uses_database", False, False),
+        (MemoryType.ENTITY_ATTRIBUTE, "has_pet", True, True),
+    ],
+)
+def test_only_single_valued_attributes_supersede(
+    memory_type: MemoryType, predicate: str, flagged: bool, replaces: bool
+) -> None:
+    from scopegraph.memory.conflict_detector import find_conflicts
+    from scopegraph.memory.normalizer import conflict_key, normalize_candidate
+
+    def candidate(value: str) -> MemoryCandidate:
+        return normalize_candidate(MemoryCandidate(
+            content=f"Subject {predicate} {value}", memory_type=memory_type,
+            subject="subject", predicate=predicate, object=value,
+            proposed_scope_level="scope", confidence=0.9, durability=0.9,
+            source_message_ids=["m"], possible_contradiction=flagged,
+        ))
+
+    old = candidate("first")
+    existing = Memory(
+        id="old", content=old.content, memory_type=memory_type,
+        scope_level=ScopeLevel.SCOPE, scope_id="alpha", confidence=0.9,
+        metadata={"conflict_key": conflict_key(old), "object": "first"},
+    )
+    conflicts = find_conflicts(candidate("second"), [existing], scope_id="alpha")
+    assert (conflicts == [existing]) is replaces
