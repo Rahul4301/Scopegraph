@@ -17,6 +17,7 @@ from scopegraph.memory.traversal import MemoryNeighbor, bounded_traversal
 from scopegraph.models.memory import Memory, MemoryStatus, ScopeLevel
 from scopegraph.models.retrieval import RetrievalResult, RetrievedMemory, TraversalStep
 from scopegraph.models.scope import Scope, ScopeRef, ScopeType
+from scopegraph.models.source import SourceMessage
 from scopegraph.observability.token_counting import pack_to_token_budget
 
 
@@ -48,6 +49,10 @@ class RetrievalRepository(Protocol):
         self, memory_ids: list[str], *, eligible_ids: set[str] | None = None,
         limit: int | None = None,
     ) -> list[MemoryNeighbor]: ...
+
+    async def get_source_messages_by_ids(
+        self, message_ids: list[str]
+    ) -> list[SourceMessage]: ...
 
 
 @dataclass(frozen=True)
@@ -251,7 +256,24 @@ class ScopeAwareRetriever:
 
         ranked.sort(key=lambda pair: pair[0].score, reverse=True)
         top_items = [pair[0] for pair in ranked[:top_k]]
-        packed, token_count = pack_to_token_budget(top_items, token_budget)
+        source_ids = list(dict.fromkeys(
+            source_id
+            for item in top_items
+            for source_id in item.source_ids
+        ))
+        sources = await self.repository.get_source_messages_by_ids(source_ids)
+        sources_by_id = {source.id: source for source in sources}
+        with_provenance = [
+            item.model_copy(update={
+                "source_messages": [
+                    sources_by_id[source_id]
+                    for source_id in item.source_ids
+                    if source_id in sources_by_id
+                ]
+            })
+            for item in top_items
+        ]
+        packed, token_count = pack_to_token_budget(with_provenance, token_budget)
         selected_ids = {item.memory_id for item in packed}
         selected_trace = [step for item, step in ranked if item.memory_id in selected_ids]
         return RetrievalResult(

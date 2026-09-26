@@ -37,7 +37,15 @@ Generate processed JSON, Markdown, and SVG output from raw JSONL:
 PYTHONPATH=src uv run python -m evals.analysis.run_report results/raw/*.jsonl
 ```
 
-The raw record preserves the scenario, question, gold state, retrieved IDs/scopes/scores, trace, latency, token count, storage statistics, configuration hash, seed, and git commit. Scoring is a separate pass. The default answer field uses a transparent deterministic fact extractor; no LLM answer is claimed.
+The raw record preserves the scenario, question, gold state, retrieved IDs/scopes/scores,
+verbatim provenance messages supplied to the answerer, trace, latency, token count, storage
+statistics, configuration hash, seed, and git commit. Retrieval packs memory summaries and
+their supporting chat messages into one shared token budget; it never supplies a whole
+conversation merely because it was ingested. Scoring is a separate pass. The default answer
+field uses a transparent deterministic fact extractor; no LLM answer is claimed.
+LoCoMo reports its official token F1 as the primary score and a separate normalized,
+order-insensitive exact-match accuracy diagnostic; adversarial questions use the official
+binary abstention rule for both.
 
 Each batch also writes `classification.json`. Live extraction compares effective
 predicted memory placement against the scenario oracle, including missing and extra
@@ -86,15 +94,24 @@ make eval-suite BATCH=results/batches/paper-v1
 The external runner uses the isolated Neo4j service and a credential-free
 turn-preserving extractor by default for local plumbing tests. The paper target uses
 `--live`, which enables live extraction, cached real embeddings, live answers, and
-the required official judge. There is no CLI subset flag: research commands run every
-official question. Sessions after a question timestamp are excluded, and supplied
-evidence IDs are retained as retrieval gold.
+the required official judge. Use `--limit 5` only for a labeled question smoke run,
+or `--case-limit 1` to run every question from one complete shared history; research
+commands run every official question. Sessions after a question timestamp are
+excluded, and supplied evidence IDs are retained as retrieval gold. LoCoMo has
+no per-question timestamp, so its as-of time is the final observed conversation
+turn rather than the machine's current date. Its release session dates are copied
+into the stored Session and SourceMessage timestamps; historical sessions close at
+their latest stored message time, not import time. The release dates lack timezone
+offsets, so the adapter treats them as UTC rather than inventing a local timezone.
 
 `make eval-suite` writes one extraction cache per dataset for reproducibility and safe
-resume. A cache is rejected if the dataset hash or extraction model does not match.
+resume. A cache is rejected if the dataset hash, extraction model, or LoCoMo adapter
+version does not match.
 
 Pass `--resume` with the same output path to continue an interrupted external run;
 the checkpoint rejects changes to the dataset bytes, code, configuration, models, or
 system.
-The runner stops at the first recorded question failure. Diagnose that failure and
-start a new result file; a matching extraction cache can still be reused.
+The runner completes the selected questions and prints the final official score and
+failure count. Failed questions receive zero official score and remain in the
+denominator; the CLI exits nonzero after reporting if any question failed. A matching
+extraction cache can be reused for a fresh run after diagnosing failures.

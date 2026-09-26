@@ -15,8 +15,9 @@ import yaml
 from evals.adapters.cross_scope_mem import KeywordEmbeddingProvider, ScenarioExtractor
 from evals.adapters.external import evidence_source_ids, session_inputs
 from evals.adapters.registry import EXTERNAL_DATASETS, external_adapters
+from evals.analysis.aggregate import load_jsonl
 from evals.judges import OfficialBenchmarkJudge
-from evals.metrics.official import official_score
+from evals.metrics.official import official_score, supplemental_official_scores
 from evals.metrics.storage import logical_storage_stats
 from evals.runners.checkpoint import RecordCheckpoint, save_json, source_fingerprint
 from evals.schemas import EvaluationRecord, ExternalBenchmarkExample
@@ -168,6 +169,7 @@ async def _answer(
         context=items,
         instruction=instruction,
         max_output_tokens=max_output_tokens,
+        as_of=example.question_date,
     )
 
 
@@ -237,7 +239,7 @@ def _failure_record(
 ) -> EvaluationRecord:
     scope_id = f"external-{dataset}-{corpus_id}"
     return EvaluationRecord(
-        protocol_version="external-v4",
+        protocol_version="external-v6",
         latency_protocol=f"warm-embeddings/{storage}-repository",
         run_id=run_id,
         dataset=dataset,
@@ -254,6 +256,9 @@ def _failure_record(
         benchmark_metadata=example.metadata,
         official_metric=_failure_metric(dataset, example),
         official_score=0.0,
+        official_secondary_scores=(
+            {"locomo_exact_match_accuracy": 0.0} if dataset == "locomo" else {}
+        ),
         failure_type=type(error).__name__,
         failure_message=str(error),
         evaluation_mode=(
@@ -275,6 +280,7 @@ async def run_external(
     config_path: str | None = None,
     output: str | Path | None = None,
     limit: int | None = None,
+    case_limit: int | None = None,
     live_answer: bool = False,
     live_extraction: bool = False,
     live_embeddings: bool = False,
@@ -289,8 +295,24 @@ async def run_external(
     live_extraction = live_extraction or live
     live_embeddings = live_embeddings or live
     source_path = Path(path)
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be positive")
+    if case_limit is not None and case_limit < 1:
+        raise ValueError("case_limit must be positive")
     adapter = external_adapters()[dataset]
-    examples = adapter.load(source_path)[:limit]
+    examples = adapter.load(source_path)
+    if case_limit is not None:
+        included_corpora: set[str] = set()
+        selected_examples: list[ExternalBenchmarkExample] = []
+        for example in examples:
+            corpus_id = _corpus_id(dataset, example)
+            if corpus_id not in included_corpora and len(included_corpora) >= case_limit:
+                continue
+            included_corpora.add(corpus_id)
+            selected_examples.append(example)
+        examples = selected_examples
+    if limit is not None:
+        examples = examples[:limit]
     config, config_hash = _config(config_path)
     retrieval_config_data = deepcopy(config.get("retrieval", {}))
     if ablation != "full":
@@ -303,6 +325,7 @@ async def run_external(
             base_url=settings.llm_base_url,
             api_key=settings.llm_api_key.get_secret_value(),
             model=settings.llm_model,
+            unknown_response="No information available" if dataset == "locomo" else "UNKNOWN",
         )
         judge: OfficialBenchmarkJudge | None = OfficialBenchmarkJudge(
             base_url=settings.llm_base_url,
@@ -331,7 +354,9 @@ async def run_external(
                 base_url=settings.llm_base_url,
                 api_key=settings.llm_api_key.get_secret_value(),
                 model=settings.llm_model,
-            )
+            ),
+            skip_invalid_source_ids=True,
+            preserve_unextracted_messages=True,
         )
     else:
         extractor = TurnMemoryExtractor()
@@ -339,15 +364,20 @@ async def run_external(
     dataset_sha256 = await asyncio.to_thread(_source_digest, source_path)
     extraction_cache_path = Path(extraction_cache) if extraction_cache else None
     frozen_extractions: dict[str, dict[str, list[dict]]] = {}
+    cache_metadata = {
+        "dataset": dataset,
+        "dataset_sha256": dataset_sha256,
+        "llm_model": settings.llm_model if live_extraction else None,
+        "extraction_policy": "source-preserving-v1",
+    }
+    if dataset == "locomo":
+        cache_metadata["adapter_version"] = "locomo-dates-v2"
     if extraction_cache_path is not None and extraction_cache_path.exists():
         cache_payload = json.loads(extraction_cache_path.read_text())
-        expected_metadata = {
-            "dataset": dataset,
-            "dataset_sha256": dataset_sha256,
-            "llm_model": settings.llm_model if live_extraction else None,
-        }
-        if cache_payload.get("metadata") != expected_metadata:
-            raise ValueError("Extraction cache does not match dataset bytes or extraction model")
+        if cache_payload.get("metadata") != cache_metadata:
+            raise ValueError(
+                "Extraction cache does not match dataset, model, or adapter version"
+            )
         frozen_extractions = cache_payload.get("corpora", {})
     protocol_payload = {
         "config_hash": config_hash,
@@ -355,6 +385,7 @@ async def run_external(
         "dataset": dataset,
         "system": system_name,
         "limit": limit,
+        "case_limit": case_limit,
         "live_answer": live_answer,
         "live_extraction": live_extraction,
         "live_embeddings": live_embeddings,
@@ -380,18 +411,6 @@ async def run_external(
                 "Checkpoint does not match the dataset, code, config, models or system"
             )
 
-    def raise_on_failure() -> None:
-        failures = [record for record in checkpoint.records.values() if record.failure_type]
-        if failures:
-            first = failures[0]
-            raise RuntimeError(
-                f"{dataset}: {len(failures)} of {len(examples)} questions failed; "
-                f"first failure: {first.scenario_id}/{first.question_id} "
-                f"({first.failure_type}: {first.failure_message}). "
-                f"Failure records are preserved in {destination}"
-            )
-
-    raise_on_failure()
     if checkpoint.records:
         run_id = next(iter(checkpoint.records.values())).run_id
     client: Neo4jClient | None = None
@@ -477,11 +496,7 @@ async def run_external(
                             save_json(
                                 extraction_cache_path,
                                 {
-                                    "metadata": {
-                                        "dataset": dataset,
-                                        "dataset_sha256": dataset_sha256,
-                                        "llm_model": settings.llm_model,
-                                    },
+                                    "metadata": cache_metadata,
                                     "corpora": frozen_extractions,
                                 },
                             )
@@ -536,7 +551,7 @@ async def run_external(
                         error=corpus_failure,
                     )
                 )
-                raise_on_failure()
+                continue
             gold_sources = evidence_source_ids(
                 example,
                 inputs,
@@ -569,7 +584,8 @@ async def run_external(
                 )
                 if judged is not None:
                     scored = (judged.metric, judged.score)
-            except Exception as exc:  # preserve failure before stopping the batch
+                secondary_scores = supplemental_official_scores(dataset, answer, example)
+            except Exception as exc:  # score this question as failed, then continue
                 checkpoint.append(
                     _failure_record(
                         run_id=run_id,
@@ -586,7 +602,7 @@ async def run_external(
                         error=exc,
                     )
                 )
-                raise_on_failure()
+                continue
             token_usage = {
                 **_usage_delta(
                     extraction_usage_before, _total_usage(extractor), "extraction"
@@ -598,7 +614,7 @@ async def run_external(
             }
             stats = await system.stats()
             record = EvaluationRecord(
-                protocol_version="external-v4",
+                protocol_version="external-v6",
                 latency_protocol=f"warm-embeddings/{storage}-repository",
                 embedding_preparation_ms=preparation_ms,
                 run_id=run_id,
@@ -616,6 +632,10 @@ async def run_external(
                 gold_source_ids=gold_sources,
                 allowed_scope_ids=[global_scope_id, scope_id],
                 retrieved_source_ids=[item.source_ids for item in result.items],
+                retrieved_source_contents=[
+                    [message.content for message in item.source_messages]
+                    for item in result.items
+                ],
                 retrieved_origin_scope_ids=[[scope_id] for _ in result.items],
                 retrieved_contents=[item.content for item in result.items],
                 retrieved_memory_ids=[item.memory_id for item in result.items],
@@ -632,6 +652,7 @@ async def run_external(
                 benchmark_metadata=example.metadata,
                 official_metric=scored[0] if scored else None,
                 official_score=scored[1] if scored else None,
+                official_secondary_scores=secondary_scores,
                 judge_model=judged.model if judged else None,
                 judge_latency_ms=judged.latency_ms if judged else None,
                 judge_input_tokens=judged.input_tokens if judged else None,
@@ -665,12 +686,38 @@ async def run_external(
     return destination
 
 
+def _terminal_summary(records: list[EvaluationRecord]) -> str:
+    failures = sum(record.failure_type is not None for record in records)
+    lines = [f"Questions: {len(records)}; failures: {failures}"]
+    by_metric: dict[str, list[float | None]] = {}
+    for record in records:
+        if record.official_metric is not None:
+            by_metric.setdefault(record.official_metric, []).append(record.official_score)
+        for metric, score in record.official_secondary_scores.items():
+            by_metric.setdefault(metric, []).append(score)
+    for metric, scores in sorted(by_metric.items()):
+        scored = [score for score in scores if score is not None]
+        if len(scored) == len(scores):
+            lines.append(f"{metric}: {sum(scored) / len(scores):.2%} ({len(scores)} questions)")
+        else:
+            lines.append(f"{metric}: incomplete ({len(scored)}/{len(scores)} scored)")
+    if not by_metric:
+        lines.append("Official score: unavailable (answers not evaluated)")
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=EXTERNAL_DATASETS, required=True)
     parser.add_argument("--path", type=Path, required=True)
     parser.add_argument("--config")
     parser.add_argument("--output")
+    parser.add_argument("--limit", type=int, help="evaluate only the first N questions")
+    parser.add_argument(
+        "--case-limit",
+        type=int,
+        help="evaluate all questions from the first N independent histories",
+    )
     parser.add_argument("--live-answer", action="store_true")
     parser.add_argument("--live-extraction", action="store_true")
     parser.add_argument("--live-embeddings", action="store_true")
@@ -692,15 +739,19 @@ def main() -> None:
         help="allow clearing the configured evaluation-only Neo4j database",
     )
     args = parser.parse_args()
-    print(
-        asyncio.run(
-            run_external(
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be positive")
+    if args.case_limit is not None and args.case_limit < 1:
+        parser.error("--case-limit must be positive")
+    output = asyncio.run(
+        run_external(
                 dataset=args.dataset,
                 path=args.path,
                 system_name="scopegraph",
                 config_path=args.config,
                 output=args.output,
-                limit=None,
+                limit=args.limit,
+                case_limit=args.case_limit,
                 live_answer=args.live_answer,
                 live_extraction=args.live_extraction,
                 live_embeddings=args.live_embeddings,
@@ -710,9 +761,13 @@ def main() -> None:
                 allow_neo4j_reset=args.allow_neo4j_reset,
                 ablation=args.ablation,
                 extraction_cache=args.extraction_cache,
-            )
         )
     )
+    records = load_jsonl([output])
+    print(output, flush=True)
+    print(_terminal_summary(records), flush=True)
+    if any(record.failure_type is not None for record in records):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

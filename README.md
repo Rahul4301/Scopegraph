@@ -54,7 +54,7 @@ npm --prefix web run dev
 
 Open `http://127.0.0.1:5173` for the Memory Explorer and `http://127.0.0.1:8000/docs` for generated API documentation. Vite proxies `/api` to the local FastAPI process. `GET /health` checks Neo4j connectivity without exposing credentials.
 
-`POST /retrieve` accepts a query, optional current scope and session, top-k, token budget, and optional evaluation timestamp. Retrieval searches the current session and scope, then ancestors and global memory; an unrelated scope is included only when its name appears in the query. The response includes each score component and traversal path.
+`POST /retrieve` accepts a query, optional current scope and session, top-k, token budget, and optional evaluation timestamp. Retrieval searches the current session and scope, then ancestors and global memory; an unrelated scope is included only when its name appears in the query. The response includes each score component, traversal path, and budgeted verbatim source messages that support selected memories.
 
 Memory correction routes are grouped under `/memories/{id}`. Use `/prune/preview` before `/prune`; archive and prune operations can be reversed with `/restore`, and `/history` returns the append-only audit trail. `PATCH /memories/{id}` is an audited edit rather than an untracked property mutation.
 

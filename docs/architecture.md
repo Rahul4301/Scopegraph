@@ -33,13 +33,13 @@ Conflicts never erase prior state. A new active memory points to the old memory 
 
 ## Read path
 
-The Phase 3 retriever resolves the active scope, embeds the query, finds semantic anchors only within permitted scopes, performs bounded traversal, removes inactive or temporally invalid evidence, ranks the remaining memories, and packs them into a shared token budget. Search eligibility follows current session, current scope, ancestor scopes, then global memory. A sibling scope is excluded unless its name is explicitly present in the query.
+The Phase 3 retriever resolves the active scope, embeds the query, finds semantic anchors only within permitted scopes, performs bounded traversal, removes inactive or temporally invalid evidence, ranks the remaining memories, and packs each selected memory with its directly linked source messages into a shared token budget. Search eligibility follows current session, current scope, ancestor scopes, then global memory. A sibling scope is excluded unless its name is explicitly present in the query.
 
 Embeddings are requested through an OpenAI-compatible provider. A local SQLite cache is keyed by the embedding model and content hash, and generated vectors are also persisted on memory nodes. Anchor similarity currently uses exact cosine scoring over the already scope-filtered candidate set. This is intentional for provider-independent embedding dimensions and the resource-constrained reference environment; a Neo4j vector index remains an optimization to evaluate at larger scale.
 
 Graph expansion follows only `SUPERSEDES`, `CONTRADICTS`, `SAME_AS`, `SUPPORTS`, and `RELATES_TO`. It is capped by configurable hop and node limits, a wall-clock budget, cycle detection, and the same scope allowlist. Current-state queries exclude inactive or out-of-validity memories. Historical-language queries may include superseded and archived evidence and favor superseded state.
 
-Final ranking combines configurable semantic, scope, temporal, confidence, graph-proximity, and recency components. Ranked content is packed without reordering until the request token budget is exhausted.
+Final ranking combines configurable semantic, scope, temporal, confidence, graph-proximity, and recency components. Ranked summaries and non-duplicated verbatim provenance are packed without reordering until the request token budget is exhausted. This permits exact episodic answers without treating an entire ingested conversation as answer context.
 
 Every result exposes component scores, source IDs, scope IDs, temporal validity, graph traversal paths, selection reasons, latency, and estimated token count. This white-box trace keeps retrieval quality measurable independently of answer generation.
 

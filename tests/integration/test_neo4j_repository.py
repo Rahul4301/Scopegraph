@@ -1,4 +1,5 @@
 import os
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -67,16 +68,20 @@ async def test_neo4j_scope_round_trip() -> None:
         system = ScopeGraphMemorySystem(
             repository, StaticMemoryExtractor([candidate])
         )
+        started_at = datetime(2023, 5, 8, 13, 0, tzinfo=UTC)
+        message_at = datetime(2023, 5, 8, 13, 5, tzinfo=UTC)
         ingest = await system.ingest_session(
             SessionInput(
                 id=session_id,
                 scope_id=scope_id,
+                started_at=started_at,
                 messages=[
                     SourceMessageCreate(
                         id=message_id,
                         session_id=session_id,
                         role=MessageRole.USER,
                         content="Integration scope uses Neo4j",
+                        timestamp=message_at,
                         turn_index=0,
                     )
                 ],
@@ -84,8 +89,13 @@ async def test_neo4j_scope_round_trip() -> None:
             current_scope=ScopeRef(id=scope_id, scope_type=ScopeType.CUSTOM),
         )
         memory_id = ingest.memory_ids[0]
-        assert await repository.get_session(session_id) is not None
-        assert await repository.get_source_message(message_id) is not None
+        stored_session = await repository.get_session(session_id)
+        stored_message = await repository.get_source_message(message_id)
+        assert stored_session is not None
+        assert stored_session.started_at == started_at
+        assert stored_session.ended_at == message_at
+        assert stored_message is not None
+        assert stored_message.timestamp == message_at
         memory = await repository.get_memory(memory_id)
         assert memory is not None
         assert memory.source_ids == [message_id]

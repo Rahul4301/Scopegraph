@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from scopegraph.backends.scopegraph import ScopeGraphMemorySystem
 from scopegraph.graph.in_memory import InMemoryMemoryRepository
+from scopegraph.llm.answering import OpenAICompatibleAnswerer
 from scopegraph.llm.extraction import LLMMemoryExtractor, StaticMemoryExtractor
 from scopegraph.llm.scope_classification import resolve_candidate_scope
 from scopegraph.memory.promoter import PromotionPolicy
@@ -14,9 +15,10 @@ from scopegraph.models.memory import (
     MemoryType,
     ScopeLevel,
 )
+from scopegraph.models.retrieval import RetrievedMemory
 from scopegraph.models.scope import ScopeCreate, ScopeRef, ScopeType
 from scopegraph.models.session import SessionInput
-from scopegraph.models.source import MessageRole, SourceMessageCreate
+from scopegraph.models.source import MessageRole, SourceMessage, SourceMessageCreate
 
 
 class FakeStructuredProvider:
@@ -25,6 +27,51 @@ class FakeStructuredProvider:
 
     async def complete_json(self, **_: object) -> dict[str, object]:
         return self.response
+
+
+@pytest.mark.asyncio
+async def test_answerer_uses_configured_abstention_phrase_and_source_evidence(monkeypatch) -> None:
+    answerer = OpenAICompatibleAnswerer(
+        base_url="https://example.invalid",
+        api_key="test",
+        model="test-model",
+        unknown_response="No information available",
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_post(url, *, payload, api_key):
+        captured["payload"] = payload
+        return {"choices": [{"message": {"content": "No information available"}}]}
+
+    monkeypatch.setattr(answerer.transport, "post", fake_post)
+    try:
+        result = await answerer.generate(
+            question="When?",
+            context=[RetrievedMemory(
+                memory_id="memory",
+                content="The launch was rescheduled.",
+                score=1.0,
+                scope_id="alpha",
+                scope_level=ScopeLevel.SCOPE,
+                status=MemoryStatus.ACTIVE,
+                confidence=1.0,
+                source_messages=[SourceMessage(
+                    id="source",
+                    session_id="session",
+                    role=MessageRole.USER,
+                    content="The launch moved to Friday at 3 PM.",
+                    timestamp=datetime(2023, 5, 8, 13, 0, tzinfo=UTC),
+                    turn_index=0,
+                )],
+            )],
+        )
+    finally:
+        await answerer.aclose()
+    assert result == "No information available"
+    payload = captured["payload"]
+    assert "return No information available" in payload["messages"][0]["content"]
+    assert "Verbatim source messages are primary evidence" in payload["messages"][0]["content"]
+    assert "The launch moved to Friday at 3 PM." in payload["messages"][1]["content"]
 
 
 def candidate(
@@ -85,6 +132,25 @@ async def test_extractor_rejects_unknown_provenance() -> None:
         )
 
 
+@pytest.mark.asyncio
+async def test_eval_extractor_discards_only_unknown_provenance(caplog) -> None:
+    provider = FakeStructuredProvider({"candidates": [
+        candidate(source_id="known").model_dump(mode="json"),
+        candidate(source_id="unknown").model_dump(mode="json"),
+    ]})
+    extractor = LLMMemoryExtractor(provider, skip_invalid_source_ids=True)
+    message = SourceMessageCreate(
+        id="known",
+        session_id="s1",
+        role=MessageRole.USER,
+        content="Alpha uses Neo4j",
+        turn_index=0,
+    )
+    extracted = await extractor.extract([message], current_scope=ScopeRef(id="alpha"))
+    assert [item.source_message_ids for item in extracted] == [["known"]]
+    assert "Discarding memory candidate" in caplog.text
+
+
 def test_inferred_candidate_confidence_is_bounded() -> None:
     with pytest.raises(ValidationError, match="inferred"):
         MemoryCandidate(
@@ -109,6 +175,36 @@ async def test_live_extractor_clamps_inferred_confidence() -> None:
     extracted = await extractor.extract([message], current_scope=ScopeRef(id="alpha"))
     assert extracted[0].confidence == 0.8
     assert extracted[0].inferred is True
+
+
+@pytest.mark.asyncio
+async def test_live_extractor_preserves_messages_without_extracted_candidates() -> None:
+    extracted = candidate(source_id="known").model_dump(mode="json")
+    extractor = LLMMemoryExtractor(
+        FakeStructuredProvider({"candidates": [extracted]}),
+        preserve_unextracted_messages=True,
+    )
+    messages = [
+        SourceMessageCreate(
+            id="known",
+            session_id="s1",
+            role=MessageRole.USER,
+            content="Alpha uses Neo4j",
+            turn_index=0,
+        ),
+        SourceMessageCreate(
+            id="uncited",
+            session_id="s1",
+            role=MessageRole.USER,
+            content="Alpha moved the meeting to Friday",
+            turn_index=1,
+        ),
+    ]
+    result = await extractor.extract(messages, current_scope=ScopeRef(id="alpha"))
+    fallback = next(item for item in result if item.source_message_ids == ["uncited"])
+    assert fallback.content == "Alpha moved the meeting to Friday"
+    assert fallback.memory_type is MemoryType.SUMMARY
+    assert fallback.confidence == 0.5
 
 
 def test_explicit_scope_wins_and_unapproved_global_is_downscoped() -> None:
@@ -156,6 +252,41 @@ async def test_complete_ingestion_preserves_provenance_and_deduplicates() -> Non
     )
     assert duplicate.duplicate_count == 1
     assert len(await repository.list_memories(scope_id="alpha")) == 1
+
+
+@pytest.mark.asyncio
+async def test_historical_chat_timestamps_survive_ingestion_and_close_session() -> None:
+    repository = InMemoryMemoryRepository()
+    await repository.create_scope(
+        ScopeCreate(id="alpha", name="Alpha", scope_type=ScopeType.PROJECT)
+    )
+    started_at = datetime(2023, 5, 8, 13, 0, tzinfo=UTC)
+    last_message_at = datetime(2023, 5, 8, 13, 5, tzinfo=UTC)
+    system = ScopeGraphMemorySystem(repository, StaticMemoryExtractor([]))
+
+    await system.ingest_session(
+        SessionInput(
+            id="historical",
+            scope_id="alpha",
+            started_at=started_at,
+            messages=[SourceMessageCreate(
+                id="historical-message",
+                session_id="historical",
+                role=MessageRole.USER,
+                content="Alpha uses Neo4j",
+                timestamp=last_message_at,
+                turn_index=0,
+            )],
+        ),
+        current_scope=ScopeRef(id="alpha"),
+    )
+
+    stored_messages = await repository.list_source_messages("historical")
+    stored_session = await repository.get_session("historical")
+    assert stored_messages[0].timestamp == last_message_at
+    assert stored_session is not None
+    assert stored_session.started_at == started_at
+    assert stored_session.ended_at == last_message_at
 
 
 @pytest.mark.asyncio

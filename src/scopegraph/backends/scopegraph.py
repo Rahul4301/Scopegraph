@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Protocol
 
 from scopegraph.llm.extraction import CandidateExtractor
@@ -112,7 +112,11 @@ class ScopeGraphMemorySystem(MemorySystem):
             current_scope=resolved_scope,
             global_scope_id=global_scope.id if global_scope else None,
         )
-        await self.repository.end_session(session_id, stored_session.ended_at or datetime.now(UTC))
+        ended_at = stored_session.ended_at or max(
+            stored_session.started_at,
+            *(message.timestamp for message in stored_messages),
+        )
+        await self.repository.end_session(session_id, ended_at)
         return IngestResult(
             session_id=session_id,
             source_message_ids=[message.id for message in stored_messages],

@@ -1,4 +1,4 @@
-top_k: 8
+top_k: 12
 token_budget: 1500
 max_graph_hops: 2
 max_expanded_nodes: 40

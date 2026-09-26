@@ -1,4 +1,5 @@
 import math
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,8 @@ from scopegraph.models.memory import (
 )
 from scopegraph.models.retrieval import RetrievedMemory
 from scopegraph.models.scope import ScopeCreate, ScopeRef, ScopeType
+from scopegraph.models.session import SessionCreate
+from scopegraph.models.source import MessageRole, SourceMessageCreate
 from scopegraph.observability.token_counting import pack_to_token_budget
 
 
@@ -201,6 +204,52 @@ async def test_historical_query_prefers_superseded_memory() -> None:
     )
     assert history.items[0].memory_id == "old"
     assert history.items[0].status is MemoryStatus.SUPERSEDED
+
+
+@pytest.mark.asyncio
+async def test_retrieval_includes_budgeted_verbatim_provenance() -> None:
+    repository = InMemoryMemoryRepository()
+    await repository.create_scope(
+        ScopeCreate(id="alpha", name="Alpha", scope_type=ScopeType.PROJECT)
+    )
+    occurred_at = datetime(2023, 5, 8, 13, 0, tzinfo=UTC)
+    await repository.create_session(
+        SessionCreate(id="session", scope_id="alpha", started_at=occurred_at)
+    )
+    source = await repository.create_source_message(
+        SourceMessageCreate(
+            id="source",
+            session_id="session",
+            role=MessageRole.USER,
+            content="The launch was moved to Friday at 3 PM.",
+            timestamp=occurred_at,
+            turn_index=0,
+        )
+    )
+    await repository.create_memory(
+        MemoryCreate(
+            id="launch",
+            content="Launch schedule changed",
+            memory_type=MemoryType.EVENT,
+            scope_level=ScopeLevel.SCOPE,
+            scope_id="alpha",
+            source_ids=[source.id],
+        )
+    )
+    retriever = ScopeAwareRetriever(repository, KeywordEmbeddingProvider())
+
+    result = await retriever.retrieve(
+        "When is the launch?",
+        current_scope=ScopeRef(id="alpha"),
+        top_k=1,
+        token_budget=100,
+        now=occurred_at,
+    )
+
+    assert [message.id for message in result.items[0].source_messages] == ["source"]
+    assert result.items[0].source_messages[0].content == source.content
+    assert result.items[0].source_messages[0].timestamp == occurred_at
+    assert result.token_count <= 100
 
 
 @pytest.mark.asyncio

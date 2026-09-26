@@ -119,6 +119,7 @@ class EvaluationRecord(BaseModel):
     gold_source_ids: list[str] = Field(default_factory=list)
     allowed_scope_ids: list[str] = Field(default_factory=list)
     retrieved_source_ids: list[list[str]] = Field(default_factory=list)
+    retrieved_source_contents: list[list[str]] = Field(default_factory=list)
     retrieved_origin_scope_ids: list[list[str]] = Field(default_factory=list)
     retrieved_contents: list[str] = Field(default_factory=list)
     retrieved_memory_ids: list[str] = Field(default_factory=list)
@@ -135,6 +136,7 @@ class EvaluationRecord(BaseModel):
     benchmark_metadata: dict[str, Any] = Field(default_factory=dict)
     official_metric: str | None = None
     official_score: float | None = None
+    official_secondary_scores: dict[str, float] = Field(default_factory=dict)
     judge_model: str | None = None
     judge_latency_ms: float | None = None
     judge_input_tokens: int | None = None

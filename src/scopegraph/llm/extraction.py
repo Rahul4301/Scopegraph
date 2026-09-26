@@ -1,9 +1,10 @@
 import json
+import logging
 from typing import Protocol
 
 from scopegraph.llm.base import StructuredLLMProvider
 from scopegraph.llm.prompts import EXTRACTION_SYSTEM_PROMPT
-from scopegraph.models.memory import MemoryCandidate, MemoryCandidateBatch
+from scopegraph.models.memory import MemoryCandidate, MemoryCandidateBatch, MemoryType
 from scopegraph.models.scope import ScopeRef
 from scopegraph.models.source import SourceMessage
 
@@ -19,8 +20,16 @@ class CandidateExtractor(Protocol):
 
 
 class LLMMemoryExtractor:
-    def __init__(self, provider: StructuredLLMProvider) -> None:
+    def __init__(
+        self,
+        provider: StructuredLLMProvider,
+        *,
+        skip_invalid_source_ids: bool = False,
+        preserve_unextracted_messages: bool = False,
+    ) -> None:
         self.provider = provider
+        self.skip_invalid_source_ids = skip_invalid_source_ids
+        self.preserve_unextracted_messages = preserve_unextracted_messages
 
     async def extract(
         self,
@@ -54,13 +63,39 @@ class LLMMemoryExtractor:
                     item["confidence"] = min(float(item["confidence"]), 0.8)
         batch = MemoryCandidateBatch.model_validate(raw)
         valid_source_ids = {message.id for message in messages}
+        accepted: list[MemoryCandidate] = []
         for candidate in batch.candidates:
             unknown = set(candidate.source_message_ids) - valid_source_ids
             if unknown:
+                if self.skip_invalid_source_ids:
+                    logging.warning(
+                        "Discarding memory candidate with unknown source message IDs: %s",
+                        sorted(unknown),
+                    )
+                    continue
                 raise ValueError(
                     f"Extractor returned unknown source message IDs: {sorted(unknown)}"
                 )
-        return batch.candidates
+            accepted.append(candidate)
+        if self.preserve_unextracted_messages:
+            cited_source_ids = {
+                source_id
+                for candidate in accepted
+                for source_id in candidate.source_message_ids
+            }
+            accepted.extend(
+                MemoryCandidate(
+                    content=message.content,
+                    memory_type=MemoryType.SUMMARY,
+                    proposed_scope_level="scope",
+                    confidence=0.5,
+                    durability=0.8,
+                    source_message_ids=[message.id],
+                )
+                for message in messages
+                if message.id not in cited_source_ids
+            )
+        return accepted
 
 
 class StaticMemoryExtractor:

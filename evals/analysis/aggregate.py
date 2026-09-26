@@ -42,6 +42,20 @@ def _cluster_bootstrap_ci(
 
 
 def score_record(record: EvaluationRecord, *, k: int = 8) -> ScoredRecord:
+    if record.failure_type is not None:
+        metrics: dict[str, float | None] = {}
+        if record.answer_evaluated:
+            metrics["exact_match"] = 0.0
+            metrics["token_f1"] = 0.0
+        if record.official_metric is not None:
+            metrics[f"official_{record.official_metric}"] = 0.0
+        metrics.update(
+            {
+                f"official_{metric}": 0.0
+                for metric in record.official_secondary_scores
+            }
+        )
+        return ScoredRecord(**record.model_dump(), metrics=metrics)
     gold_sources = set(record.gold_source_ids)
     retrieved_sources = record.retrieved_source_ids[:k]
     source_recall = (
@@ -75,6 +89,12 @@ def score_record(record: EvaluationRecord, *, k: int = 8) -> ScoredRecord:
     }
     if record.official_metric is not None:
         metrics[f"official_{record.official_metric}"] = record.official_score
+    metrics.update(
+        {
+            f"official_{metric}": score
+            for metric, score in record.official_secondary_scores.items()
+        }
+    )
     if record.question_type == "abstention":
         metrics[f"precision_at_{k}"] = None
         metrics[f"recall_at_{k}"] = None

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from scopegraph.models.memory import MemoryStatus, ScopeLevel
 from scopegraph.models.scope import ScopeRef
+from scopegraph.models.source import SourceMessage
 
 
 class TraversalStep(BaseModel):
@@ -28,6 +29,9 @@ class RetrievedMemory(BaseModel):
     scope_level: ScopeLevel
     status: MemoryStatus
     source_ids: list[str] = Field(default_factory=list)
+    # Original chat messages selected through this memory's provenance. These are
+    # populated only when they fit the retrieval token budget.
+    source_messages: list[SourceMessage] = Field(default_factory=list)
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     semantic_score: float = 0.0

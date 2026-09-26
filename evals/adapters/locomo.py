@@ -1,6 +1,7 @@
 """Adapter for the public LoCoMo10 JSON release."""
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,15 @@ class LoCoMoAdapter:
             if not isinstance(conversation, dict):
                 raise ValueError(f"LoCoMo sample {sample_index} has no conversation object")
             sessions = _sessions(conversation)
+            # LoCoMo asks questions after the full conversation, but does not
+            # provide per-question timestamps. Use the last observed turn instead
+            # of letting retrieval treat old memories as if queried today.
+            question_date = max(
+                timestamp
+                for session in sessions
+                for timestamp in [session.date, *(turn.timestamp for turn in session.turns)]
+                if timestamp is not None
+            )
             sample_id = str(raw.get("sample_id", f"sample-{sample_index}"))
             for question_index, question in enumerate(raw.get("qa", [])):
                 if not isinstance(question, dict) or "question" not in question:
@@ -37,6 +47,7 @@ class LoCoMoAdapter:
                         question_type=f"category_{category}",
                         question=str(question["question"]),
                         answer=str(answer or ""),
+                        question_date=question_date,
                         sessions=sessions,
                         metadata={
                             "sample_id": sample_id,
@@ -69,7 +80,17 @@ def _sessions(conversation: dict[str, Any]) -> list[ExternalSession]:
         turns = conversation.get(f"session_{number}", [])
         if not isinstance(turns, list):
             raise ValueError(f"LoCoMo session_{number} must be a list")
-        date = parse_datetime(conversation.get(f"session_{number}_date_time"))
+        raw_date = conversation.get(f"session_{number}_date_time")
+        date = parse_datetime(raw_date)
+        if date is None:
+            try:
+                date = datetime.strptime(
+                    str(raw_date), "%I:%M %p on %d %B, %Y"
+                ).replace(tzinfo=UTC)
+            except ValueError as exc:
+                raise ValueError(
+                    f"LoCoMo session_{number} has an invalid date: {raw_date!r}"
+                ) from exc
         sessions.append(ExternalSession(
             session_id=str(number), date=date,
             turns=[normalize_turn(turn, fallback_id=f"{number}:{index}")
