@@ -442,3 +442,76 @@ async def test_raw_source_search_hides_only_session_exclusive_turns() -> None:
     )
 
     assert [message.id for message, _ in rows] == ["shared"]
+
+
+async def _seed_removal_fixture() -> tuple[InMemoryMemoryRepository, datetime]:
+    repository = InMemoryMemoryRepository()
+    await repository.create_scope(
+        ScopeCreate(id="alpha", name="Alpha", scope_type=ScopeType.PROJECT)
+    )
+    when = datetime(2023, 5, 8, 13, 0, tzinfo=UTC)
+    await repository.create_session(SessionCreate(id="old", scope_id="alpha", started_at=when))
+    texts = {
+        "removed": "Alpha database is Neo4j",
+        "kept": "Alpha prefers dark mode",
+        "unextracted": "Alpha standup is at nine",
+    }
+    for turn_index, (message_id, text) in enumerate(texts.items()):
+        await repository.create_source_message(SourceMessageCreate(
+            id=message_id, session_id="old", role=MessageRole.USER, content=text,
+            timestamp=when, turn_index=turn_index,
+        ))
+    for message_id, status in (("removed", MemoryStatus.ARCHIVED), ("kept", MemoryStatus.ACTIVE)):
+        await repository.create_memory(MemoryCreate(
+            id=f"{message_id}-memory", content=texts[message_id], memory_type=MemoryType.FACT,
+            scope_level=ScopeLevel.SCOPE, scope_id="alpha", source_ids=[message_id],
+            status=status,
+        ))
+    return repository, when
+
+
+@pytest.mark.asyncio
+async def test_raw_source_search_hides_turns_whose_memories_were_all_removed() -> None:
+    repository, when = await _seed_removal_fixture()
+
+    rows = await repository.list_source_messages_for_scopes(
+        {"alpha"}, now=when, session_id="later"
+    )
+
+    # Turns with no memory at all stay searchable: that is what raw search is for.
+    assert {message.id for message, _ in rows} == {"kept", "unextracted"}
+
+
+@pytest.mark.asyncio
+async def test_turn_shared_with_a_live_memory_stays_searchable_after_merge() -> None:
+    repository, when = await _seed_removal_fixture()
+    await repository.create_memory(MemoryCreate(
+        id="canonical", content="Alpha database is Neo4j", memory_type=MemoryType.FACT,
+        scope_level=ScopeLevel.SCOPE, scope_id="alpha", source_ids=["removed"],
+    ))
+
+    rows = await repository.list_source_messages_for_scopes(
+        {"alpha"}, now=when, session_id="later"
+    )
+
+    assert "removed" in {message.id for message, _ in rows}
+
+
+@pytest.mark.asyncio
+async def test_archived_fact_does_not_resurface_through_its_source_turn() -> None:
+    repository, when = await _seed_removal_fixture()
+    retriever = ScopeAwareRetriever(
+        repository, KeywordEmbeddingProvider(),
+        RetrievalConfig(raw_source_candidates=10),
+    )
+
+    result = await retriever.retrieve(
+        "What database does Alpha use?", current_scope=ScopeRef(id="alpha"),
+        top_k=10, token_budget=2000, now=when,
+    )
+
+    surfaced = {
+        message.content for item in result.items for message in item.source_messages
+    } | {item.content for item in result.items}
+    assert "Alpha database is Neo4j" not in surfaced
+    assert any("dark mode" in text for text in surfaced)

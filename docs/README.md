@@ -9,7 +9,7 @@ Read in this order if you are new: `architecture.md`, then `evaluation.md`, then
 | --- | --- |
 | [architecture.md](architecture.md) | Memory hierarchy, write/read/correction paths, and the Phase 1–8 build map. |
 | [schema.md](schema.md) | Neo4j node labels, relationships, and key properties. |
-| [corrections.md](corrections.md) | Soft, revisioned, audited edit/move/archive/prune/merge/restore semantics. |
+| [corrections.md](corrections.md) | Soft, revisioned, audited edit/move/archive/merge/restore semantics. |
 | [ui.md](ui.md) | The React Memory Explorer: what it renders and which API routes it uses. |
 | [literature.md](literature.md) | Prior systems ScopeGraph borrows from, and what it deliberately does not claim. |
 

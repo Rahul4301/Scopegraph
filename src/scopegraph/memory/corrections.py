@@ -10,14 +10,11 @@ from scopegraph.models.correction import (
     CorrectionRelation,
     CorrectionRequest,
     CorrectionResult,
-    GraphNeighborPreview,
     MemoryEditRequest,
     MemoryMergeRequest,
     MemoryMoveRequest,
     MemoryRestoreRequest,
     MemorySupersedeRequest,
-    PruneImpact,
-    PrunePreview,
     RelationCorrectionRequest,
     SupportDependency,
 )
@@ -204,75 +201,6 @@ class CorrectionService:
             target_ids=[memory_id],
         )
         return CorrectionResult(event=event, memory=updated)
-
-    async def preview_prune(self, memory_id: str) -> PrunePreview:
-        """Preview the dependents a prune would affect."""
-        memory = await self._require_memory(memory_id)
-        dependencies = await self.repository.get_support_dependents(memory_id)
-        impacts = [self._impact(dependency) for dependency in dependencies]
-        dependency_ids = {impact.memory_id for impact in impacts}
-        neighbors = await self.repository.get_memory_neighbors([memory_id])
-        graph_neighbors = [
-            GraphNeighborPreview(
-                memory_id=neighbor.memory.id,
-                relation=neighbor.relation,
-                evidentiary_dependency=neighbor.memory.id in dependency_ids,
-            )
-            for neighbor in neighbors
-        ]
-        return PrunePreview(
-            memory_id=memory.id,
-            current_status=memory.status,
-            dependencies=impacts,
-            graph_neighbors=graph_neighbors,
-        )
-
-    @atomic
-    async def prune(
-        self, memory_id: str, *, actor: str = "user", reason: str = ""
-    ) -> CorrectionResult:
-        """Tombstone a memory."""
-        before = await self._require_memory(memory_id)
-        if before.status is MemoryStatus.TOMBSTONED:
-            raise ValueError("Memory is already tombstoned")
-        preview = await self.preview_prune(memory_id)
-        dependent_before: list[Memory] = []
-        dependent_after: list[Memory] = []
-        for impact in preview.dependencies:
-            if impact.proposed_status is not MemoryStatus.NEEDS_REVIEW:
-                continue
-            dependent = await self._require_memory(impact.memory_id)
-            updated = await self.repository.update_memory(
-                dependent.id, MemoryUpdate(status=MemoryStatus.NEEDS_REVIEW)
-            )
-            if updated is None:
-                raise ValueError(f"Memory {dependent.id!r} does not exist")
-            dependent_before.append(dependent)
-            dependent_after.append(updated)
-        updated_target = await self.repository.update_memory(
-            memory_id, MemoryUpdate(status=MemoryStatus.TOMBSTONED)
-        )
-        if updated_target is None:
-            raise ValueError(f"Memory {memory_id!r} does not exist")
-        event = await self._record(
-            CorrectionAction.TOMBSTONE,
-            before={
-                "memory": _snapshot(before),
-                "dependents": [_snapshot(memory) for memory in dependent_before],
-            },
-            after={
-                "memory": _snapshot(updated_target),
-                "dependents": [_snapshot(memory) for memory in dependent_after],
-            },
-            actor=actor,
-            reason=reason,
-            target_ids=[memory_id, *[memory.id for memory in dependent_after]],
-        )
-        return CorrectionResult(
-            event=event,
-            memory=updated_target,
-            affected_memories=dependent_after,
-        )
 
     @atomic
     async def restore(self, memory_id: str, request: MemoryRestoreRequest) -> CorrectionResult:
@@ -483,8 +411,6 @@ class CorrectionService:
             )
         if correction.action is CorrectionAction.ARCHIVE:
             return await self.archive(correction.memory_id, **context)
-        if correction.action is CorrectionAction.TOMBSTONE:
-            return await self.prune(correction.memory_id, **context)
         if correction.action is CorrectionAction.RESTORE:
             return await self.restore(
                 correction.memory_id,
@@ -539,24 +465,6 @@ class CorrectionService:
                 if event.action in {CorrectionAction.TOMBSTONE, CorrectionAction.ARCHIVE}
             ),
             None,
-        )
-
-    @staticmethod
-    def _impact(dependency: SupportDependency) -> PruneImpact:
-        memory = dependency.memory
-        should_review = (
-            memory.status is MemoryStatus.ACTIVE and not dependency.other_active_support_ids
-        )
-        return PruneImpact(
-            memory_id=memory.id,
-            current_status=memory.status,
-            proposed_status=(MemoryStatus.NEEDS_REVIEW if should_review else memory.status),
-            other_active_support_ids=dependency.other_active_support_ids,
-            reason=(
-                "target is the only active evidentiary support"
-                if should_review
-                else "independent active support remains or dependent is already inactive"
-            ),
         )
 
     async def _record(

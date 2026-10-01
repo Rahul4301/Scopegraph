@@ -236,7 +236,11 @@ class Neo4jMemoryRepository:
     async def list_source_messages_for_scopes(
         self, scope_ids: set[str], *, now: datetime, session_id: str | None
     ) -> list[tuple[SourceMessage, str]]:
-        """List source messages in the given scopes visible at ``now``."""
+        """List source messages in the given scopes visible at ``now``.
+
+        Turns whose memories were all archived or tombstoned are excluded; turns with no
+        memory at all (extraction skipped them) stay searchable.
+        """
         if not scope_ids:
             return []
         rows = await self.client.execute_read(
@@ -250,6 +254,13 @@ class Neo4jMemoryRepository:
                   MATCH (shared:Memory)-[:DERIVED_FROM]->(message)
                   WHERE shared.scope_level <> 'session' AND shared.status <> 'tombstoned'
               })
+              // A turn whose memories were all archived or tombstoned was removed by the
+              // user; searching the raw turn would bring the removed fact back.
+              AND (NOT EXISTS { MATCH (:Memory)-[:DERIVED_FROM]->(message) }
+                   OR EXISTS {
+                       MATCH (live:Memory)-[:DERIVED_FROM]->(message)
+                       WHERE NOT live.status IN ['archived', 'tombstoned']
+                   })
             RETURN message AS m, scope.id AS scope_id
             ORDER BY message.timestamp, message.turn_index, message.id
             """,

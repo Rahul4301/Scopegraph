@@ -169,7 +169,21 @@ class InMemoryMemoryRepository:
     async def list_source_messages_for_scopes(
         self, scope_ids: set[str], *, now: datetime, session_id: str | None
     ) -> list[tuple[SourceMessage, str]]:
-        """List source messages in the given scopes visible at ``now``."""
+        """List source messages in the given scopes visible at ``now``.
+
+        Turns whose memories were all archived or tombstoned are excluded; turns with no
+        memory at all (extraction skipped them) stay searchable.
+        """
+        removed = {
+            source_id
+            for memory in self.memories.values()
+            for source_id in memory.source_ids
+        } - {
+            source_id
+            for memory in self.memories.values()
+            if memory.status not in {MemoryStatus.ARCHIVED, MemoryStatus.TOMBSTONED}
+            for source_id in memory.source_ids
+        }
         return sorted(
             (
                 (message, session.scope_id)
@@ -177,6 +191,7 @@ class InMemoryMemoryRepository:
                 if (session := self.sessions.get(message.session_id)) is not None
                 and session.scope_id in scope_ids
                 and message.timestamp <= now
+                and message.id not in removed
                 and (
                     message.session_id == session_id
                     or not any(

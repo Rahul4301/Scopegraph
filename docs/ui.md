@@ -24,7 +24,7 @@ Open `http://127.0.0.1:5173`. The development server proxies `/api` to `http://1
 - The scope tree filters visible memories while retaining the hierarchy for orientation.
 - The graph distinguishes scope, memory, and source-message nodes and shows typed directed edges.
 - Selecting a memory loads its full record, source-message provenance, incoming/outgoing relationships, and append-only correction history.
-- Correction dialogs support edit, move, archive, prune preview and confirmation, restore, and duplicate merge.
+- Correction dialogs support edit, move, archive, restore, and duplicate merge.
 - The trace debugger submits a real retrieval request and shows the selected evidence, total latency/token use, component scores, reason, and traversal path. Selecting a result centers inspection on that memory.
 - GraphML export uses the currently selected scope. The JSON form remains available from `GET /graph/export?format=json`.
 
@@ -43,3 +43,5 @@ make web-build
 ```
 
 Offline API tests use the in-memory repository. The integration suite exercises the graph slice and source provenance against live Neo4j, and the frontend production build runs strict TypeScript checking.
+
+Note: the prune preview/confirm dialogs in the app call routes that were removed from the API (manual prune is no longer supported); the web app was intentionally left unchanged.

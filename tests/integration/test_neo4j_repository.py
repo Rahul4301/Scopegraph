@@ -125,9 +125,9 @@ async def test_neo4j_scope_round_trip() -> None:
         )
         correction_ids.append(edited.event.id)
         assert edited.memory.revision == 2
-        pruned = await corrections.prune(memory_id, actor="integration-test")
+        pruned = await corrections.archive(memory_id, actor="integration-test")
         correction_ids.append(pruned.event.id)
-        assert pruned.memory.status.value == "tombstoned"
+        assert pruned.memory.status.value == "archived"
         restored = await corrections.restore(
             memory_id,
             MemoryRestoreRequest(

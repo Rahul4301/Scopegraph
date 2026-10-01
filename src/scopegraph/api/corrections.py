@@ -12,7 +12,6 @@ from scopegraph.models.correction import (
     MemoryMoveRequest,
     MemoryRestoreRequest,
     MemorySupersedeRequest,
-    PrunePreview,
     RelationCorrectionRequest,
 )
 
@@ -43,28 +42,6 @@ async def archive_memory(
     """Archive a memory."""
     try:
         return await corrections.archive(
-            memory_id, actor=request.actor, reason=request.reason
-        )
-    except ValueError as exc:
-        raise _http_error(exc) from exc
-
-
-@router.post("/{memory_id}/prune/preview", response_model=PrunePreview)
-async def preview_prune(memory_id: str, corrections: Corrections) -> PrunePreview:
-    """Preview what pruning a memory would affect."""
-    try:
-        return await corrections.preview_prune(memory_id)
-    except ValueError as exc:
-        raise _http_error(exc) from exc
-
-
-@router.post("/{memory_id}/prune", response_model=CorrectionResult)
-async def prune_memory(
-    memory_id: str, request: CorrectionContext, corrections: Corrections
-) -> CorrectionResult:
-    """Tombstone a memory."""
-    try:
-        return await corrections.prune(
             memory_id, actor=request.actor, reason=request.reason
         )
     except ValueError as exc:

@@ -120,15 +120,14 @@ def test_correction_api_round_trip() -> None:
             assert edited.status_code == 200
             assert edited.json()["memory"]["revision"] == 2
 
-            preview = client.post("/memories/memory-1/prune/preview")
-            assert preview.status_code == 200
-            assert preview.json()["hard_delete"] is False
+            assert client.post("/memories/memory-1/prune/preview").status_code == 404
+            assert client.post("/memories/memory-1/prune", json={}).status_code == 404
 
-            pruned = client.post(
-                "/memories/memory-1/prune", json={"reason": "bad evidence"}
+            archived = client.post(
+                "/memories/memory-1/archive", json={"reason": "bad evidence"}
             )
-            assert pruned.status_code == 200
-            prune_event_id = pruned.json()["event"]["id"]
+            assert archived.status_code == 200
+            prune_event_id = archived.json()["event"]["id"]
 
             restored = client.post(
                 "/memories/memory-1/restore",
@@ -141,7 +140,7 @@ def test_correction_api_round_trip() -> None:
             assert history.status_code == 200
             assert [event["action"] for event in history.json()] == [
                 "edit",
-                "tombstone",
+                "archive",
                 "restore",
             ]
     finally:

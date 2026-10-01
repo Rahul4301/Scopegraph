@@ -5,6 +5,7 @@ from scopegraph.memory.corrections import CorrectionService
 from scopegraph.models.correction import (
     CorrectionAction,
     CorrectionRelation,
+    CorrectionRequest,
     MemoryEditRequest,
     MemoryMergeRequest,
     MemoryMoveRequest,
@@ -114,48 +115,10 @@ async def test_move_archive_and_restore_are_audited() -> None:
 
 
 @pytest.mark.asyncio
-async def test_prune_preview_distinguishes_evidentiary_dependencies() -> None:
-    _, service, _ = await correction_fixture()
-
-    preview = await service.preview_prune("bad")
-    impacts = {impact.memory_id: impact for impact in preview.dependencies}
-
-    assert preview.hard_delete is False
-    assert impacts["sole-dependent"].proposed_status is MemoryStatus.NEEDS_REVIEW
-    assert impacts["sole-dependent"].other_active_support_ids == []
-    assert impacts["shared-dependent"].proposed_status is MemoryStatus.ACTIVE
-    assert impacts["shared-dependent"].other_active_support_ids == ["good"]
-    assert all(neighbor.evidentiary_dependency for neighbor in preview.graph_neighbors)
-
-
-@pytest.mark.asyncio
-async def test_prune_and_undo_only_change_unsupported_dependents() -> None:
-    repository, service, _ = await correction_fixture()
-
-    pruned = await service.prune("bad", actor="researcher", reason="bad evidence")
-    assert pruned.memory.status is MemoryStatus.TOMBSTONED
-    assert [memory.id for memory in pruned.affected_memories] == ["sole-dependent"]
-    assert (await repository.get_memory("sole-dependent")).status is MemoryStatus.NEEDS_REVIEW  # type: ignore[union-attr]
-    assert (await repository.get_memory("shared-dependent")).status is MemoryStatus.ACTIVE  # type: ignore[union-attr]
-
-    restored = await service.restore(
-        "bad",
-        MemoryRestoreRequest(undo_of=pruned.event.id, reason="undo prune"),
-    )
-    assert restored.memory.status is MemoryStatus.ACTIVE
-    assert [memory.id for memory in restored.affected_memories] == ["sole-dependent"]
-    assert (await repository.get_memory("sole-dependent")).status is MemoryStatus.ACTIVE  # type: ignore[union-attr]
-    assert [event.action for event in await service.history("sole-dependent")] == [
-        CorrectionAction.TOMBSTONE,
-        CorrectionAction.RESTORE,
-    ]
-
-
-@pytest.mark.asyncio
 async def test_restore_refuses_to_overwrite_a_newer_revision() -> None:
     _, service, _ = await correction_fixture()
-    pruned = await service.prune("bad")
-    await service.edit("bad", MemoryEditRequest(content="Edited after prune"))
+    pruned = await service.archive("bad")
+    await service.edit("bad", MemoryEditRequest(content="Edited after archive"))
 
     with pytest.raises(ValueError, match="changed after"):
         await service.restore(
@@ -245,3 +208,14 @@ async def test_supersede_and_allowlisted_relation_changes_are_audited() -> None:
     assert ("good", "shared-dependent", RelationKind.USES) not in repository.relates_to
     assert added.event.action is CorrectionAction.ADD_RELATION
     assert removed.event.action is CorrectionAction.REMOVE_RELATION
+
+
+@pytest.mark.asyncio
+async def test_manual_prune_is_not_available() -> None:
+    _, service, _ = await correction_fixture()
+
+    assert not hasattr(service, "prune") and not hasattr(service, "preview_prune")
+    with pytest.raises(ValueError, match="Unsupported correction action"):
+        await service.apply(
+            CorrectionRequest(memory_id="bad", action=CorrectionAction.TOMBSTONE)
+        )

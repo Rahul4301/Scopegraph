@@ -1,11 +1,11 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from scopegraph.models.common import new_id, utc_now
-from scopegraph.models.memory import Memory, MemoryStatus, MemoryType, ScopeLevel
+from scopegraph.models.memory import Memory, MemoryType, ScopeLevel
 from scopegraph.models.relationship import RelationKind
 
 
@@ -105,27 +105,3 @@ class RelationCorrectionRequest(CorrectionContext):
 class SupportDependency(BaseModel):
     memory: Memory
     other_active_support_ids: list[str] = Field(default_factory=list)
-
-
-class PruneImpact(BaseModel):
-    memory_id: str
-    relation: str = "SUPPORTS"
-    current_status: MemoryStatus
-    proposed_status: MemoryStatus
-    other_active_support_ids: list[str] = Field(default_factory=list)
-    reason: str
-
-
-class GraphNeighborPreview(BaseModel):
-    memory_id: str
-    relation: str
-    evidentiary_dependency: bool = False
-
-
-class PrunePreview(BaseModel):
-    memory_id: str
-    current_status: MemoryStatus
-    proposed_status: Literal[MemoryStatus.TOMBSTONED] = MemoryStatus.TOMBSTONED
-    dependencies: list[PruneImpact] = Field(default_factory=list)
-    graph_neighbors: list[GraphNeighborPreview] = Field(default_factory=list)
-    hard_delete: bool = False

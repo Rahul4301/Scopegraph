@@ -56,9 +56,9 @@ Open `http://127.0.0.1:5173` for the Memory Explorer and `http://127.0.0.1:8000/
 
 `POST /retrieve` accepts a query, optional current scope and session, top-k, token budget, and optional evaluation timestamp. Retrieval searches the current session and scope, then ancestors and global memory; an unrelated scope is included only when its name appears in the query. The response includes each score component, traversal path, and budgeted verbatim source messages that support selected memories.
 
-Memory correction routes are grouped under `/memories/{id}`. Use `/prune/preview` before `/prune`; archive and prune operations can be reversed with `/restore`, and `/history` returns the append-only audit trail. `PATCH /memories/{id}` is an audited edit rather than an untracked property mutation.
+Memory correction routes are grouped under `/memories/{id}`. Archive and merge operations can be reversed with `/restore`; there is no manual prune, and `/history` returns the append-only audit trail. `PATCH /memories/{id}` is an audited edit rather than an untracked property mutation.
 
-The explorer renders the scope hierarchy and typed memory graph, exposes source-message provenance and revision history, and drives the same audited edit, move, archive, prune, restore, and merge routes used by automated experiments. Its retrieval debugger shows ranking components and traversal paths. The browser has no arbitrary Cypher endpoint.
+The explorer renders the scope hierarchy and typed memory graph, exposes source-message provenance and revision history, and drives the same audited edit, move, archive, restore, and merge routes used by automated experiments. Its retrieval debugger shows ranking components and traversal paths. The browser has no arbitrary Cypher endpoint.
 
 ## Quality checks
 
@@ -144,20 +144,18 @@ Complete in Phase 3:
 Complete in Phase 5:
 
 - audited memory edits with revision increments and embedding invalidation;
-- scope moves, archive, tombstone, restore, explicit supersession, and duplicate merge;
-- dry-run prune previews separating graph neighbors from evidentiary dependents;
-- dependency-safe pruning that marks only unsupported active dependents `needs_review`;
+- scope moves, archive, restore, explicit supersession, and duplicate merge (manual prune was later removed);
 - guarded undo that restores affected dependents only when no newer revision exists;
 - allowlisted add/remove relation corrections;
 - append-only `CorrectionEvent` snapshots and per-memory revision history;
-- correction API endpoints and live Neo4j edit/prune/undo coverage.
+- correction API endpoints and live Neo4j edit/archive/undo coverage.
 
 Complete in Phase 6:
 
 - a responsive React Memory Explorer with scope tree, Cytoscape graph, and node inspector;
 - explicit graph subgraph, JSON/GraphML export, statistics, and provenance endpoints;
 - source-message provenance, incoming/outgoing relationships, and revision history;
-- edit, move, archive, prune-preview, restore, and merge dialogs backed by audited APIs;
+- edit, move, archive, restore, and merge dialogs backed by audited APIs (the prune dialog is now dead: the backend routes were removed);
 - a retrieval trace debugger with per-component scores, traversal path, latency, and token use;
 - redundant text, shape, border, and color status cues for accessibility;
 - frontend type-checking and production build verification plus live Neo4j graph-query coverage.

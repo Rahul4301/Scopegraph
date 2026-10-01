@@ -14,7 +14,7 @@ The repository was built in numbered phases; docs and tests refer to them by num
 | 2 | Write path: structured extraction, normalization, dedup, conflicts, promotion, provenance | `llm/extraction.py`, `memory/consolidator.py`, `memory/promoter.py` |
 | 3 | Read path: scope-gated retrieval, bounded traversal, temporal filtering, ranking, token packing | `memory/retriever.py`, `traversal.py`, `ranker.py` |
 | 4 | Baselines: vector-only, flat-graph, and two-level controls (now expressed as retrieval-config controls of the same system, see `evals/runners/run_eval.py`) | `evals/runners/run_eval.py` |
-| 5 | Corrections: reversible, audited edit/move/archive/prune/merge/restore | `memory/corrections.py`, `api/corrections.py` |
+| 5 | Corrections: reversible, audited edit/move/archive/merge/restore (manual prune was removed) | `memory/corrections.py`, `api/corrections.py` |
 | 6 | Memory Explorer: React UI over typed API schemas | `web/`, `api/` |
 | 7 | Evaluation harness: CrossScopeMem generator, raw JSONL, scoring, reports | `evals/scenarios`, `evals/analysis`, `evals/metrics` |
 | 8 | External benchmark adapters and official scoring (LongMemEval-S, LoCoMo, MemoryAgentBench) | `evals/adapters`, `evals/judges`, `evals/runners/run_external.py` |
@@ -54,6 +54,8 @@ The Phase 3 retriever resolves the active scope, embeds the query, finds semanti
 
 Embeddings are requested through an OpenAI-compatible provider. A local SQLite cache is keyed by the embedding model and content hash, and generated vectors are also persisted on memory nodes. Anchor similarity currently uses exact cosine scoring over the already scope-filtered candidate set. This is intentional for provider-independent embedding dimensions and the resource-constrained reference environment; a Neo4j vector index remains an optimization to evaluate at larger scale.
 
+Original source turns are also searched directly, so extraction omissions stay reachable. A turn is excluded when every memory derived from it has been archived or tombstoned, so a removed fact cannot resurface through its source; turns with no memory, or with any live memory, stay searchable.
+
 Graph expansion follows only `SUPERSEDES`, `CONTRADICTS`, `SAME_AS`, `SUPPORTS`, and `RELATES_TO`. It is capped by configurable hop and node limits, a wall-clock budget, cycle detection, and the same scope allowlist. Current-state queries exclude inactive or out-of-validity memories. Historical-language queries may include superseded and archived evidence and favor superseded state.
 
 Final ranking combines configurable semantic, scope, temporal, confidence, graph-proximity, and recency components. Ranked summaries and non-duplicated verbatim provenance are packed without reordering until the request token budget is exhausted. This permits exact episodic answers without treating an entire ingested conversation as answer context.
@@ -62,9 +64,9 @@ Every result exposes component scores, source IDs, scope IDs, temporal validity,
 
 ## Correction path
 
-Normal correction never hard-deletes a memory. An edit, move, archive, merge, tombstone, restore, supersession, or relation change creates an append-only `CorrectionEvent` containing before and after state, actor, reason, and optional undo target. Every changed memory increments its revision; content edits also clear the stored embedding so retrieval regenerates it.
+Normal correction never hard-deletes a memory. An edit, move, archive, merge, restore, supersession, or relation change creates an append-only `CorrectionEvent` containing before and after state, actor, reason, and optional undo target. Every changed memory increments its revision; content edits also clear the stored embedding so retrieval regenerates it.
 
-Prune preview distinguishes graph neighbors from directed evidentiary dependencies. A target's outgoing `SUPPORTS` edges identify possible dependents. Independently supported memories remain unchanged, while active memories losing their only active support become `needs_review`. Confirmed pruning tombstones only the selected target. Restore is guarded by recorded revision numbers, so undo cannot silently overwrite a newer correction.
+There is no manual prune; the soft-deletion path is archive, supersession, and merge. Restore is guarded by recorded revision numbers, so undo cannot silently overwrite a newer correction.
 
 Merging copies source-message provenance to the canonical target, tombstones the duplicate, and retains `SAME_AS`; it never deletes either memory. Semantic relation edits are restricted to fixed relationship types and the existing `RELATES_TO.kind` allowlist.
 

@@ -8,7 +8,6 @@ from scopegraph.models.correction import (
     MemoryMoveRequest,
     MemoryRestoreRequest,
     MemorySupersedeRequest,
-    PrunePreview,
     RelationCorrectionRequest,
 )
 from scopegraph.models.graph import GraphEdge, GraphNode, GraphSubgraph, MemoryProvenance
@@ -53,7 +52,6 @@ __all__ = [
     "MemoryStats",
     "MemoryStatus",
     "MemoryType",
-    "PrunePreview",
     "RelationCorrectionRequest",
     "RetrievalResult",
     "RetrievalRequest",
