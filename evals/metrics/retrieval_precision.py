@@ -2,6 +2,7 @@
 
 
 def precision_at_k(retrieved_ids: list[str], gold_ids: list[str], k: int) -> float:
+    """Share of the first k retrieved ids that are gold."""
     retrieved = retrieved_ids[:k]
     if not retrieved:
         return 0.0

@@ -18,7 +18,8 @@ class TraversalRepository(Protocol):
     async def get_memory_neighbors(
         self, memory_ids: list[str], *, eligible_ids: set[str] | None = None,
         limit: int | None = None,
-    ) -> list[MemoryNeighbor]: ...
+    ) -> list[MemoryNeighbor]:
+        """Return graph neighbours of the given memories, optionally limited."""
 
 
 async def bounded_traversal(
@@ -31,6 +32,7 @@ async def bounded_traversal(
     max_time_ms: float = 100.0,
     eligible_ids: set[str] | None = None,
 ) -> tuple[dict[str, tuple[Memory, int]], list[TraversalStep]]:
+    """Expand from anchors within hop, node and time limits and the scope allowlist."""
     started = time.perf_counter()
     visited = set(anchor_ids)
     frontier = list(anchor_ids)

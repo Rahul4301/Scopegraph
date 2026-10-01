@@ -14,6 +14,7 @@ class LoCoMoAdapter:
     name = "locomo"
 
     def load(self, path: str | Path) -> list[ExternalBenchmarkExample]:
+        """Load LoCoMo questions with their shared conversations."""
         examples: list[ExternalBenchmarkExample] = []
         for sample_index, raw in enumerate(load_records(path)):
             conversation = raw.get("conversation")
@@ -61,6 +62,7 @@ class LoCoMoAdapter:
         return examples
 
     def validate(self, path: str | Path) -> AdapterValidation:
+        """Check that a LoCoMo file loads and report its size."""
         try:
             examples = self.load(path)
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:

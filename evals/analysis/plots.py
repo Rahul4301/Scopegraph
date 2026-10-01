@@ -7,6 +7,7 @@ from pathlib import Path
 
 def metric_bar_svg(summary: Mapping[str, Mapping[str, float]], metric: str,
                    path: str | Path) -> None:
+    """Write a dependency-free bar chart of one metric per system."""
     width, height = 720, 420
     systems = list(summary)
     max_value = max((float(summary[system].get(metric, 0.0)) for system in systems), default=1.0)

@@ -29,6 +29,7 @@ def _http_error(exc: ValueError) -> HTTPException:
 async def move_memory(
     memory_id: str, request: MemoryMoveRequest, corrections: Corrections
 ) -> CorrectionResult:
+    """Move a memory to another scope."""
     try:
         return await corrections.move(memory_id, request)
     except ValueError as exc:
@@ -39,6 +40,7 @@ async def move_memory(
 async def archive_memory(
     memory_id: str, request: CorrectionContext, corrections: Corrections
 ) -> CorrectionResult:
+    """Archive a memory."""
     try:
         return await corrections.archive(
             memory_id, actor=request.actor, reason=request.reason
@@ -49,6 +51,7 @@ async def archive_memory(
 
 @router.post("/{memory_id}/prune/preview", response_model=PrunePreview)
 async def preview_prune(memory_id: str, corrections: Corrections) -> PrunePreview:
+    """Preview what pruning a memory would affect."""
     try:
         return await corrections.preview_prune(memory_id)
     except ValueError as exc:
@@ -59,6 +62,7 @@ async def preview_prune(memory_id: str, corrections: Corrections) -> PrunePrevie
 async def prune_memory(
     memory_id: str, request: CorrectionContext, corrections: Corrections
 ) -> CorrectionResult:
+    """Tombstone a memory."""
     try:
         return await corrections.prune(
             memory_id, actor=request.actor, reason=request.reason
@@ -71,6 +75,7 @@ async def prune_memory(
 async def restore_memory(
     memory_id: str, request: MemoryRestoreRequest, corrections: Corrections
 ) -> CorrectionResult:
+    """Undo an earlier correction."""
     try:
         return await corrections.restore(memory_id, request)
     except ValueError as exc:
@@ -81,6 +86,7 @@ async def restore_memory(
 async def merge_memory(
     memory_id: str, request: MemoryMergeRequest, corrections: Corrections
 ) -> CorrectionResult:
+    """Merge a duplicate into this memory."""
     try:
         return await corrections.merge(memory_id, request)
     except ValueError as exc:
@@ -91,6 +97,7 @@ async def merge_memory(
 async def supersede_memory(
     memory_id: str, request: MemorySupersedeRequest, corrections: Corrections
 ) -> CorrectionResult:
+    """Record that a memory supersedes another."""
     try:
         return await corrections.supersede(memory_id, request)
     except ValueError as exc:
@@ -101,6 +108,7 @@ async def supersede_memory(
 async def add_memory_relation(
     memory_id: str, request: RelationCorrectionRequest, corrections: Corrections
 ) -> CorrectionResult:
+    """Add a typed relation."""
     try:
         return await corrections.add_relation(memory_id, request)
     except ValueError as exc:
@@ -111,6 +119,7 @@ async def add_memory_relation(
 async def remove_memory_relation(
     memory_id: str, request: RelationCorrectionRequest, corrections: Corrections
 ) -> CorrectionResult:
+    """Remove a typed relation."""
     try:
         return await corrections.remove_relation(memory_id, request)
     except ValueError as exc:
@@ -121,6 +130,7 @@ async def remove_memory_relation(
 async def memory_history(
     memory_id: str, corrections: Corrections
 ) -> list[CorrectionEvent]:
+    """Return the memory's append-only correction history."""
     try:
         return await corrections.history(memory_id)
     except ValueError as exc:

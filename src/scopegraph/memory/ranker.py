@@ -17,6 +17,7 @@ class RankingWeights:
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "RankingWeights":
+        """Build weights from config values."""
         weights = config.get("weights", {})
         defaults = cls()
         values = {
@@ -26,6 +27,7 @@ class RankingWeights:
         return cls(**values)
 
     def validate(self) -> None:
+        """Raise if the weights are invalid."""
         values = (
             self.semantic,
             self.scope,
@@ -41,6 +43,7 @@ class RankingWeights:
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
+    """Cosine similarity clamped to [0, 1]; 0 for a zero vector, error on mismatched sizes."""
     if len(left) != len(right):
         raise ValueError("Embedding dimensions must match")
     left_norm = math.sqrt(sum(value * value for value in left))
@@ -52,6 +55,7 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
 
 
 def recency_score(memory: Memory, *, now: datetime, half_life_days: float = 180.0) -> float:
+    """Exponential decay of time since last update (half-life 180 days by default)."""
     age_seconds = max(0.0, (now - memory.updated_at).total_seconds())
     age_days = age_seconds / 86_400
     return 2 ** (-age_days / half_life_days)
@@ -67,6 +71,7 @@ def final_score(
     recency: float,
     weights: RankingWeights,
 ) -> float:
+    """Weighted combination of the six ranking components."""
     weights.validate()
     values = (semantic, scope, temporal, confidence, graph, recency)
     if any(value < 0 or value > 1 for value in values):

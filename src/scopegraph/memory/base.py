@@ -11,12 +11,14 @@ class MemorySystem(ABC):
     """Contract implemented by the ScopeGraph memory service."""
 
     @abstractmethod
-    async def reset(self) -> None: ...
+    async def reset(self) -> None:
+        """Remove all stored memory (isolated experiment namespaces only)."""
 
     @abstractmethod
     async def ingest_session(
         self, session: SessionInput, *, current_scope: ScopeRef | None
-    ) -> IngestResult: ...
+    ) -> IngestResult:
+        """Store a session's messages and consolidate memories from them."""
 
     @abstractmethod
     async def retrieve(
@@ -27,10 +29,13 @@ class MemorySystem(ABC):
         top_k: int,
         token_budget: int,
         now: datetime | None = None,
-    ) -> RetrievalResult: ...
+    ) -> RetrievalResult:
+        """Retrieve scoped evidence for a query."""
 
     @abstractmethod
-    async def apply_correction(self, correction: CorrectionRequest) -> CorrectionResult: ...
+    async def apply_correction(self, correction: CorrectionRequest) -> CorrectionResult:
+        """Apply an audited correction."""
 
     @abstractmethod
-    async def stats(self) -> MemoryStats: ...
+    async def stats(self) -> MemoryStats:
+        """Return logical node and relationship counts."""

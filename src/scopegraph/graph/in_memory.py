@@ -45,6 +45,7 @@ class InMemoryMemoryRepository:
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[None]:
+        """Group the enclosed writes into one atomic unit."""
         before = deepcopy(self.__dict__)
         try:
             yield
@@ -53,6 +54,7 @@ class InMemoryMemoryRepository:
             raise
 
     async def create_scope(self, request: ScopeCreate) -> Scope:
+        """Create and return a scope."""
         if request.id in self.scopes:
             raise ValueError(f"Scope {request.id!r} already exists")
         if request.scope_type.value == "global" and any(
@@ -67,9 +69,11 @@ class InMemoryMemoryRepository:
         return scope
 
     async def get_scope(self, scope_id: str) -> Scope | None:
+        """Return the scope with this id, or None."""
         return self.scopes.get(scope_id)
 
     async def list_scopes(self, *, include_archived: bool = False) -> list[Scope]:
+        """List scopes, excluding archived ones unless asked."""
         return [
             item
             for item in self.scopes.values()
@@ -77,6 +81,7 @@ class InMemoryMemoryRepository:
         ]
 
     async def get_global_scope(self) -> Scope | None:
+        """Return the workspace's global root scope, or None."""
         return next(
             (
                 item
@@ -87,6 +92,7 @@ class InMemoryMemoryRepository:
         )
 
     async def update_scope(self, scope_id: str, update: ScopeUpdate) -> Scope | None:
+        """Apply a partial update to a scope and return it, or None if absent."""
         current = self.scopes.get(scope_id)
         if current is None:
             return None
@@ -101,6 +107,7 @@ class InMemoryMemoryRepository:
         return scope
 
     async def create_session(self, request: SessionCreate) -> Session:
+        """Create and return a session."""
         if request.id in self.sessions:
             current = self.sessions[request.id]
             if current.model_dump(exclude={"ended_at"}) != request.model_dump(exclude={"ended_at"}):
@@ -113,9 +120,11 @@ class InMemoryMemoryRepository:
         return session
 
     async def get_session(self, session_id: str) -> Session | None:
+        """Return the session with this id, or None."""
         return self.sessions.get(session_id)
 
     async def end_session(self, session_id: str, ended_at: datetime) -> Session | None:
+        """Mark a session ended at the given time and return it, or None."""
         current = self.sessions.get(session_id)
         if current is None:
             return None
@@ -124,6 +133,7 @@ class InMemoryMemoryRepository:
         return session
 
     async def create_source_message(self, request: SourceMessageCreate) -> SourceMessage:
+        """Store a raw source message and return it."""
         if request.id in self.messages:
             current = self.messages[request.id]
             if current.model_dump() != request.model_dump():
@@ -136,9 +146,11 @@ class InMemoryMemoryRepository:
         return message
 
     async def get_source_message(self, message_id: str) -> SourceMessage | None:
+        """Return the source message with this id, or None."""
         return self.messages.get(message_id)
 
     async def list_source_messages(self, session_id: str) -> list[SourceMessage]:
+        """List a session's source messages in turn order."""
         return sorted(
             (item for item in self.messages.values() if item.session_id == session_id),
             key=lambda item: (item.turn_index, item.timestamp),
@@ -147,6 +159,7 @@ class InMemoryMemoryRepository:
     async def get_source_messages_by_ids(
         self, message_ids: list[str]
     ) -> list[SourceMessage]:
+        """Return the source messages with these ids."""
         requested = set(message_ids)
         return sorted(
             (message for key, message in self.messages.items() if key in requested),
@@ -156,6 +169,7 @@ class InMemoryMemoryRepository:
     async def list_source_messages_for_scopes(
         self, scope_ids: set[str], *, now: datetime, session_id: str | None
     ) -> list[tuple[SourceMessage, str]]:
+        """List source messages in the given scopes visible at ``now``."""
         return sorted(
             (
                 (message, session.scope_id)
@@ -183,6 +197,7 @@ class InMemoryMemoryRepository:
         )
 
     async def create_memory(self, request: MemoryCreate) -> Memory:
+        """Create and return a memory."""
         if request.id in self.memories:
             raise ValueError("Memory ID already exists")
         if request.scope_id not in self.scopes:
@@ -196,11 +211,13 @@ class InMemoryMemoryRepository:
         return memory
 
     async def get_memory(self, memory_id: str) -> Memory | None:
+        """Return the memory with this id, or None."""
         return self.memories.get(memory_id)
 
     async def list_memories(
         self, *, scope_id: str | None = None, include_inactive: bool = False
     ) -> list[Memory]:
+        """List memories, optionally for one scope and including inactive ones."""
         return [
             item
             for item in self.memories.values()
@@ -211,6 +228,7 @@ class InMemoryMemoryRepository:
     async def set_memory_embedding(
         self, memory_id: str, embedding: list[float], model_name: str
     ) -> None:
+        """Store one memory's embedding and the model that produced it."""
         current = self.memories.get(memory_id)
         if current is None:
             raise ValueError(f"Memory {memory_id!r} does not exist")
@@ -221,6 +239,7 @@ class InMemoryMemoryRepository:
     async def set_memory_embeddings(
         self, values: list[tuple[str, str, list[float]]], model_name: str
     ) -> None:
+        """Store embeddings for many memories in one call."""
         for memory_id, content, vector in values:
             memory = self.memories.get(memory_id)
             if memory is not None and memory.content == content:
@@ -230,6 +249,7 @@ class InMemoryMemoryRepository:
         self, *, scope_ids: set[str], session_id: str | None,
         historical: bool, now: datetime,
     ) -> list[Memory]:
+        """List memories eligible for retrieval in the given scopes and session."""
         return [memory for scope_id in sorted(scope_ids)
                 for memory_id in sorted(self._scope_memory_ids.get(scope_id, ()))
                 if (memory := self.memories[memory_id]) and eligible_memory(
@@ -239,6 +259,7 @@ class InMemoryMemoryRepository:
     async def add_memory_sources(
         self, memory_id: str, source_ids: list[str], confirmed_at: datetime | None
     ) -> Memory:
+        """Link source messages to a memory as provenance and return it."""
         if set(source_ids) - self.messages.keys():
             raise ValueError("Source message does not exist")
         current = self.memories[memory_id]
@@ -254,6 +275,7 @@ class InMemoryMemoryRepository:
         self, memory_ids: list[str], *, eligible_ids: set[str] | None = None,
         limit: int | None = None,
     ) -> list[MemoryNeighbor]:
+        """Return graph neighbours of the given memories, optionally limited."""
         requested = set(memory_ids)
         neighbors: list[MemoryNeighbor] = []
         relationships = [
@@ -282,6 +304,7 @@ class InMemoryMemoryRepository:
         return sorted(unique.values(), key=lambda item: item.memory.id)[:limit]
 
     async def update_memory(self, memory_id: str, update: MemoryUpdate) -> Memory | None:
+        """Apply a partial update to a memory and return it, or None if absent."""
         current = self.memories.get(memory_id)
         if current is None:
             return None
@@ -297,6 +320,7 @@ class InMemoryMemoryRepository:
     async def move_memory(
         self, memory_id: str, scope_id: str, scope_level: ScopeLevel
     ) -> Memory | None:
+        """Move a memory to another scope and level and return it, or None."""
         if scope_id not in self.scopes:
             raise ValueError(f"Scope {scope_id!r} does not exist")
         return await self.update_memory(
@@ -306,6 +330,7 @@ class InMemoryMemoryRepository:
     async def merge_memories(
         self, source_memory_id: str, target_memory_id: str
     ) -> tuple[Memory, Memory]:
+        """Merge a duplicate memory into a canonical one; return (source, target)."""
         source = self.memories.get(source_memory_id)
         target = self.memories.get(target_memory_id)
         if source is None or target is None:
@@ -337,6 +362,7 @@ class InMemoryMemoryRepository:
         relation: CorrectionRelation,
         kind: RelationKind | None = None,
     ) -> Memory:
+        """Add a typed relation between two memories."""
         source = self.memories.get(source_memory_id)
         if source is None or target_memory_id not in self.memories:
             raise ValueError("Both memories must exist to add a relation")
@@ -366,6 +392,7 @@ class InMemoryMemoryRepository:
         relation: CorrectionRelation,
         kind: RelationKind | None = None,
     ) -> Memory:
+        """Remove a typed relation between two memories."""
         source = self.memories.get(source_memory_id)
         if source is None or target_memory_id not in self.memories:
             raise ValueError("Both memories must exist to remove a relation")
@@ -394,6 +421,7 @@ class InMemoryMemoryRepository:
         return updated
 
     async def get_support_dependents(self, memory_id: str) -> list[SupportDependency]:
+        """Return memories whose only support is the given memory."""
         dependencies: list[SupportDependency] = []
         dependent_ids = {target for source, target in self.supports if source == memory_id}
         for dependent_id in sorted(dependent_ids):
@@ -425,6 +453,7 @@ class InMemoryMemoryRepository:
         include_sources: bool = False,
         limit: int = 200,
     ) -> GraphSubgraph:
+        """Return a bounded graph slice around a scope or memory."""
         scopes = list(self.scopes.values())
         memories = [
             memory
@@ -530,6 +559,7 @@ class InMemoryMemoryRepository:
     async def create_correction_event(
         self, event: CorrectionEvent, target_memory_ids: list[str]
     ) -> CorrectionEvent:
+        """Append a correction event for the given target memories."""
         missing = set(target_memory_ids) - self.memories.keys()
         if missing:
             raise ValueError(f"Correction targets do not exist: {sorted(missing)}")
@@ -540,9 +570,11 @@ class InMemoryMemoryRepository:
         return event
 
     async def get_correction_event(self, event_id: str) -> CorrectionEvent | None:
+        """Return the correction event with this id, or None."""
         return self.correction_events.get(event_id)
 
     async def list_correction_events(self, memory_id: str) -> list[CorrectionEvent]:
+        """List the correction history of a memory."""
         return sorted(
             (
                 event
@@ -553,6 +585,7 @@ class InMemoryMemoryRepository:
         )
 
     async def supersede_memory(self, old_memory_id: str, new_memory_id: str) -> None:
+        """Mark the old memory superseded by the new one."""
         old = self.memories.get(old_memory_id)
         new = self.memories.get(new_memory_id)
         if old is None or new is None:
@@ -569,11 +602,13 @@ class InMemoryMemoryRepository:
         self.contradicts.add((new_memory_id, old_memory_id))
 
     async def link_support(self, source_memory_id: str, target_memory_id: str) -> None:
+        """Record that one memory supports another."""
         if source_memory_id not in self.memories or target_memory_id not in self.memories:
             raise ValueError("Both memories must exist to record support")
         self.supports.add((source_memory_id, target_memory_id))
 
     async def stats(self, backend_name: str = "scopegraph") -> MemoryStats:
+        """Return logical node and relationship counts."""
         hierarchy_edges = sum(1 for item in self.scopes.values() if item.parent_scope_id)
         provenance_edges = sum(len(item.source_ids) for item in self.memories.values())
         return MemoryStats(

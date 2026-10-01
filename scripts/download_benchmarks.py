@@ -110,6 +110,7 @@ def _digest(path: Path) -> str:
 
 
 def download(root: Path, artifact: Artifact, *, token: str | None, force: bool) -> str:
+    """Fetch one pinned artifact and verify its checksum."""
     destination = root / artifact.path
     if destination.is_file() and not force and _digest(destination) == artifact.sha256:
         return f"verified {artifact.path}"
@@ -140,6 +141,7 @@ def download(root: Path, artifact: Artifact, *, token: str | None, force: bool) 
 
 
 def main() -> None:
+    """CLI: download the benchmark artifacts."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--force", action="store_true")

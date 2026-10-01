@@ -6,6 +6,7 @@ def find_duplicate(
     candidate: MemoryCandidate, existing: list[Memory], *, scope_id: str,
     scope_level: ScopeLevel | None = None, session_id: str | None = None,
 ) -> Memory | None:
+    """Return the existing memory that duplicates a candidate, if any."""
     key = candidate_key(candidate)
     for memory in existing:
         if memory.scope_id != scope_id or memory.status is not MemoryStatus.ACTIVE:

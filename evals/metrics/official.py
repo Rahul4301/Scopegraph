@@ -59,6 +59,7 @@ def supplemental_official_scores(
     prediction: str | None,
     example: ExternalBenchmarkExample,
 ) -> dict[str, float]:
+    """Extra official scores reported beside the primary one (LoCoMo F1)."""
     if prediction is None or dataset != "locomo":
         return {}
     # Token F1 is LoCoMo's published metric, kept for comparison with prior work.
@@ -154,6 +155,7 @@ def official_score(
     *,
     data_path: Path,
 ) -> tuple[str, float] | None:
+    """Official deterministic score for a question, or None if a judge must grade it."""
     if prediction is None:
         return None
     if dataset == "locomo":

@@ -5,12 +5,14 @@ from scopegraph.models.memory import MemoryCandidate
 
 
 def normalize_text(value: str) -> str:
+    """NFKC-normalize, lowercase, collapse whitespace and drop trailing punctuation."""
     normalized = unicodedata.normalize("NFKC", value).strip().lower()
     normalized = re.sub(r"\s+", " ", normalized)
     return normalized.rstrip(".?!")
 
 
 def normalize_candidate(candidate: MemoryCandidate) -> MemoryCandidate:
+    """Return a copy with normalized fields and de-duplicated source message ids."""
     return candidate.model_copy(
         update={
             "content": candidate.content.strip(),
@@ -23,12 +25,14 @@ def normalize_candidate(candidate: MemoryCandidate) -> MemoryCandidate:
 
 
 def candidate_key(candidate: MemoryCandidate) -> str:
+    """Key identifying a candidate for duplicate detection."""
     if candidate.subject and candidate.predicate and candidate.object:
         return "|".join((candidate.subject, candidate.predicate, candidate.object))
     return normalize_text(candidate.content)
 
 
 def conflict_key(candidate: MemoryCandidate) -> str | None:
+    """Return ``subject|predicate`` for attribute-specific assertions, None for broad relations."""
     # A generic relation is multi-valued: using Rust does not contradict using
     # Neo4j. Only attribute-specific predicates can support automatic replacement.
     broad_relations = {"uses", "use", "has", "likes", "prefers", "works_on", "uses technology"}

@@ -7,6 +7,7 @@ from evals.adapters.memoryagentbench import MemoryAgentBenchAdapter
 
 
 def external_adapters() -> dict[str, ExternalDatasetAdapter]:
+    """Return the external dataset adapters keyed by dataset name."""
     adapters: list[ExternalDatasetAdapter] = [
         LongMemEvalAdapter(),
         LoCoMoAdapter(),

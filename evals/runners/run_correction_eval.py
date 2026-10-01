@@ -166,6 +166,7 @@ async def run_correction_evaluation(
     probes: tuple[int, ...] = (1, 5, 10, 20),
     cases: int = 30,
 ) -> list[dict[str, object]]:
+    """Run the correction-persistence experiment and return its raw per-probe results."""
     if cases < 1:
         raise ValueError("cases must be positive")
     return [
@@ -176,6 +177,7 @@ async def run_correction_evaluation(
 
 
 def summarize(results: list[dict[str, object]]) -> dict[str, dict[str, float]]:
+    """Summarize relapse rates with account/case bootstrap intervals."""
     by_condition: dict[str, list[dict[str, object]]] = {}
     for result in results:
         by_condition.setdefault(str(result["condition"]), []).append(result)
@@ -198,6 +200,7 @@ def summarize(results: list[dict[str, object]]) -> dict[str, dict[str, float]]:
 
 
 def main() -> None:
+    """CLI: run the correction-persistence experiment."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--output", type=Path, default=Path("results/raw/correction_persistence.jsonl")

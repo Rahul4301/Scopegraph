@@ -29,6 +29,7 @@ SINGLE_VALUED_PREDICATE = re.compile(
 def find_conflicts(
     candidate: MemoryCandidate, existing: list[Memory], *, scope_id: str
 ) -> list[Memory]:
+    """Active in-scope memories holding a different value for the same subject and predicate."""
     key = conflict_key(candidate)
     if key is None or candidate.object is None:
         return []

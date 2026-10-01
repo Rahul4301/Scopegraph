@@ -36,4 +36,5 @@ INDEXES: tuple[str, ...] = (
 
 
 async def ensure_schema(client: Neo4jClient) -> None:
+    """Create the constraints and indexes if missing."""
     await client.run_statements((*CONSTRAINTS, *INDEXES))

@@ -6,6 +6,7 @@ from scopegraph.graph.schema import ensure_schema
 
 
 async def main() -> None:
+    """CLI: create the Neo4j constraints and indexes."""
     client = Neo4jClient(get_settings())
     try:
         if not await client.health():

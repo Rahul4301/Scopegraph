@@ -9,6 +9,7 @@ from scopegraph.embeddings.base import EmbeddingProvider
 
 
 def content_hash(model_name: str, text: str) -> str:
+    """Hash text for use as a cache key."""
     payload = f"{model_name}\0{text}".encode()
     return hashlib.sha256(payload).hexdigest()
 
@@ -34,6 +35,7 @@ class SQLiteEmbeddingCache:
         self._connection.commit()
 
     def get(self, key: str) -> list[float] | None:
+        """Return a cached vector, or None."""
         with self._lock:
             row = self._connection.execute(
                 "SELECT vector_json FROM embeddings WHERE content_hash = ?", (key,)
@@ -41,6 +43,7 @@ class SQLiteEmbeddingCache:
         return json.loads(row[0]) if row else None
 
     def get_many(self, keys: list[str]) -> dict[str, list[float]]:
+        """Return cached vectors keyed by content hash."""
         found: dict[str, list[float]] = {}
         unique = list(dict.fromkeys(keys))
         with self._lock:
@@ -55,6 +58,7 @@ class SQLiteEmbeddingCache:
         return found
 
     def put_many(self, values: dict[str, list[float]], model_name: str) -> None:
+        """Store several vectors."""
         with self._lock:
             with self._connection:
                 self._connection.executemany(
@@ -64,6 +68,7 @@ class SQLiteEmbeddingCache:
                 )
 
     def put(self, key: str, model_name: str, vector: list[float]) -> None:
+        """Store one vector."""
         with self._lock:
             self._connection.execute(
                 """
@@ -75,6 +80,7 @@ class SQLiteEmbeddingCache:
             self._connection.commit()
 
     def close(self) -> None:
+        """Close the database connection."""
         with self._lock:
             self._connection.close()
 
@@ -86,9 +92,11 @@ class CachedEmbedder:
 
     @property
     def model_name(self) -> str:
+        """Name of the wrapped embedding model."""
         return self.provider.model_name
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts, calling the provider only for cache misses."""
         namespace = str(getattr(self.provider, "cache_namespace", self.model_name))
         keys = [content_hash(namespace, text) for text in texts]
         vectors = await asyncio.to_thread(self.cache.get_many, keys)

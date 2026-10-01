@@ -16,25 +16,34 @@ from scopegraph.models.source import SourceMessage, SourceMessageCreate
 
 
 class WriteRepository(ConsolidationRepository, CorrectionRepository, Protocol):
-    async def create_session(self, request: SessionCreate) -> Session: ...
+    async def create_session(self, request: SessionCreate) -> Session:
+        """Create and return a session."""
 
-    async def create_source_message(self, request: SourceMessageCreate) -> SourceMessage: ...
+    async def create_source_message(self, request: SourceMessageCreate) -> SourceMessage:
+        """Store a raw source message and return it."""
 
-    async def list_source_messages(self, session_id: str) -> list[SourceMessage]: ...
+    async def list_source_messages(self, session_id: str) -> list[SourceMessage]:
+        """List a session's source messages in turn order."""
 
-    async def end_session(self, session_id: str, ended_at: datetime) -> Session | None: ...
+    async def end_session(self, session_id: str, ended_at: datetime) -> Session | None:
+        """Mark a session ended at the given time and return it, or None."""
 
-    async def get_scope(self, scope_id: str) -> Scope | None: ...
+    async def get_scope(self, scope_id: str) -> Scope | None:
+        """Return the scope with this id, or None."""
 
-    async def get_session(self, session_id: str) -> Session | None: ...
+    async def get_session(self, session_id: str) -> Session | None:
+        """Return the session with this id, or None."""
 
-    async def get_global_scope(self) -> Scope | None: ...
+    async def get_global_scope(self) -> Scope | None:
+        """Return the workspace's global root scope, or None."""
 
     async def list_memories(
         self, *, scope_id: str | None = None, include_inactive: bool = False
-    ) -> list[Memory]: ...
+    ) -> list[Memory]:
+        """List memories, optionally for one scope and including inactive ones."""
 
-    async def stats(self, backend_name: str = "scopegraph") -> MemoryStats: ...
+    async def stats(self, backend_name: str = "scopegraph") -> MemoryStats:
+        """Return logical node and relationship counts."""
 
 
 class ScopeGraphMemorySystem(MemorySystem):
@@ -56,11 +65,13 @@ class ScopeGraphMemorySystem(MemorySystem):
         )
 
     async def reset(self) -> None:
+        """Not supported outside an isolated experiment namespace."""
         raise NotImplementedError("Reset requires an explicitly isolated experiment namespace")
 
     async def ingest_session(
         self, session: SessionInput, *, current_scope: ScopeRef | None
     ) -> IngestResult:
+        """Store a session's messages and consolidate memories from them."""
         scope_id = current_scope.id if current_scope else session.scope_id
         scope = await self.repository.get_scope(scope_id)
         if scope is None:
@@ -84,6 +95,7 @@ class ScopeGraphMemorySystem(MemorySystem):
     async def consolidate_session(
         self, session_id: str, *, current_scope: ScopeRef | None = None
     ) -> IngestResult:
+        """Extract candidates from a stored session and consolidate them."""
         stored_session = await self.repository.get_session(session_id)
         if stored_session is None:
             raise ValueError(f"Session {session_id!r} does not exist")
@@ -135,6 +147,7 @@ class ScopeGraphMemorySystem(MemorySystem):
         token_budget: int,
         now: datetime | None = None,
     ) -> RetrievalResult:
+        """Retrieve scoped evidence for a query."""
         if self.retriever is None:
             raise RuntimeError("Retrieval requires a configured embedding provider")
         return await self.retriever.retrieve(
@@ -146,7 +159,9 @@ class ScopeGraphMemorySystem(MemorySystem):
         )
 
     async def apply_correction(self, correction: CorrectionRequest) -> CorrectionResult:
+        """Apply an audited correction."""
         return await self.corrections.apply(correction)
 
     async def stats(self) -> MemoryStats:
+        """Return logical graph counts."""
         return await self.repository.stats("scopegraph")

@@ -55,6 +55,7 @@ class MemoryCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_temporal_range(self) -> "MemoryCreate":
+        """Require valid_to to follow valid_from."""
         if self.valid_from and self.valid_to and self.valid_to < self.valid_from:
             raise ValueError("valid_to cannot be before valid_from")
         return self
@@ -99,6 +100,7 @@ class MemoryCandidate(BaseModel):
 
     @model_validator(mode="after")
     def validate_candidate(self) -> "MemoryCandidate":
+        """Require a valid time range and cap the confidence of inferred memories at 0.8."""
         if self.valid_from and self.valid_to and self.valid_to < self.valid_from:
             raise ValueError("valid_to cannot be before valid_from")
         if self.inferred and self.confidence > 0.8:

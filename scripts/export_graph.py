@@ -35,6 +35,7 @@ async def _export() -> dict[str, object]:
 
 
 def main() -> None:
+    """CLI: export the graph to JSON."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("results/graph.json"))
     args = parser.parse_args()

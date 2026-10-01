@@ -8,6 +8,7 @@ from evals.adapters.registry import EXTERNAL_DATASETS, external_adapters
 
 
 def main() -> int:
+    """CLI: validate an external dataset file."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=EXTERNAL_DATASETS, required=True)
     parser.add_argument("--path", type=Path, required=True)

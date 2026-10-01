@@ -7,6 +7,7 @@ class HashEmbeddingProvider:
     model_name = "local-hash-v1"
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Return deterministic hashed vectors for offline use."""
         vectors: list[list[float]] = []
         for text in texts:
             buckets = [0.0] * 8

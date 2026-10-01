@@ -16,6 +16,7 @@ Corrections = Annotated[CorrectionService, Depends(get_correction_service)]
 
 @router.post("", response_model=Memory, status_code=status.HTTP_201_CREATED)
 async def create_memory(request: MemoryCreate, repository: Repository) -> Memory:
+    """Create a memory."""
     try:
         return await repository.create_memory(request)
     except ValueError as exc:
@@ -28,6 +29,7 @@ async def list_memories(
     scope_id: Annotated[str | None, Query()] = None,
     include_inactive: Annotated[bool, Query()] = False,
 ) -> list[Memory]:
+    """List memories."""
     return await repository.list_memories(
         scope_id=scope_id, include_inactive=include_inactive
     )
@@ -35,6 +37,7 @@ async def list_memories(
 
 @router.get("/{memory_id}", response_model=Memory)
 async def get_memory(memory_id: str, repository: Repository) -> Memory:
+    """Return one memory."""
     memory = await repository.get_memory(memory_id)
     if memory is None:
         raise HTTPException(status_code=404, detail="Memory not found")
@@ -45,6 +48,7 @@ async def get_memory(memory_id: str, repository: Repository) -> Memory:
 async def get_memory_provenance(
     memory_id: str, repository: Repository
 ) -> MemoryProvenance:
+    """Return a memory's source messages."""
     memory = await repository.get_memory(memory_id)
     if memory is None:
         raise HTTPException(status_code=404, detail="Memory not found")
@@ -56,6 +60,7 @@ async def get_memory_provenance(
 async def update_memory(
     memory_id: str, request: MemoryEditRequest, corrections: Corrections
 ) -> CorrectionResult:
+    """Apply an audited edit to a memory."""
     try:
         return await corrections.edit(memory_id, request)
     except ValueError as exc:

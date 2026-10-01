@@ -24,6 +24,7 @@ class Placement:
 
     @property
     def target(self) -> tuple[str, str | None, str | None]:
+        """Return the (level, scope id, session id) target of this placement."""
         return self.level, self.scope_id, self.session_id
 
 
@@ -118,6 +119,7 @@ def evaluate_scope_classification(
     live_extraction: bool,
     policy: PromotionPolicy | None = None,
 ) -> ScopeClassificationEvaluation:
+    """Compare extracted candidate placement with the scenario oracle."""
     if not live_extraction:
         return ScopeClassificationEvaluation(
             evaluated=False,
@@ -229,6 +231,7 @@ def evaluate_scope_classification(
 def write_scope_classification_report(
     evaluation: ScopeClassificationEvaluation, output_root: Path
 ) -> None:
+    """Write the scope-classification JSON and Markdown tables."""
     processed = output_root / "processed" / "scope_classification.json"
     processed.parent.mkdir(parents=True, exist_ok=True)
     processed.write_text(evaluation.model_dump_json(indent=2) + "\n")

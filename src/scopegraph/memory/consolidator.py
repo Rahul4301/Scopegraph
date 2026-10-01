@@ -17,17 +17,22 @@ from scopegraph.models.scope import ScopeRef
 class ConsolidationRepository(Protocol):
     async def list_memories(
         self, *, scope_id: str | None = None, include_inactive: bool = False
-    ) -> list[Memory]: ...
+    ) -> list[Memory]:
+        """List memories, optionally for one scope and including inactive ones."""
 
-    async def create_memory(self, request: MemoryCreate) -> Memory: ...
+    async def create_memory(self, request: MemoryCreate) -> Memory:
+        """Create and return a memory."""
 
-    async def supersede_memory(self, old_memory_id: str, new_memory_id: str) -> None: ...
+    async def supersede_memory(self, old_memory_id: str, new_memory_id: str) -> None:
+        """Mark the old memory superseded by the new one."""
 
-    async def link_support(self, source_memory_id: str, target_memory_id: str) -> None: ...
+    async def link_support(self, source_memory_id: str, target_memory_id: str) -> None:
+        """Record that one memory supports another."""
 
     async def add_memory_sources(
         self, memory_id: str, source_ids: list[str], confirmed_at: datetime | None
-    ) -> Memory: ...
+    ) -> Memory:
+        """Link source messages to a memory as provenance and return it."""
 
     async def add_memory_relation(
         self,
@@ -35,7 +40,8 @@ class ConsolidationRepository(Protocol):
         target_memory_id: str,
         relation: CorrectionRelation,
         kind: RelationKind | None = None,
-    ) -> Memory: ...
+    ) -> Memory:
+        """Add a typed relation between two memories."""
 
 
 @dataclass
@@ -61,6 +67,7 @@ class Consolidator:
         current_scope: ScopeRef | None,
         global_scope_id: str | None,
     ) -> ConsolidationOutcome:
+        """Store candidates, suppressing duplicates and recording conflicts and promotions."""
         outcome = ConsolidationOutcome(memories=[])
         existing_by_scope: dict[str, list[Memory]] = {}
         for raw_candidate in candidates:

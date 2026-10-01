@@ -19,6 +19,7 @@ class ModelTransport:
         self.total_usage: dict[str, int] = {}
 
     async def post(self, url: str, *, payload: dict[str, Any], api_key: str) -> dict[str, Any]:
+        """POST a JSON payload with retries and usage accounting."""
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=self.timeout)
         self.last_usage = {}
@@ -64,6 +65,7 @@ class ModelTransport:
         raise RuntimeError("Model request exhausted its retry budget")
 
     async def aclose(self) -> None:
+        """Close the HTTP client."""
         if self._client is not None:
             await self._client.aclose()
             self._client = None

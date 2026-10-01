@@ -17,6 +17,7 @@ class SessionCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_times(self) -> "SessionCreate":
+        """Require ended_at to follow started_at."""
         if self.ended_at is not None and self.ended_at < self.started_at:
             raise ValueError("ended_at cannot be before started_at")
         return self

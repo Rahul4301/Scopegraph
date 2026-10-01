@@ -27,23 +27,30 @@ from scopegraph.models.scope import Scope, ScopeType
 
 
 class CorrectionRepository(Protocol):
-    def transaction(self) -> AbstractAsyncContextManager[None]: ...
+    def transaction(self) -> AbstractAsyncContextManager[None]:
+        """Group the enclosed writes into one atomic unit."""
 
-    async def get_memory(self, memory_id: str) -> Memory | None: ...
+    async def get_memory(self, memory_id: str) -> Memory | None:
+        """Return the memory with this id, or None."""
 
-    async def get_scope(self, scope_id: str) -> Scope | None: ...
+    async def get_scope(self, scope_id: str) -> Scope | None:
+        """Return the scope with this id, or None."""
 
-    async def update_memory(self, memory_id: str, update: MemoryUpdate) -> Memory | None: ...
+    async def update_memory(self, memory_id: str, update: MemoryUpdate) -> Memory | None:
+        """Apply a partial update to a memory and return it, or None if absent."""
 
     async def move_memory(
         self, memory_id: str, scope_id: str, scope_level: ScopeLevel
-    ) -> Memory | None: ...
+    ) -> Memory | None:
+        """Move a memory to another scope and level and return it, or None."""
 
     async def merge_memories(
         self, source_memory_id: str, target_memory_id: str
-    ) -> tuple[Memory, Memory]: ...
+    ) -> tuple[Memory, Memory]:
+        """Merge a duplicate memory into a canonical one; return (source, target)."""
 
-    async def supersede_memory(self, old_memory_id: str, new_memory_id: str) -> None: ...
+    async def supersede_memory(self, old_memory_id: str, new_memory_id: str) -> None:
+        """Mark the old memory superseded by the new one."""
 
     async def add_memory_relation(
         self,
@@ -51,7 +58,8 @@ class CorrectionRepository(Protocol):
         target_memory_id: str,
         relation: CorrectionRelation,
         kind: RelationKind | None = None,
-    ) -> Memory: ...
+    ) -> Memory:
+        """Add a typed relation between two memories."""
 
     async def remove_memory_relation(
         self,
@@ -59,19 +67,25 @@ class CorrectionRepository(Protocol):
         target_memory_id: str,
         relation: CorrectionRelation,
         kind: RelationKind | None = None,
-    ) -> Memory: ...
+    ) -> Memory:
+        """Remove a typed relation between two memories."""
 
-    async def get_memory_neighbors(self, memory_ids: list[str]) -> list[MemoryNeighbor]: ...
+    async def get_memory_neighbors(self, memory_ids: list[str]) -> list[MemoryNeighbor]:
+        """Return graph neighbours of the given memories, optionally limited."""
 
-    async def get_support_dependents(self, memory_id: str) -> list[SupportDependency]: ...
+    async def get_support_dependents(self, memory_id: str) -> list[SupportDependency]:
+        """Return memories whose only support is the given memory."""
 
     async def create_correction_event(
         self, event: CorrectionEvent, target_memory_ids: list[str]
-    ) -> CorrectionEvent: ...
+    ) -> CorrectionEvent:
+        """Append a correction event for the given target memories."""
 
-    async def get_correction_event(self, event_id: str) -> CorrectionEvent | None: ...
+    async def get_correction_event(self, event_id: str) -> CorrectionEvent | None:
+        """Return the correction event with this id, or None."""
 
-    async def list_correction_events(self, memory_id: str) -> list[CorrectionEvent]: ...
+    async def list_correction_events(self, memory_id: str) -> list[CorrectionEvent]:
+        """List the correction history of a memory."""
 
 
 def _snapshot(memory: Memory) -> dict[str, Any]:
@@ -84,6 +98,7 @@ P = ParamSpec("P")
 def atomic(
     method: Callable[Concatenate["CorrectionService", P], Awaitable[CorrectionResult]],
 ) -> Callable[Concatenate["CorrectionService", P], Awaitable[CorrectionResult]]:
+    """Run the decorated correction inside one repository transaction."""
     @wraps(method)
     async def wrapped(
         self: "CorrectionService", /, *args: P.args, **kwargs: P.kwargs
@@ -99,11 +114,13 @@ class CorrectionService:
         self.repository = repository
 
     async def history(self, memory_id: str) -> list[CorrectionEvent]:
+        """Return a memory's correction events."""
         await self._require_memory(memory_id)
         return await self.repository.list_correction_events(memory_id)
 
     @atomic
     async def edit(self, memory_id: str, request: MemoryEditRequest) -> CorrectionResult:
+        """Edit a memory's content or fields."""
         before = await self._require_memory(memory_id)
         changes = request.model_dump(exclude={"actor", "reason"}, exclude_unset=True)
         if not changes:
@@ -141,6 +158,7 @@ class CorrectionService:
 
     @atomic
     async def move(self, memory_id: str, request: MemoryMoveRequest) -> CorrectionResult:
+        """Move a memory to another scope."""
         before = await self._require_memory(memory_id)
         scope = await self.repository.get_scope(request.scope_id)
         if scope is None:
@@ -168,6 +186,7 @@ class CorrectionService:
     async def archive(
         self, memory_id: str, *, actor: str = "user", reason: str = ""
     ) -> CorrectionResult:
+        """Archive a memory."""
         before = await self._require_memory(memory_id)
         if before.status in {MemoryStatus.ARCHIVED, MemoryStatus.TOMBSTONED}:
             raise ValueError("Archived or tombstoned memory cannot be archived again")
@@ -187,6 +206,7 @@ class CorrectionService:
         return CorrectionResult(event=event, memory=updated)
 
     async def preview_prune(self, memory_id: str) -> PrunePreview:
+        """Preview the dependents a prune would affect."""
         memory = await self._require_memory(memory_id)
         dependencies = await self.repository.get_support_dependents(memory_id)
         impacts = [self._impact(dependency) for dependency in dependencies]
@@ -211,6 +231,7 @@ class CorrectionService:
     async def prune(
         self, memory_id: str, *, actor: str = "user", reason: str = ""
     ) -> CorrectionResult:
+        """Tombstone a memory."""
         before = await self._require_memory(memory_id)
         if before.status is MemoryStatus.TOMBSTONED:
             raise ValueError("Memory is already tombstoned")
@@ -255,6 +276,7 @@ class CorrectionService:
 
     @atomic
     async def restore(self, memory_id: str, request: MemoryRestoreRequest) -> CorrectionResult:
+        """Restore an archived or tombstoned memory, guarded by the recorded revisions."""
         before = await self._require_memory(memory_id)
         if before.status not in {MemoryStatus.TOMBSTONED, MemoryStatus.ARCHIVED}:
             raise ValueError("Only archived or tombstoned memories can be restored")
@@ -317,6 +339,7 @@ class CorrectionService:
 
     @atomic
     async def merge(self, memory_id: str, request: MemoryMergeRequest) -> CorrectionResult:
+        """Merge a duplicate memory into a target."""
         if memory_id == request.target_memory_id:
             raise ValueError("A memory cannot be merged into itself")
         source_before = await self._require_memory(memory_id)
@@ -350,6 +373,7 @@ class CorrectionService:
 
     @atomic
     async def supersede(self, memory_id: str, request: MemorySupersedeRequest) -> CorrectionResult:
+        """Mark one memory superseded by another."""
         if memory_id == request.replacement_memory_id:
             raise ValueError("A memory cannot supersede itself")
         old_before = await self._require_memory(memory_id)
@@ -379,6 +403,7 @@ class CorrectionService:
     async def add_relation(
         self, memory_id: str, request: RelationCorrectionRequest
     ) -> CorrectionResult:
+        """Add a typed relation."""
         source_before = await self._require_memory(memory_id)
         target = await self._require_memory(request.target_memory_id)
         source_after = await self.repository.add_memory_relation(
@@ -411,6 +436,7 @@ class CorrectionService:
     async def remove_relation(
         self, memory_id: str, request: RelationCorrectionRequest
     ) -> CorrectionResult:
+        """Remove a typed relation."""
         source_before = await self._require_memory(memory_id)
         target = await self._require_memory(request.target_memory_id)
         source_after = await self.repository.remove_memory_relation(
@@ -440,6 +466,7 @@ class CorrectionService:
         return CorrectionResult(event=event, memory=source_after)
 
     async def apply(self, correction: CorrectionRequest) -> CorrectionResult:
+        """Dispatch a correction request to its handler."""
         context: dict[str, Any] = {
             "actor": correction.actor,
             "reason": correction.reason,

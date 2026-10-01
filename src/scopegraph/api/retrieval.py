@@ -14,6 +14,7 @@ MemoryService = Annotated[ScopeGraphMemorySystem, Depends(get_memory_system)]
 async def retrieve(
     request: RetrievalRequest, memory_system: MemoryService
 ) -> RetrievalResult:
+    """Retrieve scoped evidence for a query."""
     try:
         return await memory_system.retrieve(
             request.query,

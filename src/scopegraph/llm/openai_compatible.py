@@ -22,6 +22,7 @@ class OpenAICompatibleLLM:
         self.transport = ModelTransport(timeout=timeout_seconds, retries=max_retries)
 
     async def aclose(self) -> None:
+        """Close the HTTP client."""
         await self.transport.aclose()
 
     async def complete_json(
@@ -32,6 +33,7 @@ class OpenAICompatibleLLM:
         schema_name: str,
         json_schema: dict[str, Any],
     ) -> dict[str, Any]:
+        """Request a JSON object matching ``json_schema`` from the chat endpoint."""
         if not self.api_key or not self.model:
             raise RuntimeError("LLM_API_KEY and LLM_MODEL are required for live extraction")
         strict_schema = _strict_json_schema(json_schema)

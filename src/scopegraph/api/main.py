@@ -16,6 +16,7 @@ from scopegraph.llm.transport import close_provider
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Close the cached memory system's extractor and embedder at shutdown."""
     yield
     if get_memory_system.cache_info().currsize:
         system = get_memory_system()
@@ -42,12 +43,14 @@ app.include_router(admin_router)
 
 @app.get("/health")
 async def health() -> dict[str, str]:
+    """Report Neo4j connectivity without exposing credentials."""
     connected = await get_client().health()
     return {"status": "ok" if connected else "degraded", "neo4j": "up" if connected else "down"}
 
 
 @app.get("/config/status")
 async def config_status() -> dict[str, bool]:
+    """Report which configuration values are set, not their contents."""
     settings = get_settings()
     return {
         "llm_configured": bool(settings.llm_model and settings.llm_api_key.get_secret_value()),

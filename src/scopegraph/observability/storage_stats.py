@@ -4,6 +4,7 @@ from typing import Any
 
 
 def logical_bytes(stats: dict[str, Any], *, serialized_memory_bytes: int = 0) -> int:
+    """Estimate logical size from memory and relationship counts plus serialized memory bytes."""
     return (
         int(stats.get("memory_count", 0)) * 256
         + int(stats.get("relationship_count", 0)) * 96

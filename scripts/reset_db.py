@@ -19,6 +19,7 @@ async def _reset() -> None:
 
 
 def main() -> None:
+    """CLI: clear the configured Neo4j database (requires --yes)."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--yes", action="store_true", help="confirm destructive reset")
     args = parser.parse_args()

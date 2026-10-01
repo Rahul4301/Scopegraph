@@ -23,6 +23,7 @@ async def _run() -> list[Path]:
 
 
 def main() -> None:
+    """CLI: run the credential-free end-to-end smoke test."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-root", type=Path, default=Path("results/smoke"))
     args = parser.parse_args()

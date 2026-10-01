@@ -21,6 +21,7 @@ from scopegraph.models.scope import ScopeCreate, ScopeRef, ScopeType
 
 
 async def measure(scope_count: int, per_scope: int, repeats: int) -> dict[str, object]:
+    """Time repeated in-memory retrievals and return latency percentiles."""
     repo = InMemoryMemoryRepository()
     embedder = HashEmbeddingProvider()
     vector = (await embedder.embed(["project database selection"]))[0]
@@ -50,6 +51,7 @@ async def measure(scope_count: int, per_scope: int, repeats: int) -> dict[str, o
 
 
 def main() -> None:
+    """CLI: benchmark retrieval latency."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scopes", default="10,100,1000")
     parser.add_argument("--per-scope", type=int, default=50)

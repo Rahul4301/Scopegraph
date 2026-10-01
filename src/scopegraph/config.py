@@ -29,10 +29,12 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Return the cached environment settings."""
     return Settings()
 
 
 def load_yaml_config(path: Path) -> dict[str, Any]:
+    """Load a YAML mapping from ``path`` (an empty file gives an empty dict)."""
     with path.open(encoding="utf-8") as stream:
         loaded = yaml.safe_load(stream)
     if loaded is None:

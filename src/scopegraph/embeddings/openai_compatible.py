@@ -27,17 +27,21 @@ class OpenAICompatibleEmbeddingProvider:
 
     @property
     def cache_namespace(self) -> str:
+        """Cache namespace combining endpoint and model."""
         endpoint = hashlib.sha256(self.base_url.encode()).hexdigest()[:16]
         return f"{endpoint}:{self.model}"
 
     async def aclose(self) -> None:
+        """Close the HTTP client."""
         await self.transport.aclose()
 
     @property
     def model_name(self) -> str:
+        """Name of the embedding model."""
         return self.model
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts through the provider's embeddings endpoint."""
         if not texts:
             return []
         if not self.api_key or not self.model:

@@ -40,6 +40,7 @@ class MemoryAgentBenchAdapter:
     name = "memoryagentbench"
 
     def load(self, path: str | Path) -> list[ExternalBenchmarkExample]:
+        """Load MemoryAgentBench questions with their corpora."""
         source = Path(path)
         paths = sorted(source.glob("*.parquet")) if source.is_dir() else [source]
         if not paths or not all(item.is_file() for item in paths):
@@ -110,6 +111,7 @@ class MemoryAgentBenchAdapter:
         return examples
 
     def validate(self, path: str | Path) -> AdapterValidation:
+        """Check that MemoryAgentBench data loads and report its size."""
         try:
             examples = self.load(path)
         except Exception as exc:

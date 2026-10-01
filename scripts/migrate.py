@@ -8,6 +8,7 @@ from scopegraph.graph.schema import ensure_schema
 
 
 async def main() -> None:
+    """CLI: apply the Neo4j schema migrations."""
     client = Neo4jClient(get_settings())
     try:
         if not await client.health():

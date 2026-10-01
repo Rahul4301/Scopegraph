@@ -25,6 +25,7 @@ def _embedding(topic: str) -> list[float]:
 
 
 async def main() -> None:
+    """CLI: seed demo data."""
     client = Neo4jClient(get_settings())
     try:
         if not await client.health():

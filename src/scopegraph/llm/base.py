@@ -9,4 +9,5 @@ class StructuredLLMProvider(Protocol):
         user_prompt: str,
         schema_name: str,
         json_schema: dict[str, Any],
-    ) -> dict[str, Any]: ...
+    ) -> dict[str, Any]:
+        """Request a JSON object matching ``json_schema``."""

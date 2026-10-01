@@ -42,9 +42,11 @@ class Neo4jMemoryRepository:
         self.client = client
 
     def transaction(self) -> AbstractAsyncContextManager[None]:
+        """Group the enclosed writes into one atomic unit."""
         return self.client.transaction()
 
     async def create_scope(self, request: ScopeCreate) -> Scope:
+        """Create and return a scope."""
         if request.scope_type is ScopeType.GLOBAL:
             existing = await self.client.execute_read(
                 "MATCH (s:Scope {scope_type: 'global', archived: false}) RETURN s LIMIT 1"
@@ -69,12 +71,14 @@ class Neo4jMemoryRepository:
         return Scope.model_validate(_node(rows[0], "s"))
 
     async def get_scope(self, scope_id: str) -> Scope | None:
+        """Return the scope with this id, or None."""
         rows = await self.client.execute_read(
             "MATCH (s:Scope {id: $id}) RETURN s", {"id": scope_id}
         )
         return Scope.model_validate(_node(rows[0], "s")) if rows else None
 
     async def list_scopes(self, *, include_archived: bool = False) -> list[Scope]:
+        """List scopes, excluding archived ones unless asked."""
         rows = await self.client.execute_read(
             """
             MATCH (s:Scope)
@@ -86,12 +90,14 @@ class Neo4jMemoryRepository:
         return [Scope.model_validate(_node(row, "s")) for row in rows]
 
     async def get_global_scope(self) -> Scope | None:
+        """Return the workspace's global root scope, or None."""
         rows = await self.client.execute_read(
             "MATCH (s:Scope {scope_type: 'global', archived: false}) RETURN s LIMIT 1"
         )
         return Scope.model_validate(_node(rows[0], "s")) if rows else None
 
     async def update_scope(self, scope_id: str, update: ScopeUpdate) -> Scope | None:
+        """Apply a partial update to a scope and return it, or None if absent."""
         changes = update.model_dump(mode="json", exclude_unset=True)
         if not changes:
             return await self.get_scope(scope_id)
@@ -126,6 +132,7 @@ class Neo4jMemoryRepository:
         return Scope.model_validate(_node(rows[0], "s")) if rows else None
 
     async def create_session(self, request: SessionCreate) -> Session:
+        """Create and return a session."""
         existing = await self.get_session(request.id)
         if existing is not None:
             if existing.model_dump(exclude={"ended_at"}) != request.model_dump(
@@ -150,6 +157,7 @@ class Neo4jMemoryRepository:
         return Session.model_validate(result)
 
     async def get_session(self, session_id: str) -> Session | None:
+        """Return the session with this id, or None."""
         rows = await self.client.execute_read(
             "MATCH (s:Session {id: $id}) RETURN s", {"id": session_id}
         )
@@ -160,6 +168,7 @@ class Neo4jMemoryRepository:
         return Session.model_validate(result)
 
     async def end_session(self, session_id: str, ended_at: datetime) -> Session | None:
+        """Mark a session ended at the given time and return it, or None."""
         rows = await self.client.execute_write(
             "MATCH (s:Session {id: $id}) SET s.ended_at = $ended_at RETURN s",
             {"id": session_id, "ended_at": ended_at.isoformat()},
@@ -171,6 +180,7 @@ class Neo4jMemoryRepository:
         return Session.model_validate(result)
 
     async def create_source_message(self, request: SourceMessageCreate) -> SourceMessage:
+        """Store a raw source message and return it."""
         existing = await self.get_source_message(request.id)
         if existing is not None:
             if existing.model_dump() != request.model_dump():
@@ -189,12 +199,14 @@ class Neo4jMemoryRepository:
         return SourceMessage.model_validate(_node(rows[0], "m"))
 
     async def get_source_message(self, message_id: str) -> SourceMessage | None:
+        """Return the source message with this id, or None."""
         rows = await self.client.execute_read(
             "MATCH (m:SourceMessage {id: $id}) RETURN m", {"id": message_id}
         )
         return SourceMessage.model_validate(_node(rows[0], "m")) if rows else None
 
     async def list_source_messages(self, session_id: str) -> list[SourceMessage]:
+        """List a session's source messages in turn order."""
         rows = await self.client.execute_read(
             """
             MATCH (m:SourceMessage)-[:PART_OF]->(:Session {id: $session_id})
@@ -207,6 +219,7 @@ class Neo4jMemoryRepository:
     async def get_source_messages_by_ids(
         self, message_ids: list[str]
     ) -> list[SourceMessage]:
+        """Return the source messages with these ids."""
         if not message_ids:
             return []
         rows = await self.client.execute_read(
@@ -223,6 +236,7 @@ class Neo4jMemoryRepository:
     async def list_source_messages_for_scopes(
         self, scope_ids: set[str], *, now: datetime, session_id: str | None
     ) -> list[tuple[SourceMessage, str]]:
+        """List source messages in the given scopes visible at ``now``."""
         if not scope_ids:
             return []
         rows = await self.client.execute_read(
@@ -248,6 +262,7 @@ class Neo4jMemoryRepository:
         ]
 
     async def create_memory(self, request: MemoryCreate) -> Memory:
+        """Create and return a memory."""
         payload = request.model_dump(mode="json", exclude={"source_ids"})
         payload["metadata_json"] = _json(payload.pop("metadata"))
         rows = await self.client.execute_write(
@@ -272,6 +287,7 @@ class Neo4jMemoryRepository:
         return self._memory_from_row(rows[0])
 
     async def get_memory(self, memory_id: str) -> Memory | None:
+        """Return the memory with this id, or None."""
         rows = await self.client.execute_read(
             """
             MATCH (m:Memory {id: $id})
@@ -284,6 +300,7 @@ class Neo4jMemoryRepository:
     async def list_memories(
         self, *, scope_id: str | None = None, include_inactive: bool = False
     ) -> list[Memory]:
+        """List memories, optionally for one scope and including inactive ones."""
         rows = await self.client.execute_read(
             """
             MATCH (m:Memory)
@@ -299,6 +316,7 @@ class Neo4jMemoryRepository:
     async def set_memory_embedding(
         self, memory_id: str, embedding: list[float], model_name: str
     ) -> None:
+        """Store one memory's embedding and the model that produced it."""
         rows = await self.client.execute_write(
             """
             MATCH (m:Memory {id: $id})
@@ -313,6 +331,7 @@ class Neo4jMemoryRepository:
     async def set_memory_embeddings(
         self, values: list[tuple[str, str, list[float]]], model_name: str
     ) -> None:
+        """Store embeddings for many memories in one call."""
         if not values:
             return
         await self.client.execute_write(
@@ -330,6 +349,7 @@ class Neo4jMemoryRepository:
         self, *, scope_ids: set[str], session_id: str | None,
         historical: bool, now: datetime,
     ) -> list[Memory]:
+        """List memories eligible for retrieval in the given scopes and session."""
         if not scope_ids:
             return []
         rows = await self.client.execute_read(
@@ -354,6 +374,7 @@ class Neo4jMemoryRepository:
     async def add_memory_sources(
         self, memory_id: str, source_ids: list[str], confirmed_at: datetime | None
     ) -> Memory:
+        """Link source messages to a memory as provenance and return it."""
         rows = await self.client.execute_write(
             """
             MATCH (m:Memory {id: $id})
@@ -379,6 +400,7 @@ class Neo4jMemoryRepository:
         self, memory_ids: list[str], *, eligible_ids: set[str] | None = None,
         limit: int | None = None,
     ) -> list[MemoryNeighbor]:
+        """Return graph neighbours of the given memories, optionally limited."""
         if not memory_ids:
             return []
         rows = await self.client.execute_read(
@@ -407,6 +429,7 @@ class Neo4jMemoryRepository:
         ]
 
     async def update_memory(self, memory_id: str, update: MemoryUpdate) -> Memory | None:
+        """Apply a partial update to a memory and return it, or None if absent."""
         changes = update.model_dump(mode="json", exclude_unset=True)
         if not changes:
             return await self.get_memory(memory_id)
@@ -426,6 +449,7 @@ class Neo4jMemoryRepository:
     async def move_memory(
         self, memory_id: str, scope_id: str, scope_level: ScopeLevel
     ) -> Memory | None:
+        """Move a memory to another scope and level and return it, or None."""
         rows = await self.client.execute_write(
             """
             MATCH (m:Memory {id: $memory_id}), (scope:Scope {id: $scope_id})
@@ -454,6 +478,7 @@ class Neo4jMemoryRepository:
     async def merge_memories(
         self, source_memory_id: str, target_memory_id: str
     ) -> tuple[Memory, Memory]:
+        """Merge a duplicate memory into a canonical one; return (source, target)."""
         rows = await self.client.execute_write(
             """
             MATCH (source:Memory {id: $source_id}), (target:Memory {id: $target_id})
@@ -494,6 +519,7 @@ class Neo4jMemoryRepository:
         relation: CorrectionRelation,
         kind: RelationKind | None = None,
     ) -> Memory:
+        """Add a typed relation between two memories."""
         if source_memory_id == target_memory_id:
             raise ValueError("A memory cannot relate to itself")
         patterns = {
@@ -532,6 +558,7 @@ class Neo4jMemoryRepository:
         relation: CorrectionRelation,
         kind: RelationKind | None = None,
     ) -> Memory:
+        """Remove a typed relation between two memories."""
         patterns = {
             CorrectionRelation.SUPPORTS: "[relation:SUPPORTS]",
             CorrectionRelation.SAME_AS: "[relation:SAME_AS]",
@@ -561,6 +588,7 @@ class Neo4jMemoryRepository:
         return self._memory_from_row(rows[0])
 
     async def get_support_dependents(self, memory_id: str) -> list[SupportDependency]:
+        """Return memories whose only support is the given memory."""
         rows = await self.client.execute_read(
             """
             MATCH (:Memory {id: $memory_id})-[support]->(dependent:Memory)
@@ -593,6 +621,7 @@ class Neo4jMemoryRepository:
         include_sources: bool = False,
         limit: int = 200,
     ) -> GraphSubgraph:
+        """Return a bounded graph slice around a scope or memory."""
         scopes = await self.list_scopes(include_archived=True)
         rows = await self.client.execute_read(
             """
@@ -706,6 +735,7 @@ class Neo4jMemoryRepository:
     async def create_correction_event(
         self, event: CorrectionEvent, target_memory_ids: list[str]
     ) -> CorrectionEvent:
+        """Append a correction event for the given target memories."""
         payload = event.model_dump(mode="json", exclude={"before", "after"})
         payload["before_json"] = _json(event.before)
         payload["after_json"] = _json(event.after)
@@ -726,6 +756,7 @@ class Neo4jMemoryRepository:
         return self._correction_from_node(_node(rows[0], "event"))
 
     async def get_correction_event(self, event_id: str) -> CorrectionEvent | None:
+        """Return the correction event with this id, or None."""
         rows = await self.client.execute_read(
             "MATCH (event:CorrectionEvent {id: $id}) RETURN event",
             {"id": event_id},
@@ -733,6 +764,7 @@ class Neo4jMemoryRepository:
         return self._correction_from_node(_node(rows[0], "event")) if rows else None
 
     async def list_correction_events(self, memory_id: str) -> list[CorrectionEvent]:
+        """List the correction history of a memory."""
         rows = await self.client.execute_read(
             """
             MATCH (event:CorrectionEvent)-[:TARGETED]->(:Memory {id: $memory_id})
@@ -743,6 +775,7 @@ class Neo4jMemoryRepository:
         return [self._correction_from_node(_node(row, "event")) for row in rows]
 
     async def supersede_memory(self, old_memory_id: str, new_memory_id: str) -> None:
+        """Mark the old memory superseded by the new one."""
         rows = await self.client.execute_write(
             """
             MATCH (old:Memory {id: $old_id}), (new:Memory {id: $new_id})
@@ -764,6 +797,7 @@ class Neo4jMemoryRepository:
             raise ValueError("Both memories must exist to record supersession")
 
     async def link_support(self, source_memory_id: str, target_memory_id: str) -> None:
+        """Record that one memory supports another."""
         rows = await self.client.execute_write(
             """
             MATCH (source:Memory {id: $source_id}), (target:Memory {id: $target_id})
@@ -776,6 +810,7 @@ class Neo4jMemoryRepository:
             raise ValueError("Both memories must exist to record support")
 
     async def stats(self, backend_name: str = "scopegraph") -> MemoryStats:
+        """Return logical node and relationship counts."""
         rows = await self.client.execute_read(
             """
             MATCH (n)

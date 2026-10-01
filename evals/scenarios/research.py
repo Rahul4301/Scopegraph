@@ -17,6 +17,7 @@ from scopegraph.models.source import MessageRole, SourceMessageCreate
 def generate_research_scenario(
     *, seed: int, difficulty: int, scenario_id: str | None = None
 ) -> CrossScopeScenario:
+    """Generate one seeded multi-project account with gold evidence."""
     if difficulty not in {1, 2, 3, 4}:
         raise ValueError("difficulty must be between 1 and 4")
     rng = random.Random(seed)

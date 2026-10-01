@@ -94,6 +94,7 @@ class RelationCorrectionRequest(CorrectionContext):
 
     @model_validator(mode="after")
     def validate_relation_kind(self) -> "RelationCorrectionRequest":
+        """Require a kind for RELATES_TO relations."""
         if self.relation is CorrectionRelation.RELATES_TO and self.kind is None:
             raise ValueError("RELATES_TO requires an allowlisted kind")
         if self.relation is not CorrectionRelation.RELATES_TO and self.kind is not None:

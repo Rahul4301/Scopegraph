@@ -6,12 +6,14 @@ TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 
 
 def estimate_tokens(text: str) -> int:
+    """Estimate tokens with a regex word/punctuation count."""
     return len(TOKEN_PATTERN.findall(text))
 
 
 def pack_to_token_budget(
     items: list[RetrievedMemory], token_budget: int, *, query: str | None = None
 ) -> tuple[list[RetrievedMemory], int]:
+    """Select items and sources in order until the token budget is spent."""
     if token_budget < 1:
         return [], 0
     packed: list[RetrievedMemory] = []

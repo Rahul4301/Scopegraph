@@ -11,6 +11,7 @@ from scopegraph.models.source import MessageRole, SourceMessageCreate
 
 
 def load_records(path: str | Path) -> list[dict[str, Any]]:
+    """Load a JSON or JSONL file as a list of records."""
     source = Path(path)
     if not source.is_file():
         raise FileNotFoundError(f"Dataset file does not exist: {source}")
@@ -31,6 +32,7 @@ def load_records(path: str | Path) -> list[dict[str, Any]]:
 
 
 def parse_datetime(value: Any) -> datetime | None:
+    """Parse a timestamp in several common formats, or return None."""
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
@@ -44,11 +46,13 @@ def parse_datetime(value: Any) -> datetime | None:
 
 
 def normalize_role(value: Any) -> str:
+    """Map a dataset role label to a message role."""
     role = str(value or "user").casefold()
     return role if role in {item.value for item in MessageRole} else "user"
 
 
 def normalize_turn(raw: dict[str, Any], *, fallback_id: str) -> ExternalTurn:
+    """Convert a raw dataset turn to an ExternalTurn."""
     content = raw.get("content", raw.get("text", raw.get("utterance", "")))
     if not isinstance(content, str) or not content.strip():
         raise ValueError(f"Turn {fallback_id} has no text content")

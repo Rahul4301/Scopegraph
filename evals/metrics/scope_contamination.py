@@ -5,6 +5,7 @@ from typing import Any
 
 
 def cross_scope_contamination(retrieved: Iterable[Any], valid_scope_ids: Iterable[str]) -> float:
+    """Share of retrieved items stored outside the valid scopes."""
     items = list(retrieved)
     if not items:
         return 0.0
@@ -18,4 +19,5 @@ def cross_scope_contamination(retrieved: Iterable[Any], valid_scope_ids: Iterabl
 
 def scope_classification_accuracy(predicted_scope_id: str | None,
                                   gold_scope_ids: Iterable[str]) -> float:
+    """1.0 if the predicted scope id is a gold scope, else 0.0."""
     return float(predicted_scope_id in set(gold_scope_ids))

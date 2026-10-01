@@ -22,6 +22,7 @@ async def get_subgraph(
     include_sources: Annotated[bool, Query()] = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
 ) -> GraphSubgraph:
+    """Return a bounded subgraph slice."""
     if memory_id is not None and await repository.get_memory(memory_id) is None:
         raise HTTPException(status_code=404, detail="Memory not found")
     if scope_id is not None and await repository.get_scope(scope_id) is None:
@@ -42,6 +43,7 @@ async def export_graph(
     scope_id: Annotated[str | None, Query()] = None,
     include_inactive: Annotated[bool, Query()] = True,
 ) -> Response:
+    """Export the graph as JSON or GraphML."""
     graph = await repository.get_subgraph(
         scope_id=scope_id,
         include_inactive=include_inactive,
@@ -59,6 +61,7 @@ async def export_graph(
 
 @router.get("/stats", response_model=MemoryStats)
 async def stats(repository: Repository) -> MemoryStats:
+    """Return logical graph counts."""
     return await repository.stats("scopegraph")
 
 

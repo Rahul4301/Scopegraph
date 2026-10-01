@@ -13,6 +13,7 @@ class PromotionPolicy:
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "PromotionPolicy":
+        """Build the policy from config values."""
         promotion = config.get("promotion", {})
         session_policy = promotion.get("session_to_scope", {})
         global_policy = promotion.get("scope_to_global", {})
@@ -30,6 +31,7 @@ class PromotionPolicy:
         )
 
     def should_promote_session_to_scope(self, candidate: MemoryCandidate) -> bool:
+        """Whether a session memory is durable enough for its scope."""
         return (
             candidate.proposed_scope_level != "session"
             and candidate.durability >= self.session_to_scope_durability_threshold
@@ -38,6 +40,7 @@ class PromotionPolicy:
     def should_promote_scope_to_global(
         self, candidate: MemoryCandidate, equivalent_scope_memories: list[Memory]
     ) -> bool:
+        """Whether evidence justifies promotion to global."""
         if candidate.explicit_global_signal:
             return candidate.confidence >= self.global_confidence_threshold
         if self.require_explicit_global_signal:

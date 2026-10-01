@@ -23,6 +23,7 @@ class Neo4jClient:
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[None]:
+        """Open a write transaction, or join the one already open in this task."""
         if self._transaction.get() is not None:
             yield
             return
@@ -39,9 +40,11 @@ class Neo4jClient:
                 self._transaction.reset(token)
 
     async def close(self) -> None:
+        """Close the driver."""
         await self._driver.close()
 
     async def health(self) -> bool:
+        """Return whether the database answers a trivial query."""
         try:
             await self._driver.verify_connectivity()
             return True
@@ -51,6 +54,7 @@ class Neo4jClient:
     async def execute_write(
         self, query: str, parameters: Mapping[str, Any] | None = None
     ) -> list[dict[str, Any]]:
+        """Run a write query and return its rows."""
         transaction = self._transaction.get()
         if transaction is not None:
             result = await transaction.run(query, dict(parameters or {}))
@@ -62,6 +66,7 @@ class Neo4jClient:
     async def execute_read(
         self, query: str, parameters: Mapping[str, Any] | None = None
     ) -> list[dict[str, Any]]:
+        """Run a read query and return its rows."""
         transaction = self._transaction.get()
         if transaction is not None:
             result = await transaction.run(query, dict(parameters or {}))
@@ -71,5 +76,6 @@ class Neo4jClient:
             return [record.data() async for record in result]
 
     async def run_statements(self, statements: Sequence[str]) -> None:
+        """Run several statements in order."""
         for statement in statements:
             await self.execute_write(statement)

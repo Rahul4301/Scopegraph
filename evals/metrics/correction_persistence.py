@@ -2,6 +2,7 @@
 
 
 def error_relapse_rate(predicted_answers: list[str], old_error: str) -> float:
+    """Share of probes in which the corrected error reappeared."""
     if not predicted_answers:
         return 0.0
     normalized_error = old_error.casefold().strip()

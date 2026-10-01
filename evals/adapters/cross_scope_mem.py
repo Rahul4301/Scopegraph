@@ -19,6 +19,7 @@ class ScenarioExtractor(CandidateExtractor):
 
     async def extract(self, messages: list[SourceMessage], *, current_scope: ScopeRef | None,
                       existing_memories: list[str] | None = None) -> list[MemoryCandidate]:
+        """Return the pre-frozen candidates for the given messages."""
         del current_scope, existing_memories
         unique: dict[str, MemoryCandidate] = {}
         for message in messages:
@@ -34,6 +35,7 @@ class KeywordEmbeddingProvider:
     model_name = "cross-scope-mem-hash-v1"
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Return stable 64-bucket hashed bag-of-words vectors."""
         vectors: list[list[float]] = []
         for text in texts:
             vector = [0.0] * 64
@@ -59,11 +61,14 @@ class CrossScopeMemAdapter:
         ]
 
     def scenarios(self) -> list[CrossScopeScenario]:
+        """Return the generated account scenarios."""
         return list(self._scenarios)
 
     def examples(self) -> list[BenchmarkExample]:
+        """Return every question across all scenarios."""
         return [example for scenario in self._scenarios for example in scenario.examples]
 
     @staticmethod
     def extractor(scenario: CrossScopeScenario) -> ScenarioExtractor:
+        """Build an oracle extractor for one scenario."""
         return ScenarioExtractor(candidates_by_message(scenario))

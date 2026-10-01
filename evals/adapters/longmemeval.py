@@ -15,6 +15,7 @@ class LongMemEvalAdapter:
     name = "longmemeval"
 
     def load(self, path: str | Path) -> list[ExternalBenchmarkExample]:
+        """Load LongMemEval-S questions with their haystack sessions."""
         examples: list[ExternalBenchmarkExample] = []
         for index, raw in enumerate(load_records(path)):
             required = ("question_id", "question", "answer", "haystack_sessions")
@@ -65,6 +66,7 @@ class LongMemEvalAdapter:
         return examples
 
     def validate(self, path: str | Path) -> AdapterValidation:
+        """Check that a LongMemEval file loads and report its size."""
         try:
             examples = self.load(path)
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:

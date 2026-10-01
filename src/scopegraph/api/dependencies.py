@@ -16,24 +16,29 @@ from scopegraph.memory.retriever import RetrievalConfig, ScopeAwareRetriever
 
 @lru_cache
 def get_client() -> Neo4jClient:
+    """Return the shared Neo4j client."""
     return Neo4jClient(get_settings())
 
 
 def get_repository() -> Neo4jMemoryRepository:
+    """Return the memory repository."""
     return Neo4jMemoryRepository(get_client())
 
 
 def get_correction_service() -> CorrectionService:
+    """Return the correction service."""
     return CorrectionService(get_repository())
 
 
 @lru_cache
 def get_embedding_cache() -> SQLiteEmbeddingCache:
+    """Return the embedding cache."""
     return SQLiteEmbeddingCache(get_settings().embedding_cache_path)
 
 
 @lru_cache
 def get_memory_system() -> ScopeGraphMemorySystem:
+    """Return the ScopeGraph memory system."""
     settings = get_settings()
     provider = OpenAICompatibleLLM(
         base_url=settings.llm_base_url,

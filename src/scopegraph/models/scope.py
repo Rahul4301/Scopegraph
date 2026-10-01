@@ -35,6 +35,7 @@ class ScopeCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_hierarchy(self) -> "ScopeCreate":
+        """Forbid a parent on the global root."""
         if self.scope_type is ScopeType.GLOBAL and self.parent_scope_id is not None:
             raise ValueError("The global root cannot have a parent scope")
         return self

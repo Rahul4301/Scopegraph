@@ -10,6 +10,7 @@ def resolve_candidate_scope(
     current_scope: ScopeRef | None,
     global_scope_id: str | None,
 ) -> ScopeDecision:
+    """Resolve a candidate's proposed level and target to a concrete scope decision."""
     if candidate.proposed_scope_level == "global" and candidate.explicit_global_signal:
         if global_scope_id is None:
             return ScopeDecision(

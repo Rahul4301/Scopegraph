@@ -29,41 +29,51 @@ STOP_WORDS = {
 
 
 class RetrievalRepository(Protocol):
-    async def list_scopes(self, *, include_archived: bool = False) -> list[Scope]: ...
+    async def list_scopes(self, *, include_archived: bool = False) -> list[Scope]:
+        """List scopes, excluding archived ones unless asked."""
 
-    async def get_scope(self, scope_id: str) -> Scope | None: ...
+    async def get_scope(self, scope_id: str) -> Scope | None:
+        """Return the scope with this id, or None."""
 
-    async def get_global_scope(self) -> Scope | None: ...
+    async def get_global_scope(self) -> Scope | None:
+        """Return the workspace's global root scope, or None."""
 
     async def list_memories(
         self, *, scope_id: str | None = None, include_inactive: bool = False
-    ) -> list[Memory]: ...
+    ) -> list[Memory]:
+        """List memories, optionally for one scope and including inactive ones."""
 
     async def list_retrieval_memories(
         self, *, scope_ids: set[str], session_id: str | None,
         historical: bool, now: datetime,
-    ) -> list[Memory]: ...
+    ) -> list[Memory]:
+        """List memories eligible for retrieval in the given scopes and session."""
 
     async def set_memory_embeddings(
         self, values: list[tuple[str, str, list[float]]], model_name: str
-    ) -> None: ...
+    ) -> None:
+        """Store embeddings for many memories in one call."""
 
     async def set_memory_embedding(
         self, memory_id: str, embedding: list[float], model_name: str
-    ) -> None: ...
+    ) -> None:
+        """Store one memory's embedding and the model that produced it."""
 
     async def get_memory_neighbors(
         self, memory_ids: list[str], *, eligible_ids: set[str] | None = None,
         limit: int | None = None,
-    ) -> list[MemoryNeighbor]: ...
+    ) -> list[MemoryNeighbor]:
+        """Return graph neighbours of the given memories, optionally limited."""
 
     async def get_source_messages_by_ids(
         self, message_ids: list[str]
-    ) -> list[SourceMessage]: ...
+    ) -> list[SourceMessage]:
+        """Return the source messages with these ids."""
 
     async def list_source_messages_for_scopes(
         self, scope_ids: set[str], *, now: datetime, session_id: str | None
-    ) -> list[tuple[SourceMessage, str]]: ...
+    ) -> list[tuple[SourceMessage, str]]:
+        """List source messages in the given scopes visible at ``now``."""
 
 
 @dataclass(frozen=True)
@@ -95,6 +105,7 @@ class RetrievalConfig:
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "RetrievalConfig":
+        """Build retrieval settings from config values."""
         scope = config.get("scope", {})
         result = cls(
             weights=RankingWeights.from_config(config),
@@ -148,6 +159,7 @@ class ScopeAwareRetriever:
         token_budget: int,
         now: datetime | None = None,
     ) -> RetrievalResult:
+        """Retrieve, rank and token-pack evidence within the permitted scopes."""
         started = time.perf_counter()
         effective_now = now or datetime.now(UTC)
         access = await self._scope_access(query, current_scope)

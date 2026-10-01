@@ -16,7 +16,8 @@ class CandidateExtractor(Protocol):
         *,
         current_scope: ScopeRef | None,
         existing_memories: list[str] | None = None,
-    ) -> list[MemoryCandidate]: ...
+    ) -> list[MemoryCandidate]:
+        """Extract memory candidates from the session's messages."""
 
 
 class LLMMemoryExtractor:
@@ -38,6 +39,7 @@ class LLMMemoryExtractor:
         current_scope: ScopeRef | None,
         existing_memories: list[str] | None = None,
     ) -> list[MemoryCandidate]:
+        """Ask the model for validated memory candidates."""
         prompt_payload = {
             "current_scope": current_scope.model_dump(mode="json") if current_scope else None,
             "messages": [message.model_dump(mode="json") for message in messages],
@@ -111,6 +113,7 @@ class StaticMemoryExtractor:
         current_scope: ScopeRef | None,
         existing_memories: list[str] | None = None,
     ) -> list[MemoryCandidate]:
+        """Return fixed candidates (tests and offline runs)."""
         del current_scope, existing_memories
         valid_source_ids = {message.id for message in messages}
         for candidate in self.candidates:

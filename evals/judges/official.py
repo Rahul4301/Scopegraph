@@ -85,6 +85,7 @@ def longmemeval_prompt(
     response: str,
     scorer_path: Path = Path("data/official_scorers/longmemeval_evaluate_qa.py"),
 ) -> str:
+    """Build the official LongMemEval judge prompt for a question type."""
     task = str(example.metadata.get("question_type", example.question_type))
     return _longmemeval_prompt_builder(scorer_path)(
         task,
@@ -141,6 +142,7 @@ class OfficialBenchmarkJudge:
         self.transport = ModelTransport(timeout=120, retries=3)
 
     async def aclose(self) -> None:
+        """Close the judge's HTTP client."""
         await self.transport.aclose()
 
     async def _complete(
@@ -164,6 +166,7 @@ class OfficialBenchmarkJudge:
     async def judge(
         self, dataset: str, example: ExternalBenchmarkExample, response: str
     ) -> JudgeResult | None:
+        """Grade one answer with the dataset's pinned judge; None if graded by rule."""
         if dataset == "longmemeval" or (
             dataset == "memoryagentbench" and "longmemeval" in example.question_type
         ):

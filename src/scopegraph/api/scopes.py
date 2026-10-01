@@ -12,6 +12,7 @@ Repository = Annotated[Neo4jMemoryRepository, Depends(get_repository)]
 
 @router.post("", response_model=Scope, status_code=status.HTTP_201_CREATED)
 async def create_scope(request: ScopeCreate, repository: Repository) -> Scope:
+    """Create a scope."""
     try:
         return await repository.create_scope(request)
     except ValueError as exc:
@@ -22,11 +23,13 @@ async def create_scope(request: ScopeCreate, repository: Repository) -> Scope:
 async def list_scopes(
     repository: Repository, include_archived: Annotated[bool, Query()] = False
 ) -> list[Scope]:
+    """List scopes."""
     return await repository.list_scopes(include_archived=include_archived)
 
 
 @router.get("/{scope_id}", response_model=Scope)
 async def get_scope(scope_id: str, repository: Repository) -> Scope:
+    """Return one scope."""
     scope = await repository.get_scope(scope_id)
     if scope is None:
         raise HTTPException(status_code=404, detail="Scope not found")
@@ -35,6 +38,7 @@ async def get_scope(scope_id: str, repository: Repository) -> Scope:
 
 @router.patch("/{scope_id}", response_model=Scope)
 async def update_scope(scope_id: str, request: ScopeUpdate, repository: Repository) -> Scope:
+    """Update a scope."""
     scope = await repository.update_scope(scope_id, request)
     if scope is None:
         raise HTTPException(status_code=404, detail="Scope not found")

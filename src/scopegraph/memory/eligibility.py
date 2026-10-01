@@ -7,6 +7,7 @@ from scopegraph.models.memory import Memory, MemoryStatus, ScopeLevel
 
 def eligible_memory(memory: Memory, *, scope_ids: set[str], session_id: str | None,
                     historical: bool, now: datetime) -> bool:
+    """Whether a memory is in scope, returnable, valid at ``now`` and visible to the session."""
     statuses = {MemoryStatus.ACTIVE}
     if historical:
         statuses |= {MemoryStatus.SUPERSEDED, MemoryStatus.ARCHIVED}

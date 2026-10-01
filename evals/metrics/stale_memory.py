@@ -5,6 +5,7 @@ from typing import Any
 
 
 def stale_memory_error_rate(retrieved: Iterable[Any]) -> float:
+    """Share of retrieved items whose status is not active."""
     items = list(retrieved)
     if not items:
         return 0.0

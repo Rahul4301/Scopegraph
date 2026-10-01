@@ -19,10 +19,12 @@ class DemoEmbeddingProvider:
     model_name = "demo-v1"
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Return the same constant vector for every text (demo only)."""
         return [[1.0, 0.0] for _ in texts]
 
 
 async def main() -> None:
+    """CLI: run the demo."""
     client = Neo4jClient(get_settings())
     try:
         if not await client.health():
