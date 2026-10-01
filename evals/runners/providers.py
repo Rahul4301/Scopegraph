@@ -1,6 +1,7 @@
 """Provider construction for reproducible offline and live evaluations."""
 
 import asyncio
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -29,12 +30,34 @@ class PreparedEmbedder:
         self._lock = asyncio.Lock()
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts, caching vectors in process."""
         async with self._lock:
             missing = list(dict.fromkeys(text for text in texts if text not in self.vectors))
             if missing:
                 vectors = await self.provider.embed(missing)
                 self.vectors.update(zip(missing, vectors, strict=True))
             return [list(self.vectors[text]) for text in texts]
+
+
+class TimedEmbedder:
+    """Accumulate wall-clock time spent in ``embed`` so reports can split it out."""
+
+    def __init__(self, provider: EmbeddingProvider) -> None:
+        self.provider = provider
+        self.model_name = provider.model_name
+        self.elapsed_ms = 0.0
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed ``texts`` through the wrapped provider, adding the time to ``elapsed_ms``."""
+        started = time.perf_counter()
+        try:
+            return await self.provider.embed(texts)
+        finally:
+            self.elapsed_ms += (time.perf_counter() - started) * 1000
+
+    def reset(self) -> None:
+        """Zero the accumulator before a timed retrieval call."""
+        self.elapsed_ms = 0.0
 
 
 async def freeze_extraction(
@@ -92,10 +115,12 @@ class EvaluationProviders:
     embedding_cache: SQLiteEmbeddingCache | None = None
 
     def close(self) -> None:
+        """Close the embedding cache."""
         if self.embedding_cache is not None:
             self.embedding_cache.close()
 
     async def aclose(self) -> None:
+        """Close the extractor, embedder and cache."""
         await close_provider(self.extractor)
         await close_provider(self.embedder)
         self.close()
@@ -107,6 +132,7 @@ def build_cross_scope_providers(
     live_extraction: bool,
     live_embeddings: bool,
 ) -> EvaluationProviders:
+    """Build oracle or live providers for one CrossScopeMem scenario."""
     settings = get_settings()
     if live_extraction:
         extractor: CandidateExtractor = LLMMemoryExtractor(

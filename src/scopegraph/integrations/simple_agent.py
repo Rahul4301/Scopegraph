@@ -17,6 +17,7 @@ class SimpleMemoryAgent:
     async def remember(
         self, session: SessionInput, *, current_scope: ScopeRef | None
     ) -> IngestResult:
+        """Ingest a session into memory."""
         return await self.memory.ingest_session(session, current_scope=current_scope)
 
     async def ask(
@@ -28,12 +29,15 @@ class SimpleMemoryAgent:
         token_budget: int = 1500,
         now: datetime | None = None,
     ) -> tuple[str | None, RetrievalResult]:
+        """Retrieve evidence and answer, passing the current scope and as-of time."""
         result = await self.memory.retrieve(
             question, current_scope=current_scope, top_k=top_k,
             token_budget=token_budget, now=now,
         )
         answer = (
-            await self.answerer.generate(question=question, context=result.items)
+            await self.answerer.generate(
+                question=question, context=result.items, current_scope=current_scope, as_of=now
+            )
             if self.answerer is not None else (result.items[0].content if result.items else None)
         )
         return answer, result

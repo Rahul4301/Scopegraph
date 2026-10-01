@@ -410,7 +410,14 @@ async def test_locomo_runner_ingests_shared_history_once(
     assert {record["scenario_id"] for record in records} == {"conversation-1"}
     assert records[0]["retrieved_memory_ids"] == records[1]["retrieved_memory_ids"]
     assert records[0]["gold_source_ids"] == ["conversation-1:D1"]
-    assert records[0]["retrieved_source_contents"] == [["A: We use Neo4j."]]
+    # Bulk text lives in the sidecar for new runs; the main record keeps it empty.
+    assert records[0]["retrieved_source_contents"] == []
+    sidecar = [
+        json.loads(line) for line in created.with_suffix(".bulk.jsonl").read_text().splitlines()
+    ]
+    assert sidecar[0]["retrieved_source_contents"] == [["A: We use Neo4j."]]
+    assert sidecar[0]["question_id"] == records[0]["question_id"]
+    assert json.loads(created.with_suffix(".run.json").read_text())["dataset"] == "locomo"
     assert observed_query_times == [datetime(2024, 1, 1, tzinfo=UTC)] * 2
 
 

@@ -17,9 +17,10 @@ Run ScopeGraph's complete live model path (default: 10 scenarios at difficulty 3
 make eval-diagnostic-live LIVE=1
 ```
 
-The batch uses one frozen extraction per source and runs full ScopeGraph, vector-only,
-flat-graph, two-level session/global, no graph traversal, and no
-temporal/status filtering. The evaluation container uses Bolt port `7688` and separate Docker volumes. Its
+The batch uses one frozen extraction per source and runs seven conditions: full ScopeGraph,
+vector-only, vector-with-scope-filter, flat-graph, two-level session/global, no graph
+traversal, and no temporal/status filtering (`make eval-ablation`; 10 accounts is the pilot
+minimum, 40-60 the proposal target). The evaluation container uses Bolt port `7688` and separate Docker volumes. Its
 contents are reset between scenarios; the normal application database is not
 touched.
 
@@ -31,11 +32,16 @@ PYTHONPATH=src uv run python -m evals.runners.run_eval \
   --dataset cross_scope_mem --config configs/experiments.yaml --allow-neo4j-reset
 ```
 
-Generate processed JSON, Markdown, and SVG output from raw JSONL:
+Generate processed JSON, Markdown, and SVG output from raw JSONL (the report refuses to
+overwrite an existing one; pass a new `--output-root`):
 
 ```bash
-PYTHONPATH=src uv run python -m evals.analysis.run_report results/raw/*.jsonl
+PYTHONPATH=src uv run python -m evals.analysis.run_report results/raw/*.jsonl --output-root results/reports/<name>
 ```
+
+The report also writes `confidence_intervals.json`, `mcnemar.json`, per-dataset latency tables
+and, for LoCoMo, `locomo_diagnostics.json`. Field and metric definitions are in
+[../results/SCHEMA.md](../results/SCHEMA.md); claims are tracked in [../RESULTS.md](../RESULTS.md).
 
 The raw record preserves the scenario, question, gold state, retrieved IDs/scopes/scores,
 verbatim provenance messages supplied to the answerer, trace, latency, token count, storage

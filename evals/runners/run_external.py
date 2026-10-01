@@ -15,11 +15,26 @@ import yaml
 from evals.adapters.cross_scope_mem import KeywordEmbeddingProvider, ScenarioExtractor
 from evals.adapters.external import evidence_source_ids, session_inputs
 from evals.adapters.registry import EXTERNAL_DATASETS, external_adapters
-from evals.analysis.aggregate import load_jsonl
+from evals.analysis.aggregate import load_jsonl, locomo_diagnostics
 from evals.judges import OfficialBenchmarkJudge
+from evals.judges.official import (
+    LOCOMO_JUDGE_MODEL,
+    LONGMEMEVAL_JUDGE_MODEL,
+    MEMORYAGENTBENCH_SUMMARY_JUDGE_MODEL,
+)
 from evals.metrics.official import official_score, supplemental_official_scores
 from evals.metrics.storage import logical_storage_stats
-from evals.runners.checkpoint import RecordCheckpoint, save_json, source_fingerprint
+from evals.runners.checkpoint import (
+    RecordCheckpoint,
+    reproduce_command,
+    run_stamp,
+    save_json,
+    source_fingerprint,
+    try_write_report,
+    unused_name,
+    write_run_json,
+)
+from evals.runners.providers import TimedEmbedder
 from evals.schemas import EvaluationRecord, ExternalBenchmarkExample
 from scopegraph.backends.scopegraph import ScopeGraphMemorySystem
 from scopegraph.config import get_settings
@@ -39,11 +54,32 @@ from scopegraph.models.memory import MemoryCandidate, MemoryType
 from scopegraph.models.scope import ScopeCreate, ScopeRef, ScopeType
 from scopegraph.models.source import SourceMessage
 
+EXTERNAL_ABLATIONS = ("full", "vector_only")
+# Protocol amendment (docs/benchmark_protocol.md): a plain vector baseline for LoCoMo that
+# reuses the frozen extraction, embeddings, answer prompt and judge, and only ranks by
+# cosine similarity. Same ranker as CrossScopeMem's vector_only_control.
+VECTOR_ONLY_RETRIEVAL: dict[str, object] = {
+    "weights": {
+        "semantic": 1.0, "scope": 0.0, "temporal": 0.0,
+        "confidence": 0.0, "graph": 0.0, "recency": 0.0,
+    },
+    "lexical_weight": 0.0,
+    "max_graph_hops": 0,
+    "max_expanded_nodes": 0,
+}
+
 
 class TurnMemoryExtractor:
     """Credential-free extractor that preserves each external turn as evidence."""
 
-    async def extract(self, messages, *, current_scope, existing_memories=None):
+    async def extract(
+        self,
+        messages: list[SourceMessage],
+        *,
+        current_scope: ScopeRef | None,
+        existing_memories: list[str] | None = None,
+    ) -> list[MemoryCandidate]:
+        """Turn each message into one summary candidate."""
         del current_scope, existing_memories
         return [
             MemoryCandidate(
@@ -98,6 +134,18 @@ async def _freeze_external_extraction(
             ]
         checkpoint(by_message)
     return by_message
+
+
+def _judge_models(dataset: str) -> dict[str, str]:
+    """Pinned judge model(s) that can grade ``dataset`` (see evals/judges/official.py)."""
+    if dataset == "locomo":
+        return {"locomo_rubric": LOCOMO_JUDGE_MODEL}
+    if dataset == "longmemeval":
+        return {"longmemeval": LONGMEMEVAL_JUDGE_MODEL}
+    return {
+        "longmemeval": LONGMEMEVAL_JUDGE_MODEL,
+        "summary": MEMORYAGENTBENCH_SUMMARY_JUDGE_MODEL,
+    }
 
 
 def _git_commit() -> str | None:
@@ -342,7 +390,9 @@ async def run_external(
     allow_neo4j_reset: bool = False,
     ablation: str = "full",
     extraction_cache: str | Path | None = None,
+    reproduce: str | None = None,
 ) -> Path:
+    """Replay one external dataset through ScopeGraph; returns the JSONL path."""
     live_answer = live_answer or live
     live_extraction = live_extraction or live
     live_embeddings = live_embeddings or live
@@ -351,6 +401,10 @@ async def run_external(
         raise ValueError("limit must be positive")
     if case_limit is not None and case_limit < 1:
         raise ValueError("case_limit must be positive")
+    if ablation not in EXTERNAL_ABLATIONS:
+        raise ValueError(f"Unsupported external ablation: {ablation}")
+    if ablation == "vector_only" and dataset != "locomo":
+        raise ValueError("The vector_only baseline is a LoCoMo-only protocol amendment")
     adapter = external_adapters()[dataset]
     examples = adapter.load(source_path)
     if case_limit is not None:
@@ -367,8 +421,8 @@ async def run_external(
         examples = examples[:limit]
     config, config_hash = _config(config_path)
     retrieval_config_data = deepcopy(config.get("retrieval", {}))
-    if ablation != "full":
-        raise ValueError("Official external benchmarks run full ScopeGraph only")
+    if ablation == "vector_only":
+        retrieval_config_data.update(VECTOR_ONLY_RETRIEVAL)
     retrieval = RetrievalConfig.from_config(retrieval_config_data)
     answer_model: AnswerModel | None = None
     if live_answer:
@@ -399,6 +453,7 @@ async def run_external(
         )
     else:
         embedder = KeywordEmbeddingProvider()
+    embedder = TimedEmbedder(embedder)
     if live_extraction:
         settings = get_settings()
         extractor: CandidateExtractor = LLMMemoryExtractor(
@@ -455,7 +510,7 @@ async def run_external(
     run_id = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}_{dataset}_{system_name}"
     destination = Path(output or config.get("output_root", "results/raw"))
     if destination.suffix != ".jsonl":
-        destination /= f"{run_id}.jsonl"
+        destination = unused_name(destination, run_stamp(), ".jsonl")
     checkpoint = RecordCheckpoint(destination, resume=resume)
     for record in checkpoint.records.values():
         if record.config_hash != config_hash or record.system != system_name:
@@ -465,6 +520,35 @@ async def run_external(
 
     if checkpoint.records:
         run_id = next(iter(checkpoint.records.values())).run_id
+    run_started = time.perf_counter()
+    write_run_json(
+        destination,
+        run_id=run_id,
+        kind="external",
+        status="running",
+        dataset=dataset,
+        dataset_path=str(source_path),
+        dataset_sha256=dataset_sha256,
+        system=system_name,
+        ablation=ablation,
+        protocol="external-v7" + ("+vector-only-amendment" if ablation == "vector_only" else ""),
+        evaluation_mode=(
+            f"extraction={'live' if live_extraction else 'turn-preserving'};"
+            f"embeddings={'live' if live_embeddings else 'hash'};"
+            f"answer={'live' if live_answer else 'not-evaluated'};storage={storage}"
+        ),
+        config_file=config_path,
+        config_hash=config_hash,
+        seed=42,
+        models={
+            "answer_and_extraction": settings.llm_model if live_answer or live_extraction else None,
+            "embedding": settings.embedding_model if live_embeddings else None,
+            "judge": _judge_models(dataset) if judge is not None else None,
+        },
+        selection={"limit": limit, "case_limit": case_limit, "planned_questions": len(examples)},
+        extraction_cache=str(extraction_cache_path) if extraction_cache_path else None,
+        reproduce=reproduce or "programmatic call (no CLI arguments recorded)",
+    )
     client: Neo4jClient | None = None
     if storage == "neo4j":
         if not allow_neo4j_reset:
@@ -625,6 +709,8 @@ async def run_external(
                 preparation_started = time.perf_counter()
                 await embedder.embed([example.question, *(memory.content for memory in memories)])
                 preparation_ms = (time.perf_counter() - preparation_started) * 1000
+                if isinstance(embedder, TimedEmbedder):
+                    embedder.reset()
                 result = await system.retrieve(
                     example.question,
                     current_scope=ScopeRef(id=scope_id, scope_type=ScopeType.CUSTOM),
@@ -678,6 +764,9 @@ async def run_external(
                 protocol_version="external-v7",
                 latency_protocol=f"warm-embeddings/{storage}-repository",
                 embedding_preparation_ms=preparation_ms,
+                retrieval_embedding_ms=(
+                    embedder.elapsed_ms if isinstance(embedder, TimedEmbedder) else None
+                ),
                 run_id=run_id,
                 dataset=dataset,
                 system=system_name,
@@ -752,6 +841,16 @@ async def run_external(
                 await client.execute_write("MATCH (n) DETACH DELETE n")
             finally:
                 await client.close()
+    final = list(checkpoint.records.values())
+    if final:
+        try_write_report([destination], destination.parent, stem=destination.stem)
+    write_run_json(
+        destination,
+        status="complete",
+        completed_questions=len(final),
+        failed_questions=sum(record.failure_type is not None for record in final),
+        wall_clock_seconds_this_invocation=round(time.perf_counter() - run_started, 1),
+    )
     return destination
 
 
@@ -760,8 +859,14 @@ def _progress(record: EvaluationRecord, index: int, total: int) -> str:
     if record.failure_type is not None:
         lines.append(f"FAILED ({record.failure_type}): {(record.failure_message or '')[:200]}")
     else:
-        lines.append(f"Answer: {record.answer if record.answer is not None else '(not evaluated)'}")
-        lines.append(f"Gold: {record.gold_answer}")
+        lines.append(
+            f"ScopeGraph: {record.answer if record.answer is not None else '(not evaluated)'}"
+        )
+        if record.dataset == "locomo" and record.benchmark_metadata.get("category") == "5":
+            # Adversarial gold is the trap answer; the correct response is to abstain.
+            lines.append(f"Expected: abstain (trap answer: {record.gold_answer})")
+        else:
+            lines.append(f"Correct answer: {record.gold_answer}")
         if record.official_metric is not None and record.official_score is not None:
             lines.append(f"{record.official_metric}: {record.official_score:.2f}")
         lines.extend(
@@ -788,10 +893,39 @@ def _terminal_summary(records: list[EvaluationRecord]) -> str:
             lines.append(f"{metric}: incomplete ({len(scored)}/{len(scores)} scored)")
     if not by_metric:
         lines.append("Official score: unavailable (answers not evaluated)")
+    lines.extend(_locomo_summary_lines(records))
     return "\n".join(lines)
 
 
+def _percent(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.1%}"
+
+
+def _locomo_summary_lines(records: list[EvaluationRecord]) -> list[str]:
+    """LoCoMo accuracy with and without category 5, and gold-source recall per category."""
+    lines: list[str] = []
+    for system, block in locomo_diagnostics(records).items():
+        assert isinstance(block, dict)
+        overall, without_5 = block["all_categories"], block["excluding_category_5"]
+        all_acc = _percent(overall["judge_accuracy"]["mean"])
+        no5_acc = _percent(without_5["judge_accuracy"]["mean"])
+        lines.append(
+            f"LoCoMo {system}: judge accuracy {all_acc} (all categories), "
+            f"{no5_acc} (without category 5)"
+        )
+        for category, stats in block["categories"].items():
+            lines.append(
+                f"  category {category} (n={stats['n']}): "
+                f"accuracy {_percent(stats['judge_accuracy'])} | gold-source recall "
+                f"retrieved {_percent(stats['gold_source_recall_retrieved'])}, "
+                f"delivered {_percent(stats['gold_source_recall_delivered'])} | "
+                f"no gold retrieved {_percent(stats['zero_gold_retrieved_rate'])}"
+            )
+    return lines
+
+
 def main() -> None:
+    """CLI: replay an external benchmark through ScopeGraph."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=EXTERNAL_DATASETS, required=True)
     parser.add_argument("--path", type=Path, required=True)
@@ -815,8 +949,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--ablation",
-        choices=["full"],
+        choices=list(EXTERNAL_ABLATIONS),
         default="full",
+        help="vector_only is a LoCoMo-only protocol amendment (docs/benchmark_protocol.md)",
     )
     parser.add_argument(
         "--allow-neo4j-reset",
@@ -847,6 +982,7 @@ def main() -> None:
                 allow_neo4j_reset=args.allow_neo4j_reset,
                 ablation=args.ablation,
                 extraction_cache=args.extraction_cache,
+                reproduce=reproduce_command("evals.runners.run_external"),
         )
     )
     records = load_jsonl([output])

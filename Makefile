@@ -1,4 +1,4 @@
-.PHONY: install eval-smoke test test-integration lint typecheck check smoke demo reset-db export-graph migrate download-benchmarks validate-benchmarks eval-suite eval-diagnostic eval-diagnostic-live eval-external eval-report eval-correction validate-external web-install web-build web-dev neo4j-up neo4j-down schema api
+.PHONY: install eval-smoke eval-ablation results-index claims-check test test-integration lint typecheck check smoke demo reset-db export-graph migrate download-benchmarks validate-benchmarks eval-suite eval-diagnostic eval-diagnostic-live eval-external eval-report eval-correction validate-external web-install web-build web-dev neo4j-up neo4j-down schema api
 
 export PYTHONPATH := src:.
 export UV_CACHE_DIR ?= /private/tmp/scopegraph-uv-cache
@@ -105,22 +105,57 @@ eval-external:
 		--config configs/experiments.yaml --allow-neo4j-reset \
 		$(if $(LIVE),--live,) $(if $(LIVE_ANSWER),--live-answer,)
 
-# Live smoke run on the first CASES LoCoMo conversations (default 1 = 199 questions),
-# reusing the frozen extraction cache. Each run writes a new timestamped file unless
-# OUTPUT is set; resume an interrupted run with OUTPUT=<same file> RESUME=1.
+# Live LoCoMo run on the first CASES conversations (default 1 = 199 questions; 10 = all).
+# OUTPUT defaults to results/smoke/mm_dd__hh_mm.jsonl (local time; commit and dataset are in
+# the .run.json beside it) and an existing file is never overwritten. A readable
+# <name>.report.md and <name>.questions.csv are written beside it when the run finishes.
+# ABLATION=vector_only runs the LoCoMo-only plain-vector baseline (protocol amendment,
+# docs/benchmark_protocol.md). EXTRACTION_CACHE defaults to a fresh per-run file so a run
+# never edits an existing cache; pass one explicitly to share extraction between the full
+# and vector_only runs. Resume an interrupted run with OUTPUT=<same file> RESUME=1.
 eval-smoke:
 	docker compose --profile eval up -d --wait neo4j-eval
+	@out="$(if $(OUTPUT),$(OUTPUT),results/smoke/$$(date +%m_%d__%H_%M).jsonl)"; \
+	cache="$(if $(EXTRACTION_CACHE),$(EXTRACTION_CACHE),$${out%.jsonl}-extractions.json)"; \
+	echo "output: $$out"; echo "extraction cache: $$cache"; \
 	NEO4J_URI=bolt://localhost:7688 NEO4J_PASSWORD=scopegraph-eval \
 	uv run python -m evals.runners.run_external --dataset locomo --path data/locomo/locomo10.json \
 		--case-limit $(if $(CASES),$(CASES),1) $(if $(LIMIT),--limit $(LIMIT),) --live \
 		--config configs/experiments.yaml --allow-neo4j-reset \
-		--extraction-cache results/smoke/locomo-case1-speakers-extractions.json \
-		--output $(if $(OUTPUT),$(OUTPUT),results/smoke/locomo-$$(date +%Y%m%d-%H%M%S).jsonl) \
-		$(if $(RESUME),--resume,)
+		--extraction-cache "$$cache" --output "$$out" \
+		$(if $(ABLATION),--ablation $(ABLATION),) $(if $(RESUME),--resume,)
+
+# Pilot-grade CrossScopeMem batch: all seven conditions (full, vector_only_control,
+# vector_scope_filter, flat_graph_control, two_level_control, no_graph_traversal,
+# no_temporal_status) over SCENARIOS accounts (default 10, the pilot minimum; the proposal
+# targets 40-60). Writes a NEW results/batches/<timestamp>/ with run.json; then run
+# `make eval-report BATCH=<that directory>`. STORAGE=memory is an offline smoke (no Neo4j).
+STORAGE ?= neo4j
+eval-ablation:
+	@test "$(if $(SCENARIOS),$(SCENARIOS),10)" -ge 10 || test -n "$(SMALL)" || \
+		(echo 'Pilot needs SCENARIOS>=10 (set SMALL=1 for a labelled smoke run)'; exit 1)
+	@if [ "$(STORAGE)" = "neo4j" ]; then docker compose --profile eval up -d --wait neo4j-eval; fi
+	NEO4J_URI=bolt://localhost:7688 NEO4J_PASSWORD=scopegraph-eval \
+	uv run python -m evals.runners.run_all --dataset cross_scope_mem --config configs/experiments.yaml \
+		--storage $(STORAGE) --allow-neo4j-reset --output results/batches \
+		--scenario-count $(if $(SCENARIOS),$(SCENARIOS),10) \
+		--difficulty $(if $(DIFFICULTY),$(DIFFICULTY),3) \
+		$(if $(LIVE),--live,) $(if $(LIVE_ANSWER),--live-answer,)
+
+# Derived run table for results/ (never edits results); fails if a run is missing from the
+# curated table in results/README.md.
+results-index:
+	uv run python -m evals.analysis.tables index results
+
+# Verify RESULTS.md: complete rows, existing source files, machine-checked numbers match,
+# and no superiority or production-readiness wording in the docs.
+claims-check:
+	uv run python -m evals.analysis.tables claims RESULTS.md
 
 eval-report:
 	@test -n "$(BATCH)" || (echo 'Set BATCH=results/batches/<run-id>'; exit 1)
-	uv run python -m evals.analysis.run_report $(BATCH)/*.jsonl --output-root $(BATCH)/report
+	uv run python -m evals.analysis.run_report $(BATCH)/*.jsonl --output-root $(BATCH)/report \
+		$(if $(LOCOMO_DATA),--locomo-data $(LOCOMO_DATA),)
 
 eval-correction:
 	docker compose --profile eval up -d --wait neo4j-eval

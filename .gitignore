@@ -28,3 +28,9 @@ results/batches/
 web/node_modules/
 web/dist/
 web/*.tsbuildinfo
+
+# macOS
+.DS_Store
+**/.DS_Store
+__MACOSX/
+results/reports/

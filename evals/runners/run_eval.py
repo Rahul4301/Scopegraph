@@ -17,9 +17,18 @@ import yaml
 from evals.adapters.cross_scope_mem import CrossScopeMemAdapter
 from evals.analysis.scope_classification import evaluate_scope_classification
 from evals.metrics.storage import logical_storage_stats
-from evals.runners.checkpoint import RecordCheckpoint, save_json, source_fingerprint
+from evals.runners.checkpoint import (
+    RecordCheckpoint,
+    reproduce_command,
+    run_stamp,
+    save_json,
+    source_fingerprint,
+    unused_name,
+    write_run_json,
+)
 from evals.runners.providers import (
     EvaluationProviders,
+    TimedEmbedder,
     build_cross_scope_providers,
     freeze_extraction,
 )
@@ -52,6 +61,7 @@ class TwoLevelControlExtractor:
         current_scope: ScopeRef | None,
         existing_memories: list[str] | None = None,
     ) -> list[MemoryCandidate]:
+        """Extract candidates, projecting durable ones to global."""
         candidates = await self.wrapped.extract(
             messages,
             current_scope=current_scope,
@@ -67,6 +77,26 @@ class TwoLevelControlExtractor:
             )
             for candidate in candidates
         ]
+
+
+class ScopeFilteredRepository:
+    """Repository view that hides every scope outside ``allowed`` (metadata filter).
+
+    Used only by the ``vector_scope_filter`` control: with ``scope_access_mode=all`` the
+    retriever then searches exactly the oracle ``allowed_scope_ids`` and nothing else.
+    """
+
+    def __init__(self, wrapped: Any) -> None:
+        self._wrapped = wrapped
+        self.allowed: set[str] = set()
+
+    async def list_scopes(self, *, include_archived: bool = False) -> list[Any]:
+        """Return only the scopes in the current allow-list."""
+        scopes = await self._wrapped.list_scopes(include_archived=include_archived)
+        return [scope for scope in scopes if scope.id in self.allowed]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._wrapped, name)
 
 
 def _config(path: str | Path | None) -> tuple[dict[str, Any], str]:
@@ -117,16 +147,21 @@ async def _system(
     try:
         for scope in scenario.scopes:
             await repository.create_scope(scope)
-        embedder = providers.embedder
+        embedder = TimedEmbedder(providers.embedder)
         extractor: CandidateExtractor = providers.extractor
         if ablation == "two_level_control":
             extractor = TwoLevelControlExtractor(extractor)
         if name != "scopegraph":
             raise ValueError(f"Unsupported evaluation system: {name}")
+        search_repository: Any = (
+            ScopeFilteredRepository(repository)
+            if ablation == "vector_scope_filter"
+            else repository
+        )
         system = ScopeGraphMemorySystem(
             repository,
             extractor,
-            retriever=ScopeAwareRetriever(repository, embedder, retrieval_config),
+            retriever=ScopeAwareRetriever(search_repository, embedder, retrieval_config),
         )
     except BaseException:
         if client is not None:
@@ -152,6 +187,7 @@ async def run_scenario(
     allow_neo4j_reset: bool = False,
     ablation: str = "full",
 ) -> list[EvaluationRecord]:
+    """Replay one scenario chronologically and return one record per question."""
     system, repository, client = await _system(
         system_name,
         scenario,
@@ -214,11 +250,17 @@ async def run_scenario(
                 for memory in memories
                 if set(memory.source_ids) & set(example.gold_source_ids)
             ]
+            search_view = getattr(system.retriever, "repository", None)
+            if isinstance(search_view, ScopeFilteredRepository):
+                search_view.allowed = set(example.allowed_scope_ids)
             preparation_started = time.perf_counter()
             await providers.embedder.embed(
                 [example.question, *(memory.content for memory in memories)]
             )
             preparation_ms = (time.perf_counter() - preparation_started) * 1000
+            timer = system.retriever.embedder if system.retriever is not None else None
+            if isinstance(timer, TimedEmbedder):
+                timer.reset()
             started = time.perf_counter()
             result = await system.retrieve(
                 example.question,
@@ -229,7 +271,10 @@ async def run_scenario(
             )
             if answer_model is not None:
                 answer = await answer_model.generate(
-                    question=example.question, context=result.items
+                    question=example.question,
+                    context=result.items,
+                    current_scope=current_scope,
+                    as_of=example.timestamp,
                 )
             else:
                 answer = None  # Offline retrieval tests cannot measure model answer quality.
@@ -247,6 +292,9 @@ async def run_scenario(
                     protocol_version=f"cross-scope-v4/{scenario.profile}",
                     answer_evaluated=answer_model is not None,
                     embedding_preparation_ms=preparation_ms,
+                    retrieval_embedding_ms=(
+                        timer.elapsed_ms if isinstance(timer, TimedEmbedder) else None
+                    ),
                     latency_protocol=f"warm-embeddings/{storage}-repository",
                     evaluation_mode=str(config.get("evaluation_mode", "offline")),
                     run_id=run_id,
@@ -326,7 +374,10 @@ async def run_evaluation(
     on_progress: Callable[[EvaluationRecord], None] | None = None,
     storage: str = "memory",
     allow_neo4j_reset: bool = False,
+    reproduce: str | None = None,
+    write_metadata: bool = True,
 ) -> Path:
+    """Run one CrossScopeMem condition; returns the JSONL path (``run.json`` beside it)."""
     live_answer = live_answer or live
     live_extraction = live_extraction or live
     live_embeddings = live_embeddings or live
@@ -361,7 +412,9 @@ async def run_evaluation(
         )
         weights["temporal"] = 0.0
         retrieval_config_data["enforce_temporal_status"] = False
-    elif effective_ablation == "vector_only_control":
+    elif effective_ablation in {"vector_only_control", "vector_scope_filter"}:
+        # vector_scope_filter is vector_only_control plus a hard allowed_scope_ids filter
+        # (applied by ScopeFilteredRepository), so the pair isolates the filter itself.
         retrieval_config_data["weights"] = {
             "semantic": 1.0,
             "scope": 0.0,
@@ -415,7 +468,7 @@ async def run_evaluation(
     run_id = f"{stamp}_cross_scope_mem_{system_name}_{seed}"
     destination = Path(output or config.get("output_root", "results/raw"))
     if destination.suffix != ".jsonl":
-        destination = destination / f"{run_id}.jsonl"
+        destination = unused_name(destination, run_stamp(), ".jsonl")
     checkpoint = RecordCheckpoint(destination, resume=resume)
     for record in checkpoint.records.values():
         if record.config_hash != config_hash or record.system != system_name:
@@ -423,6 +476,30 @@ async def run_evaluation(
     if checkpoint.records:
         run_id = next(iter(checkpoint.records.values())).run_id
     scenarios = adapter.scenarios()
+    if write_metadata:
+        write_run_json(
+            destination,
+            run_id=run_id,
+            kind="cross_scope_mem",
+            status="running",
+            dataset="cross_scope_mem",
+            system=system_name,
+            ablation=effective_ablation,
+            protocol=f"cross-scope-v4/{profile}",
+            evaluation_mode=str(config["evaluation_mode"]),
+            config_file=config_path,
+            config_hash=config_hash,
+            seed=seed,
+            models={
+                "answer_and_extraction": (
+                    settings.llm_model if live_answer or live_extraction else None
+                ),
+                "embedding": settings.embedding_model if live_embeddings else None,
+                "judge": None,
+            },
+            selection={"difficulty": difficulty, "scenario_count": scenario_count},
+            reproduce=reproduce or "programmatic call (no CLI arguments recorded)",
+        )
     standalone_extractions: dict[str, dict[str, list[MemoryCandidate]]] = {}
     extraction_path = destination.with_suffix(".extractions.json")
     frozen_extractions = (
@@ -505,10 +582,17 @@ async def run_evaluation(
             classification.model_dump(mode="json"),
         )
     await close_provider(answer_model)
+    if write_metadata:
+        write_run_json(
+            destination,
+            status="complete",
+            completed_questions=len(checkpoint.records),
+        )
     return destination
 
 
 def main() -> None:
+    """CLI: run one CrossScopeMem condition."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="cross_scope_mem")
     parser.add_argument("--config")
@@ -525,6 +609,7 @@ def main() -> None:
             "no_graph_traversal",
             "no_temporal_status",
             "vector_only_control",
+            "vector_scope_filter",
             "two_level_control",
         ],
         default="full",
@@ -571,6 +656,7 @@ def main() -> None:
                 storage="neo4j",
                 allow_neo4j_reset=args.allow_neo4j_reset,
                 on_progress=report,
+                reproduce=reproduce_command("evals.runners.run_eval"),
             )
         )
     )

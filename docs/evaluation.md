@@ -7,22 +7,22 @@ questions must never be combined with external benchmark scores. LongMemEval-S,
 LoCoMo, and MemoryAgentBench supply complementary external-validity evidence using
 only their official questions and answers.
 
-Run a fast controlled smoke test:
+Run a fast controlled smoke test (the report target needs a `BATCH` directory):
 
 ```bash
 make eval-diagnostic
-make eval-report
+make eval-report BATCH=results/batches/<run-id>
 make smoke
 ```
 
 The proposal target is 40–60 complete accounts. For example:
 
 ```bash
-make eval-diagnostic SCENARIOS=40 DIFFICULTY=3
-make eval-report
+make eval-ablation SCENARIOS=40 DIFFICULTY=3
+make eval-report BATCH=results/batches/<run-id>
 ```
 
-`SCENARIOS` defaults to 1 to prevent an accidental expensive live run. A reportable
+`eval-diagnostic` defaults `SCENARIOS` to 1 and `eval-ablation` to the 10-account pilot minimum (it refuses fewer unless `SMALL=1`). Neither makes paid calls unless `LIVE=1` or `LIVE_ANSWER=1` is passed; without them extraction is the oracle, embeddings are a local hash, and no answers are generated. A reportable
 run must explicitly select its pre-registered account count.
 
 To run the complete live model pipeline through the same repository:
@@ -38,9 +38,9 @@ IDs. Ten live difficulty-3 scenarios are intended as a roughly 30–40 minute pi
 provider latency and rate limits can move the wall-clock time outside that range.
 The Neo4j run measures ScopeGraph's end-to-end repository path.
 
-The batch freezes extraction once per source and runs six paired conditions: full
-ScopeGraph; vector-only, flat-graph, and two-level session/global controls; and
-no-graph-traversal and no-temporal/status ablations. Flat graph is also the no-hierarchy
+The batch freezes extraction once per source and runs seven paired conditions: full
+ScopeGraph; vector-only, vector-with-scope-filter, flat-graph, and two-level session/global
+controls; and no-graph-traversal and no-temporal/status ablations. Flat graph is also the no-hierarchy
 ablation, so it is not executed twice. The raw JSONL
 record preserves retrieved IDs, scopes, scores, status, trace paths, latency, token
 count, logical storage statistics, configuration hash, seed, and git commit.
@@ -87,11 +87,80 @@ execution optimization, not a change to metrics. A defensible implementation mus
 
 The current runner does not provide per-question concurrency.
 
-No external benchmark results are claimed until the live suite completes. The primary
-suite is exactly LongMemEval-S, LoCoMo, and MemoryAgentBench: 6,157 official questions
-under full ScopeGraph. Run `make
-download-benchmarks`, `make validate-benchmarks`, then `make eval-suite
-BATCH=results/batches/<run-id>`. LoCoMo's ten shared histories and each
-Each LoCoMo history and MemoryAgentBench corpus is ingested once, not once per
-question. Live extraction is checkpointed once per official source session into one
-artifact per dataset so an interrupted full run resumes without re-extracting sources.
+## External benchmarks
+
+No external benchmark results are claimed until the live suite completes. The primary suite
+is exactly LongMemEval-S, LoCoMo, and MemoryAgentBench: 6,157 official questions under full
+ScopeGraph. Run:
+
+```bash
+make download-benchmarks
+make validate-benchmarks
+make eval-suite BATCH=results/batches/<run-id>
+```
+
+Each LoCoMo history (ten shared conversations) and each MemoryAgentBench corpus is ingested
+once, not once per question. Live extraction is checkpointed once per official source session
+into one artifact per dataset, so an interrupted full run resumes without re-extracting sources.
+
+### LoCoMo runs
+
+`make eval-smoke CASES=N` runs the first N conversations (10 = all 1,986 questions) at the
+current commit with a fresh extraction cache and writes a new, never-overwritten
+`results/smoke/mm_dd__hh_mm.jsonl` (local time) plus `.run.json`, `.report.md` and
+`.questions.csv`. `ABLATION=vector_only` adds
+the plain-vector baseline (a documented amendment outside the original protocol; see
+[benchmark_protocol.md](benchmark_protocol.md)). Report LoCoMo accuracy both with and without
+category 5, which is scored by an abstention rule and says nothing about retrieval:
+
+```bash
+make eval-report BATCH=<dir containing the jsonl> LOCOMO_DATA=data/locomo/locomo10.json
+```
+
+writes `processed/locomo_diagnostics.json` (per-category accuracy, F1, gold-source recall at
+retrieval and at delivery, accuracy when gold was missed, outcome stages) and
+`processed/locomo_zero_gold_questions.json` (every question whose annotated evidence turns
+were not retrieved, with the turn text).
+
+## Statistics and conditions
+
+- Conditions (seven): full ScopeGraph; `vector_only_control`; `vector_scope_filter` (the vector
+  control plus a hard metadata filter on each question's `allowed_scope_ids`); `flat_graph_control`
+  (also the no-hierarchy ablation); `two_level_control`; `no_graph_traversal`; `no_temporal_status`.
+  `make eval-ablation` runs all seven in one batch.
+- Because `vector_scope_filter` filters on the same `allowed_scope_ids` that define
+  `cross_scope_contamination`, its contamination is 0 by construction. It tests whether ScopeGraph's
+  hierarchy adds anything beyond a correct access filter, not whether a filter prevents leakage.
+- Confidence intervals are 95% percentile bootstrap intervals that resample whole accounts
+  (CrossScopeMem scenarios, LoCoMo conversations). A pilot needs at least 10 accounts; the proposal
+  target is 40–60. Below 10 the report marks results `underpowered`, and with one account it
+  emits no interval rather than a degenerate `mean = lower = upper`.
+- Paired differences are **full minus control**. For lower-is-better metrics
+  (`cross_scope_contamination`, `any_cross_scope_contamination`, `stale_memory_error_rate`) a
+  negative difference favours full; otherwise a positive difference favours full.
+- `make eval-report` writes `processed/confidence_intervals.json`, `processed/mcnemar.json`, and
+  `tables/mcnemar.md`. McNemar rows exist only for per-question 0/1 outcomes (`exact_match`,
+  `gold_hit_at_8`, `any_cross_scope_contamination`, binary official judge scores). Questions inside
+  one account are correlated, so also read the account-level sign test in the same table.
+
+## Timing
+
+Retrieval, embedding, answer, and judge time are separate fields and are never summed. Reports
+write `tables/latency_<dataset>.md` per dataset. `retrieval_*` is the timed retrieval call and
+includes embedding lookups made inside it; `retrieval_core_*` subtracts them; `answer_*` and
+`judge_*` are provider round trips. CrossScopeMem timings (tens of milliseconds, warm in-process
+embeddings) and LoCoMo timings (about a second, live embedding cache lookups over every source
+turn) measure different things and must not be compared or averaged.
+
+## Run artifacts
+
+New runs are named by local start time, `mm_dd__hh_mm` (a batch is a directory of that name; a
+second run in the same minute gets `_2`). When a run finishes it writes **`report.md`** (the file to
+read: headline table, full-vs-control comparison, LoCoMo categories, mistakes, caveats) and
+**`questions.csv`** (one row per question for spreadsheets). The raw `.jsonl` is the machine record.
+`make eval-report` adds the detailed JSON/tables/figure under `report/`.
+
+Every new run writes `run.json` (batch directories) or `<name>.run.json` (single JSONL files):
+commit, dirty flag and diff hash, config hash, models, seed, protocol, selection, and the
+reproduce command. New runs also move `retrieved_source_contents` and `delivered_source_contents`
+to `<name>.bulk.jsonl`; scoring never reads them. Field definitions: [results/SCHEMA.md](../results/SCHEMA.md).

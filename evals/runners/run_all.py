@@ -5,12 +5,21 @@ import asyncio
 import hashlib
 import json
 import subprocess
-from datetime import UTC, datetime
+import sys
 from pathlib import Path
 
 from evals.adapters.cross_scope_mem import CrossScopeMemAdapter
+from evals.analysis.aggregate import MIN_PILOT_ACCOUNTS
 from evals.analysis.scope_classification import evaluate_scope_classification
-from evals.runners.checkpoint import save_json, source_fingerprint
+from evals.runners.checkpoint import (
+    reproduce_command,
+    run_stamp,
+    save_json,
+    source_fingerprint,
+    try_write_report,
+    unused_name,
+    write_run_json,
+)
 from evals.runners.providers import (
     EvaluationProviders,
     build_cross_scope_providers,
@@ -24,6 +33,7 @@ from scopegraph.models.memory import MemoryCandidate
 ABLATIONS = (
     "full",
     "vector_only_control",
+    "vector_scope_filter",
     "flat_graph_control",
     "two_level_control",
     "no_graph_traversal",
@@ -32,12 +42,14 @@ ABLATIONS = (
 
 
 async def run_all(**kwargs: object) -> list[str]:
+    """Run every condition in ``ABLATIONS`` over one shared set of accounts; returns JSONL paths."""
+    reproduce = kwargs.pop("reproduce", None)
     resume_path = kwargs.pop("resume", None)
     output_root = kwargs.pop("output", "results/batches")
     batch = (
         Path(str(resume_path))
         if resume_path
-        else Path(str(output_root)) / datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        else unused_name(Path(str(output_root)), run_stamp())
     )
     if not resume_path:
         batch.mkdir(parents=True, exist_ok=False)
@@ -81,6 +93,50 @@ async def run_all(**kwargs: object) -> list[str]:
             if previous.get(key) != manifest[key]:
                 raise ValueError(f"Cannot resume: {key} changed from the original batch")
     save_json(manifest_path, manifest)
+    account_count = int(str(kwargs.get("scenario_count", 1)))
+    if account_count < MIN_PILOT_ACCOUNTS:
+        print(
+            f"WARNING: {account_count} accounts is below the {MIN_PILOT_ACCOUNTS}-account pilot "
+            "minimum; confidence intervals will be flagged as underpowered.",
+            file=sys.stderr, flush=True,
+        )
+    is_live = {
+        part: bool(kwargs.get("live") or kwargs.get(f"live_{part}"))
+        for part in ("extraction", "embeddings", "answer")
+    }
+    evaluation_mode = (
+        f"extraction={'live' if is_live['extraction'] else 'oracle'};"
+        f"embeddings={'live' if is_live['embeddings'] else 'hash'};"
+        f"answer={'live' if is_live['answer'] else 'not-evaluated'};"
+        f"storage={kwargs.get('storage', 'memory')}"
+    )
+    write_run_json(
+        batch,
+        run_id=batch.name,
+        kind="cross_scope_mem_batch",
+        status="running",
+        dataset="cross_scope_mem",
+        system="scopegraph",
+        conditions=list(ABLATIONS),
+        protocol=manifest["protocol"],
+        evaluation_mode=evaluation_mode,
+        config_file=kwargs.get("config_path"),
+        seed=kwargs.get("seed", 42),
+        models={
+            "answer_and_extraction": (
+                settings.llm_model if is_live["extraction"] or is_live["answer"] else None
+            ),
+            "embedding": settings.embedding_model if is_live["embeddings"] else None,
+            "judge": None,
+        },
+        selection={
+            "difficulty": kwargs.get("difficulty", 2),
+            "scenario_count": account_count,
+            "profile": kwargs.get("profile", "research"),
+            "pilot_grade_account_count": account_count >= MIN_PILOT_ACCOUNTS,
+        },
+        reproduce=reproduce or "programmatic call (no CLI arguments recorded)",
+    )
     save_json(
         batch / "scenarios.json", [scenario.model_dump(mode="json") for scenario in scenarios]
     )
@@ -159,11 +215,13 @@ async def run_all(**kwargs: object) -> list[str]:
                         resume=bool(resume_path),
                         on_progress=report,
                         ablation=ablation,
+                        write_metadata=False,
                         **kwargs,
                     )
                 )
             )
         manifest["status"] = "complete"
+        try_write_report([Path(p) for p in paths], batch)
         return paths
     except Exception:
         manifest["status"] = "failed"
@@ -171,11 +229,13 @@ async def run_all(**kwargs: object) -> list[str]:
     finally:
         manifest["paths"] = paths
         save_json(manifest_path, manifest)
+        write_run_json(batch, status=str(manifest["status"]), outputs=[Path(p).name for p in paths])
         for providers in bank.values():
             await providers.aclose()
 
 
 def main() -> None:
+    """CLI: run every CrossScopeMem condition in one batch."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="cross_scope_mem")
     parser.add_argument("--config")
@@ -188,6 +248,12 @@ def main() -> None:
     parser.add_argument("--live-embeddings", action="store_true")
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--profile", choices=["smoke", "research"], default="research")
+    parser.add_argument(
+        "--storage",
+        choices=["neo4j", "memory"],
+        default="neo4j",
+        help="memory runs the in-process repository (offline smoke only, no Neo4j needed)",
+    )
     parser.add_argument(
         "--resume", help="Resume an existing batch directory with identical options"
     )
@@ -212,8 +278,9 @@ def main() -> None:
             live=args.live,
             resume=args.resume,
             profile=args.profile,
-            storage="neo4j",
+            storage=args.storage,
             allow_neo4j_reset=args.allow_neo4j_reset,
+            reproduce=reproduce_command("evals.runners.run_all"),
         )
     )
     print("\n".join(paths))

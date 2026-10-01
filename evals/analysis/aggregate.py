@@ -15,19 +15,31 @@ from evals.metrics.scope_contamination import cross_scope_contamination
 from evals.metrics.stale_memory import stale_memory_error_rate
 from evals.schemas import EvaluationRecord, ScoredRecord
 
+# Per-question 0/1 outcomes: the only metrics McNemar is valid for. Averaged metrics such as
+# recall_at_8 or the stale-memory rate can coincidentally be 0/1 and must not be tested.
+BINARY_METRICS = frozenset({
+    "exact_match", "gold_hit_at_8", "any_cross_scope_contamination",
+    "official_llm_judge_accuracy", "official_substring_exact_match", "official_exact_match",
+})
+MIN_PILOT_ACCOUNTS = 10
+BOOTSTRAP_SAMPLES = 10_000
+BOOTSTRAP_SEED = 42
+
 
 def _cluster_bootstrap_ci(
-    values_by_cluster: dict[str, list[float]], *, samples: int = 10_000
-) -> tuple[float, float]:
-    """Bootstrap whole histories/accounts so related questions stay together."""
+    values_by_cluster: dict[str, list[float]], *, samples: int = BOOTSTRAP_SAMPLES
+) -> tuple[float, float] | None:
+    """Percentile-bootstrap 95% CI resampling whole accounts, never single questions.
+
+    Returns ``None`` for a single account: resampling one cluster can only reproduce
+    the mean, so a degenerate ``mean == lower == upper`` interval would be misleading.
+    """
     if not values_by_cluster:
         raise ValueError("Cannot bootstrap an empty sample")
     clusters = sorted(values_by_cluster)
-    values = [value for cluster in clusters for value in values_by_cluster[cluster]]
     if len(clusters) == 1:
-        mean = sum(values) / len(values)
-        return mean, mean
-    generator = random.Random(42)
+        return None
+    generator = random.Random(BOOTSTRAP_SEED)
     size = len(clusters)
     means: list[float] = []
     for _ in range(samples):
@@ -41,7 +53,39 @@ def _cluster_bootstrap_ci(
     return means[int(samples * 0.025)], means[min(samples - 1, int(samples * 0.975))]
 
 
+def _latency_keys(values: list[ScoredRecord]) -> dict[str, float]:
+    """Percentiles for each separately measured stage; stages are never summed or blended.
+
+    ``retrieval_*`` is the timed retrieval call and includes embedding lookups made inside
+    it. ``retrieval_core_*`` subtracts that embedding time. ``answer_*`` and ``judge_*`` are
+    provider round trips. Latencies are only comparable within one dataset and protocol.
+    """
+    stages: dict[str, list[float]] = {
+        "retrieval": [v.retrieval_latency_ms for v in values],
+        "retrieval_embedding": [
+            v.retrieval_embedding_ms for v in values if v.retrieval_embedding_ms is not None
+        ],
+        "retrieval_core": [
+            v.retrieval_latency_ms - v.retrieval_embedding_ms
+            for v in values if v.retrieval_embedding_ms is not None
+        ],
+        "embedding_preparation": [
+            v.embedding_preparation_ms for v in values if v.embedding_preparation_ms is not None
+        ],
+        "answer": [v.answer_latency_ms for v in values if v.answer_latency_ms is not None],
+        "judge": [v.judge_latency_ms for v in values if v.judge_latency_ms is not None],
+    }
+    keys: dict[str, float] = {}
+    for stage, samples in stages.items():
+        if samples:
+            summary = latency_summary(samples)
+            keys[f"{stage}_p50_ms"] = summary["p50"]
+            keys[f"{stage}_p95_ms"] = summary["p95"]
+    return keys
+
+
 def score_record(record: EvaluationRecord, *, k: int = 8) -> ScoredRecord:
+    """Attach the scored metrics for one raw record."""
     if record.failure_type is not None:
         metrics: dict[str, float | None] = {}
         if record.answer_evaluated:
@@ -86,6 +130,11 @@ def score_record(record: EvaluationRecord, *, k: int = 8) -> ScoredRecord:
         "stale_memory_error_rate": stale_memory_error_rate(
             [{"status": status} for status in record.retrieved_statuses]
         ),
+        "gold_hit_at_8": float(source_recall > 0) if source_recall is not None else None,
+        "any_cross_scope_contamination": float(any(
+            set(scopes) - set(record.allowed_scope_ids or record.gold_scope_ids)
+            for scopes in record.retrieved_origin_scope_ids[:k]
+        )) if record.retrieved_origin_scope_ids else None,
     }
     if record.official_metric is not None:
         metrics[f"official_{record.official_metric}"] = record.official_score
@@ -98,12 +147,14 @@ def score_record(record: EvaluationRecord, *, k: int = 8) -> ScoredRecord:
     if record.question_type == "abstention":
         metrics[f"precision_at_{k}"] = None
         metrics[f"recall_at_{k}"] = None
+        metrics["gold_hit_at_8"] = None
     if record.question_type in {"temporal_historical", "temporal_historical_state"}:
         metrics["stale_memory_error_rate"] = None
     return ScoredRecord(**record.model_dump(), metrics=metrics)
 
 
 def load_jsonl(paths: Iterable[str | Path]) -> list[EvaluationRecord]:
+    """Read EvaluationRecord lines from one or more JSONL files."""
     records: list[EvaluationRecord] = []
     for path in paths:
         for line in Path(path).read_text().splitlines():
@@ -113,6 +164,7 @@ def load_jsonl(paths: Iterable[str | Path]) -> list[EvaluationRecord]:
 
 
 def aggregate_records(records: Iterable[EvaluationRecord]) -> dict[str, dict[str, float]]:
+    """Summarize records per system/condition with account-clustered 95% intervals."""
     records = list(records)
     multiple_datasets = len({record.dataset for record in records}) > 1
     grouped: dict[str, list[ScoredRecord]] = defaultdict(list)
@@ -158,20 +210,18 @@ def aggregate_records(records: Iterable[EvaluationRecord]) -> dict[str, dict[str
                     metric = value.metrics[name]
                     assert metric is not None
                     clusters[value.scenario_id].append(float(metric))
-                lower, upper = _cluster_bootstrap_ci(dict(clusters))
-                summary[system][f"{name}_ci95_low"] = lower
-                summary[system][f"{name}_ci95_high"] = upper
+                interval = _cluster_bootstrap_ci(dict(clusters))
+                if interval is not None:
+                    summary[system][f"{name}_ci95_low"], summary[system][f"{name}_ci95_high"] = (
+                        interval
+                    )
+        summary[system]["account_count"] = float(len({value.scenario_id for value in values}))
         summary[system]["query_count"] = float(len(values))
         summary[system]["failure_count"] = float(
             sum(value.failure_type is not None for value in values)
         )
         summary[system]["failure_rate"] = summary[system]["failure_count"] / len(values)
-        summary[system]["retrieval_p50_ms"] = latency_summary(
-            value.retrieval_latency_ms for value in values
-        )["p50"]
-        summary[system]["retrieval_p95_ms"] = latency_summary(
-            value.retrieval_latency_ms for value in values
-        )["p95"]
+        summary[system].update(_latency_keys(values))
         summary[system]["retrieved_tokens_mean"] = sum(
             value.retrieved_tokens for value in values
         ) / len(values)
@@ -226,7 +276,11 @@ def _exact_mcnemar_p(full_wins: int, ablation_wins: int) -> float:
 def paired_ablation_comparisons(
     records: Iterable[EvaluationRecord],
 ) -> dict[str, dict[str, float]]:
-    """Compare each ablation with full ScopeGraph on identical questions."""
+    """Compare each ablation with full ScopeGraph on identical questions.
+
+    Sign convention: every difference is ``full minus control``. For metrics where lower
+    is better (contamination, stale-memory rate) a negative difference favours full.
+    """
     scored = [score_record(record) for record in records]
     grouped: dict[tuple[str, str, str], dict[tuple[str, str], ScoredRecord]] = defaultdict(dict)
     for record in scored:
@@ -248,7 +302,10 @@ def paired_ablation_comparisons(
             comparison = grouped[(dataset, system, ablation)]
             paired_keys = sorted(set(full) & set(comparison))
             label = f"{dataset}/{system}/full-minus-{ablation}"
-            values: dict[str, float] = {"paired_question_count": float(len(paired_keys))}
+            values: dict[str, float] = {
+                "paired_question_count": float(len(paired_keys)),
+                "paired_account_count": float(len({key[0] for key in paired_keys})),
+            }
             metric_names = sorted(
                 {
                     metric
@@ -277,10 +334,17 @@ def paired_ablation_comparisons(
                     for difference in account
                 ]
                 values[f"{metric}_mean_difference"] = sum(differences) / len(differences)
-                lower, upper = _cluster_bootstrap_ci(dict(differences_by_account))
-                values[f"{metric}_difference_ci95_low"] = lower
-                values[f"{metric}_difference_ci95_high"] = upper
-                if all(
+                account_means = [sum(item) / len(item) for item in differences_by_account.values()]
+                positive = sum(mean > 0 for mean in account_means)
+                negative = sum(mean < 0 for mean in account_means)
+                values[f"{metric}_accounts_positive"] = float(positive)
+                values[f"{metric}_accounts_negative"] = float(negative)
+                values[f"{metric}_account_sign_test_p"] = _exact_mcnemar_p(positive, negative)
+                interval = _cluster_bootstrap_ci(dict(differences_by_account))
+                if interval is not None:
+                    values[f"{metric}_difference_ci95_low"] = interval[0]
+                    values[f"{metric}_difference_ci95_high"] = interval[1]
+                if metric in BINARY_METRICS and all(
                     full_value in {0.0, 1.0} and ablation_value in {0.0, 1.0}
                     for _, full_value, ablation_value in measured
                 ):
@@ -302,8 +366,306 @@ def paired_ablation_comparisons(
 def aggregate_files(
     paths: Iterable[str | Path], output: str | Path | None = None
 ) -> dict[str, dict[str, float]]:
+    """Aggregate JSONL files and optionally write the summary JSON."""
     summary = aggregate_records(load_jsonl(paths))
     if output is not None:
         Path(output).parent.mkdir(parents=True, exist_ok=True)
         Path(output).write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     return summary
+
+
+LOWER_IS_BETTER = frozenset({
+    "cross_scope_contamination", "any_cross_scope_contamination", "stale_memory_error_rate",
+})
+SIGN_CONVENTION = (
+    "Every difference is full minus control. For metrics where lower is better "
+    "(cross_scope_contamination, any_cross_scope_contamination, stale_memory_error_rate) "
+    "a negative difference favours full; "
+    "for all other metrics a positive difference favours full."
+)
+
+
+def _favours(metric: str, low: float | None, high: float | None) -> str:
+    """Which side the 95% interval supports, or why it supports neither."""
+    if low is None or high is None:
+        return "undetermined (single account: no interval)"
+    if low <= 0.0 <= high:
+        return "neither (interval includes 0)"
+    full_higher = low > 0
+    if metric in LOWER_IS_BETTER:
+        return "control" if full_higher else "full"
+    return "full" if full_higher else "control"
+
+
+def _split_metric_keys(values: dict[str, float], suffix: str) -> dict[str, float]:
+    return {key[: -len(suffix)]: value for key, value in values.items() if key.endswith(suffix)}
+
+
+def confidence_interval_report(records: Iterable[EvaluationRecord]) -> dict[str, object]:
+    """Structured CI output: per-system intervals and paired full-minus-control differences.
+
+    Intervals are 95% percentile bootstrap intervals that resample whole accounts (CrossScopeMem
+    scenarios or LoCoMo conversations). Anything under ``MIN_PILOT_ACCOUNTS`` accounts is
+    flagged ``underpowered``; a single account yields no interval at all.
+    """
+    records = list(records)
+    summary = aggregate_records(records)
+    systems: dict[str, object] = {}
+    for system, values in summary.items():
+        means = {key: value for key, value in values.items() if _is_quality_metric(key)}
+        accounts = int(values["account_count"])
+        systems[system] = {
+            "n_accounts": accounts,
+            "n_questions": int(values["query_count"]),
+            "underpowered": accounts < MIN_PILOT_ACCOUNTS,
+            "metrics": {
+                metric: {
+                    "mean": mean,
+                    "ci95_low": values.get(f"{metric}_ci95_low"),
+                    "ci95_high": values.get(f"{metric}_ci95_high"),
+                }
+                for metric, mean in sorted(means.items())
+            },
+        }
+    paired: dict[str, object] = {}
+    for label, values in paired_ablation_comparisons(records).items():
+        means = _split_metric_keys(values, "_mean_difference")
+        accounts = int(values["paired_account_count"])
+        entry: dict[str, object] = {
+            "n_accounts": accounts,
+            "n_pairs": int(values["paired_question_count"]),
+            "underpowered": accounts < MIN_PILOT_ACCOUNTS,
+            "metrics": {},
+        }
+        for metric, mean in sorted(means.items()):
+            low = values.get(f"{metric}_difference_ci95_low")
+            high = values.get(f"{metric}_difference_ci95_high")
+            metrics = entry["metrics"]
+            assert isinstance(metrics, dict)
+            metrics[metric] = {
+                "mean_difference": mean,
+                "ci95_low": low,
+                "ci95_high": high,
+                "lower_is_better": metric in LOWER_IS_BETTER,
+                "favours": _favours(metric, low, high),
+                "accounts_positive": int(values[f"{metric}_accounts_positive"]),
+                "accounts_negative": int(values[f"{metric}_accounts_negative"]),
+                "account_sign_test_p": values[f"{metric}_account_sign_test_p"],
+            }
+        paired[label.replace("/full-minus-", "/")] = entry
+    return {
+        "protocol": {
+            "resampling_unit": "account (CrossScopeMem scenario / LoCoMo conversation)",
+            "method": "percentile bootstrap, whole-account resampling",
+            "samples": BOOTSTRAP_SAMPLES,
+            "seed": BOOTSTRAP_SEED,
+            "level": 0.95,
+            "min_pilot_accounts": MIN_PILOT_ACCOUNTS,
+            "proposal_target_accounts": "40-60",
+            "sign_convention": SIGN_CONVENTION,
+        },
+        "systems": systems,
+        "paired_differences_full_minus_control": paired,
+    }
+
+
+def _is_quality_metric(key: str) -> bool:
+    """True for scored quality metrics; false for counts, latencies, tokens and CI bounds."""
+    if key.endswith(("_ci95_low", "_ci95_high")):
+        return False
+    return key in {"exact_match", "token_f1", "cross_scope_contamination",
+                   "any_cross_scope_contamination", "stale_memory_error_rate",
+                   "gold_hit_at_8"} or key.startswith(
+        ("precision_at_", "recall_at_", "official_")
+    )
+
+
+def mcnemar_report(records: Iterable[EvaluationRecord]) -> list[dict[str, object]]:
+    """Exact McNemar rows (full vs control) for every binary metric, one row per pair.
+
+    McNemar treats questions as independent; questions inside one account are correlated,
+    so read ``exact_p`` as descriptive and prefer the account-level sign test.
+    """
+    rows: list[dict[str, object]] = []
+    for label, values in sorted(paired_ablation_comparisons(records).items()):
+        for metric in sorted(_split_metric_keys(values, "_mcnemar_exact_p")):
+            full_wins = int(values[f"{metric}_mcnemar_full_wins"])
+            control_wins = int(values[f"{metric}_mcnemar_ablation_wins"])
+            rows.append({
+                "comparison": label,
+                "metric": metric,
+                "n_pairs": int(values["paired_question_count"]),
+                "n_accounts": int(values["paired_account_count"]),
+                "full_correct_control_wrong": full_wins,
+                "control_correct_full_wrong": control_wins,
+                "exact_p": values[f"{metric}_mcnemar_exact_p"],
+                "accounts_full_higher": int(values[f"{metric}_accounts_positive"]),
+                "accounts_control_higher": int(values[f"{metric}_accounts_negative"]),
+                "account_sign_test_p": values[f"{metric}_account_sign_test_p"],
+            })
+    return rows
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _gold_recall(gold: set[str], lists: list[list[str]]) -> float:
+    return len(gold & {source for sources in lists for source in sources}) / len(gold)
+
+
+def _interval(by_conversation: dict[str, list[float]]) -> dict[str, float | None]:
+    values = [value for items in by_conversation.values() for value in items]
+    interval = _cluster_bootstrap_ci(by_conversation) if by_conversation else None
+    return {
+        "mean": _mean(values),
+        "ci95_low": interval[0] if interval else None,
+        "ci95_high": interval[1] if interval else None,
+        "n_conversations": float(len(by_conversation)),
+        "n_questions": float(len(values)),
+        "underpowered": float(len(by_conversation) < MIN_PILOT_ACCOUNTS),
+    }
+
+
+def _failure_stage(record: EvaluationRecord, correct: bool) -> str:
+    """Where a LoCoMo question was lost, judged against the annotated gold evidence turns."""
+    if correct:
+        return "correct"
+    gold = set(record.gold_source_ids)
+    if not gold:
+        return "wrong_no_gold_annotation"
+    if not gold & {s for sources in record.retrieved_source_ids for s in sources}:
+        return "wrong_gold_not_retrieved"
+    if not gold & {s for sources in record.delivered_source_ids for s in sources}:
+        return "wrong_gold_retrieved_not_delivered"
+    return "wrong_gold_delivered"
+
+
+def locomo_diagnostics(records: Iterable[EvaluationRecord]) -> dict[str, object]:
+    """Per-category LoCoMo accuracy and gold-evidence recall, with and without category 5.
+
+    Category 5 (adversarial) is graded by abstention, so its accuracy says nothing about
+    retrieval; it is reported separately and excluded from the ``excluding_category_5``
+    aggregates. Gold-evidence recall is the share of annotated evidence turns present in the
+    retrieved (``retrieved_source_ids``) or delivered (``delivered_source_ids``) sources. It
+    is a strict proxy: a question can be answered from other turns, so the report also gives
+    accuracy when the gold turns were missed.
+    """
+    grouped: dict[str, list[EvaluationRecord]] = defaultdict(list)
+    for record in records:
+        if record.dataset == "locomo":
+            grouped[f"{record.system}/{record.ablation}"].append(record)
+    output: dict[str, object] = {}
+    for system, rows in sorted(grouped.items()):
+        by_category: dict[str, list[EvaluationRecord]] = defaultdict(list)
+        for row in rows:
+            by_category[str(row.benchmark_metadata.get("category", "unknown"))].append(row)
+
+        def judged(row: EvaluationRecord) -> float | None:
+            if row.official_metric != "llm_judge_accuracy":
+                return None
+            return 0.0 if row.failure_type is not None else row.official_score
+
+        def f1(row: EvaluationRecord) -> float | None:
+            return row.official_secondary_scores.get("locomo_f1")
+
+        categories: dict[str, object] = {}
+        for category, items in sorted(by_category.items()):
+            annotated = [row for row in items if row.gold_source_ids]
+            retrieved = [_gold_recall(set(r.gold_source_ids), r.retrieved_source_ids)
+                         for r in annotated]
+            delivered = [_gold_recall(set(r.gold_source_ids), r.delivered_source_ids)
+                         for r in annotated]
+            scores = [judged(row) for row in items]
+            complete = [
+                judged(r) for r in annotated
+                if set(r.gold_source_ids) <= {s for ss in r.delivered_source_ids for s in ss}
+            ]
+            partial = [
+                judged(r) for r in annotated
+                if not set(r.gold_source_ids) <= {s for ss in r.delivered_source_ids for s in ss}
+            ]
+            hit = [judged(r) for r, rec in zip(annotated, retrieved, strict=True) if rec > 0]
+            miss = [judged(r) for r, rec in zip(annotated, retrieved, strict=True) if rec == 0]
+            stages: dict[str, int] = defaultdict(int)
+            for row in items:
+                score = judged(row)
+                stages[_failure_stage(row, score is not None and score >= 1.0)] += 1
+            categories[category] = {
+                "n": len(items),
+                "scored_by": "abstention rule" if category == "5" else "gpt-4o rubric judge",
+                "judge_accuracy": _mean([s for s in scores if s is not None]),
+                "locomo_f1": _mean([v for v in map(f1, items) if v is not None]),
+                "no_gold_annotation": len(items) - len(annotated),
+                "gold_source_recall_retrieved": _mean(retrieved),
+                "gold_source_recall_delivered": _mean(delivered),
+                "any_gold_retrieved_rate": _mean([float(r > 0) for r in retrieved]),
+                "zero_gold_retrieved_count": sum(r == 0 for r in retrieved),
+                "zero_gold_retrieved_rate": _mean([float(r == 0) for r in retrieved]),
+                "all_gold_delivered_rate": (
+                    len(complete) / len(annotated) if annotated else None
+                ),
+                "accuracy_when_all_gold_delivered": _mean([v for v in complete if v is not None]),
+                "accuracy_when_gold_partly_or_not_delivered": _mean(
+                    [v for v in partial if v is not None]
+                ),
+                "accuracy_when_gold_retrieved": _mean([v for v in hit if v is not None]),
+                "accuracy_when_gold_missed": _mean([v for v in miss if v is not None]),
+                "outcome_stages": dict(sorted(stages.items())),
+            }
+
+        def overall(rows_: list[EvaluationRecord], metric: str) -> dict[str, float | None]:
+            clusters: dict[str, list[float]] = defaultdict(list)
+            for row in rows_:
+                value = judged(row) if metric == "judge" else f1(row)
+                if value is not None:
+                    clusters[row.scenario_id].append(value)
+            return _interval(dict(clusters))
+
+        without_5 = [row for row in rows if row.benchmark_metadata.get("category") != "5"]
+        chain: dict[str, object] = {}
+        category_1 = by_category.get("1", [])
+        by_evidence: dict[int, list[float]] = defaultdict(list)
+        for row in category_1:
+            value = judged(row)
+            if value is not None:
+                by_evidence[len(row.gold_source_ids)].append(value)
+        chain["category_1_accuracy_by_gold_evidence_count"] = {
+            str(count): {"n": len(values), "judge_accuracy": _mean(values)}
+            for count, values in sorted(by_evidence.items())
+        }
+        def gold_coverage(rows_: list[EvaluationRecord]) -> dict[str, float | None]:
+            annotated_ = [row for row in rows_ if row.gold_source_ids]
+            zero_retrieved = sum(
+                _gold_recall(set(r.gold_source_ids), r.retrieved_source_ids) == 0
+                for r in annotated_
+            )
+            zero_delivered = sum(
+                _gold_recall(set(r.gold_source_ids), r.delivered_source_ids) == 0
+                for r in annotated_
+            )
+            total = len(annotated_)
+            return {
+                "annotated_questions": float(total),
+                "zero_gold_retrieved_count": float(zero_retrieved),
+                "zero_gold_retrieved_rate": zero_retrieved / total if total else None,
+                "zero_gold_delivered_count": float(zero_delivered),
+                "zero_gold_delivered_rate": zero_delivered / total if total else None,
+            }
+
+        output[system] = {
+            "n_questions": len(rows),
+            "n_conversations": len({row.scenario_id for row in rows}),
+            "gold_evidence_all_categories": gold_coverage(rows),
+            "gold_evidence_excluding_category_5": gold_coverage(without_5),
+            "all_categories": {
+                "judge_accuracy": overall(rows, "judge"), "locomo_f1": overall(rows, "f1"),
+            },
+            "excluding_category_5": {
+                "judge_accuracy": overall(without_5, "judge"),
+                "locomo_f1": overall(without_5, "f1"),
+            },
+            "categories": categories,
+            **chain,
+        }
+    return output

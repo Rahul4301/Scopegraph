@@ -103,6 +103,10 @@ class EvaluationRecord(BaseModel):
     evaluation_mode: str = "unspecified"
     latency_protocol: str = "unspecified"
     embedding_preparation_ms: float | None = None
+    # Time spent inside the embedder during the timed retrieval call (query vector and
+    # source-turn vector lookups). retrieval_latency_ms includes it; subtract for the
+    # embedding-free retrieval time. None on records written before this field existed.
+    retrieval_embedding_ms: float | None = None
     run_id: str
     dataset: str
     system: str

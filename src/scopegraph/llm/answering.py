@@ -5,8 +5,18 @@ from typing import Protocol
 
 from scopegraph.llm.transport import ModelTransport
 from scopegraph.models.retrieval import RetrievedMemory
+from scopegraph.models.scope import ScopeRef
 
 REASONING_COMPLETION_FLOOR = 4000
+
+
+def describe_scope(scope: ScopeRef | None) -> str:
+    """Render the caller's current scope for the answer prompt."""
+    if scope is None:
+        return "not provided"
+    kind = scope.scope_type.value if scope.scope_type else "unknown type"
+    label = f"{scope.name} " if scope.name else ""
+    return f"{label}(id={scope.id}; type={kind})"
 
 
 class AnswerModel(Protocol):
@@ -18,7 +28,9 @@ class AnswerModel(Protocol):
         instruction: str | None = None,
         max_output_tokens: int | None = None,
         as_of: datetime | None = None,
-    ) -> str: ...
+        current_scope: ScopeRef | None = None,
+    ) -> str:
+        """Answer the question from the retrieved context."""
 
 
 class OpenAICompatibleAnswerer:
@@ -41,9 +53,11 @@ class OpenAICompatibleAnswerer:
 
     @property
     def last_usage(self) -> dict[str, int]:
+        """Token usage of the most recent call."""
         return self.transport.last_usage
 
     async def aclose(self) -> None:
+        """Close the HTTP client."""
         await self.transport.aclose()
 
     def _completion_budget(self, max_output_tokens: int | None) -> int:
@@ -63,7 +77,9 @@ class OpenAICompatibleAnswerer:
         instruction: str | None = None,
         max_output_tokens: int | None = None,
         as_of: datetime | None = None,
+        current_scope: ScopeRef | None = None,
     ) -> str:
+        """Answer ``question`` from ``context``, told which scope and as-of time apply."""
         if not self.api_key or not self.model:
             raise RuntimeError("LLM_API_KEY and LLM_MODEL are required for live answering")
         evidence = "\n".join(
@@ -89,7 +105,8 @@ class OpenAICompatibleAnswerer:
                     "Return the shortest direct "
                     "answer, without explanation or restating the question. If the evidence is "
                     f"insufficient, return {self.unknown_response}. "
-                    "Respect named scopes and validity dates. "
+                    "Respect named scopes and validity dates. Phrases such as 'this project', "
+                    "'here' or 'this repo' refer to the current scope stated in the request. "
                     "When a source message uses relative time such as yesterday, last week, "
                     "or last Saturday, convert it to an exact calendar date when the source "
                     "timestamp and the question as-of time support that conversion, unless the "
@@ -103,6 +120,7 @@ class OpenAICompatibleAnswerer:
                     "content": (
                         f"Task instructions: {instruction}\n\n" if instruction else ""
                     )
+                    + f"Current scope: {describe_scope(current_scope)}\n"
                     + f"Question as-of: {as_of.isoformat() if as_of else 'not provided'}\n"
                     + f"Question: {question}\nEvidence:\n{evidence}",
                 },

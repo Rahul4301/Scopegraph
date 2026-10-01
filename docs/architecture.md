@@ -4,6 +4,23 @@
 
 ScopeGraph is a model-agnostic memory service built to test two claims rather than assume them: whether explicit contextual scope reduces retrieval interference, and whether structural correction persists better than conversational correction. Live evaluations run the ScopeGraph implementation against released benchmark questions and report failures as well as successes.
 
+## Phase map
+
+The repository was built in numbered phases; docs and tests refer to them by number.
+
+| Phase | Scope | Where it lives |
+| --- | --- | --- |
+| 1 | Foundation: domain models, configuration, async Neo4j client, schema, CRUD repositories | `src/scopegraph/models`, `config.py`, `graph/` |
+| 2 | Write path: structured extraction, normalization, dedup, conflicts, promotion, provenance | `llm/extraction.py`, `memory/consolidator.py`, `memory/promoter.py` |
+| 3 | Read path: scope-gated retrieval, bounded traversal, temporal filtering, ranking, token packing | `memory/retriever.py`, `traversal.py`, `ranker.py` |
+| 4 | Baselines: vector-only, flat-graph, and two-level controls (now expressed as retrieval-config controls of the same system, see `evals/runners/run_eval.py`) | `evals/runners/run_eval.py` |
+| 5 | Corrections: reversible, audited edit/move/archive/prune/merge/restore | `memory/corrections.py`, `api/corrections.py` |
+| 6 | Memory Explorer: React UI over typed API schemas | `web/`, `api/` |
+| 7 | Evaluation harness: CrossScopeMem generator, raw JSONL, scoring, reports | `evals/scenarios`, `evals/analysis`, `evals/metrics` |
+| 8 | External benchmark adapters and official scoring (LongMemEval-S, LoCoMo, MemoryAgentBench) | `evals/adapters`, `evals/judges`, `evals/runners/run_external.py` |
+
+Later commits (reproducibility, audit fixes, rubric judge) refine phases 7–8 and are not numbered.
+
 ## Memory hierarchy
 
 A workspace has exactly one active global root. Context scopes such as projects, repositories, courses, clients, tasks, and workspaces form a tree below it. A session belongs to one scope. Each memory declares both its containing scope and one logical level:

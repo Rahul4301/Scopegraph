@@ -21,7 +21,7 @@ One physical Neo4j database represents three logical memory levels:
 - scope memory for durable project, repository, course, client, task, or workspace facts;
 - global memory for information intended to hold across contexts.
 
-See [docs/architecture.md](docs/architecture.md), [docs/corrections.md](docs/corrections.md), [docs/schema.md](docs/schema.md), [docs/literature.md](docs/literature.md), and the latest [audit](docs/audit.md).
+Start at the [documentation index](docs/README.md); the claims ledger is [RESULTS.md](RESULTS.md). See [docs/architecture.md](docs/architecture.md), [docs/corrections.md](docs/corrections.md), [docs/schema.md](docs/schema.md), [docs/literature.md](docs/literature.md), and the latest [audit](docs/audit.md).
 
 ## Requirements
 
@@ -182,7 +182,7 @@ The integration test is opt-in so `make test` stays deterministic and runnable w
 
 ## Experiment outputs
 
-Evaluation writes append-only JSONL records to `results/raw/`, derived aggregates to `results/processed/`, plots to `results/figures/`, and tables to `results/tables/`. Generated outputs are ignored by Git; configurations and schemas remain versioned.
+Evaluation writes append-only JSONL records to `results/raw/`, derived aggregates to `results/processed/`, and tables to `results/tables/`. Generated outputs are ignored by Git; configurations and schemas remain versioned.
 
 ## License
 

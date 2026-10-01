@@ -147,12 +147,13 @@ async def test_batch_artifact_is_shared_and_reportable(tmp_path):
     assert {row.ablation for row in rows} == {
         "full",
         "vector_only_control",
+        "vector_scope_filter",
         "flat_graph_control",
         "two_level_control",
         "no_graph_traversal",
         "no_temporal_status",
     }
-    assert len({row.config_hash for row in rows}) == 6
+    assert len({row.config_hash for row in rows}) == 7
     summary = aggregate_records(rows)
     assert summary["scopegraph"]["recall_at_8"] == 1
     assert "scopegraph/flat_graph_control" in summary
