@@ -10,7 +10,6 @@ from pathlib import Path
 
 from evals.analysis.aggregate import (
     aggregate_records,
-    confidence_interval_report,
     load_jsonl,
     locomo_diagnostics,
     score_record,
@@ -66,28 +65,12 @@ def write_text(path: str | Path, text: str) -> None:
     destination.write_text(text)
 
 
-# --- human-readable run report -------------------------------------------------------------
+# --- run report -----------------------------------------------------------------------------
 
-HEADLINE_METRICS = (
-    ("recall_at_8", "Found the evidence (Recall@8)", False),
-    ("cross_scope_contamination", "Pulled in other scopes' memories", True),
-    ("stale_memory_error_rate", "Returned outdated memories", True),
-    ("exact_match", "Answered correctly (exact match)", False),
-    ("official_llm_judge_accuracy", "Answered correctly (judge)", False),
-)
 QUESTION_COLUMNS = (
     "condition", "account", "question_id", "type", "question", "expected", "answer", "correct",
     "gold_found", "other_scope_memories", "retrieval_ms", "answer_ms",
 )
-
-
-def _pct(value: object) -> str:
-    return "—" if value is None else f"{float(value):.1%}"  # type: ignore[arg-type]
-
-
-def _short(text: object, width: int = 70) -> str:
-    flat = " ".join(str(text or "").split()).replace("|", "/")
-    return flat if len(flat) <= width else flat[: width - 1] + "…"
 
 
 def _expected(record: EvaluationRecord) -> str:
@@ -130,144 +113,55 @@ def question_rows(records: list[EvaluationRecord]) -> list[dict[str, object]]:
     return rows
 
 
-def _dataset_section(dataset: str, records: list[EvaluationRecord]) -> list[str]:
-    summary = aggregate_records(records)
-    out = [f"## {dataset}", ""]
-    metrics = [m for m in HEADLINE_METRICS if any(m[0] in v for v in summary.values())]
-    if dataset != "cross_scope_mem":
-        # Scope contamination, stale rate and source-recall mean little on one-scope datasets.
-        metrics = [(key, label, lower) for key, label, lower in metrics
-                   if key.startswith("official_")]
-        metrics += [(key, key.removeprefix("official_"), False)
-                    for key in sorted({k for v in summary.values() for k in v})
-                    if key.startswith("official_") and not key.endswith(("_ci95_low", "_ci95_high"))
-                    and key not in {m[0] for m in metrics}]
-    columns = [label for _, label, _ in metrics] + ["Typical retrieval time (ms)"]
-    out += ["| Condition | " + " | ".join(columns) + " |", "|---|" + "---|" * len(columns)]
-    for system, values in summary.items():
-        cells = [_pct(values.get(key)) for key, _, _ in metrics]
-        latency = values.get("retrieval_p50_ms")
-        out.append(f"| {system} | " + " | ".join(cells)
-                   + f" | {'—' if latency is None else f'{latency:,.0f}'} |")
-    accounts = {int(v["account_count"]) for v in summary.values()}
-    out += ["", f"Accounts / conversations: {', '.join(map(str, sorted(accounts)))}. "
-            "Retrieval time is the median of the timed retrieval call only.", ""]
-    ci = confidence_interval_report(records)["paired_differences_full_minus_control"]
-    assert isinstance(ci, dict)
-    if ci:
-        out += ["### Full ScopeGraph compared with each control", "",
-                "Difference = full minus control, with a 95% interval across accounts. "
-                "For the 'pulled in' and 'outdated' rows, negative is good for full.", "",
-                "| Control | Measure | Difference | 95% interval | Verdict |",
-                "|---|---|---|---|---|"]
-        for label, entry in ci.items():
-            for key, name, _ in metrics:
-                m = entry["metrics"].get(key)
-                if m is None:
-                    continue
-                low, high = m["ci95_low"], m["ci95_high"]
-                interval = "—" if low is None else f"{low:+.3f} to {high:+.3f}"
-                verdict = {"full": "full is better", "control": "control is better"}.get(
-                    m["favours"], "no clear difference")
-                out.append(f"| {label.split('/')[-1]} | {name} | {m['mean_difference']:+.3f} "
-                           f"| {interval} | {verdict} |")
-        out.append("")
-    if dataset == "locomo":
-        out += _locomo_lines(records)
-    return out
+# Scope-isolation and string-match metrics are not meaningful on one-scope external datasets
+# (LoCoMo category 5 even stores the wrong answer as gold), so they are not listed for them.
+EXTERNAL_EXCLUDED = frozenset({
+    "exact_match", "token_f1", "cross_scope_contamination", "any_cross_scope_contamination",
+    "stale_memory_error_rate",
+})
 
 
-def _locomo_lines(records: list[EvaluationRecord]) -> list[str]:
-    out = ["### LoCoMo by question category", ""]
-    for system, block in locomo_diagnostics(records).items():
-        assert isinstance(block, dict)
-        a, b = block["all_categories"], block["excluding_category_5"]
-        out += [f"**{system}** — accuracy {_pct(a['judge_accuracy']['mean'])} with all "
-                f"categories, {_pct(b['judge_accuracy']['mean'])} without category 5 "
-                "(category 5 is graded by whether the model abstains).", "",
-                "| Category | Questions | Accuracy | Gold evidence found (retrieved) | "
-                "Gold evidence shown to the model | Found none of it |",
-                "|---|---|---|---|---|---|"]
-        for category, st in block["categories"].items():
-            out.append(
-                f"| {category} | {st['n']} | {_pct(st['judge_accuracy'])} "
-                f"| {_pct(st['gold_source_recall_retrieved'])} "
-                f"| {_pct(st['gold_source_recall_delivered'])} "
-                f"| {_pct(st['zero_gold_retrieved_rate'])} |"
-            )
-        out.append("")
-    return out
-
-
-def _mistakes(records: list[EvaluationRecord], limit: int = 15) -> list[str]:
-    full = [r for r in records if r.ablation == "full"]
-    wrong = [r for r in full if _is_correct(r) is False]
-    heading = "answered wrong"
-    if not wrong:
-        wrong = [r for r in full if score_record(r).metrics.get("gold_hit_at_8") == 0.0]
-        heading = "did not retrieve the evidence"
-    if not wrong:
-        return ["## Mistakes", "", f"None: full ScopeGraph retrieved the evidence for all "
-                f"{len(full)} questions.", ""]
-    out = [f"## Where full ScopeGraph {heading} ({len(wrong)} of {len(full)} questions)", ""]
-    if wrong:
-        out += ["| Account | Question | Expected | Got |", "|---|---|---|---|"]
-        out += [f"| {r.scenario_id} | {_short(r.question)} | {_short(_expected(r), 45)} "
-                f"| {_short(r.answer or '—', 45)} |" for r in wrong[:limit]]
-        if len(wrong) > limit:
-            out.append(f"\n…and {len(wrong) - limit} more; all rows are in `questions.csv`.")
-    return [*out, ""]
+def _value(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return str(int(value)) if float(value).is_integer() else f"{value:.4f}"
 
 
 def write_readable_report(
     jsonl_paths: Sequence[Path], destination: Path, *, stem: str | None = None
 ) -> Path:
-    """Write ``report.md`` (read this) and ``questions.csv`` (every question) for a run.
+    """Write ``report.md`` (``metric: value`` lines per condition) and ``questions.csv``.
 
     With ``stem`` the files are named ``<stem>.report.md`` / ``<stem>.questions.csv`` so they
-    can sit beside a single JSONL file.
+    can sit beside a single JSONL file. Datasets are listed separately, never mixed.
     """
     prefix = f"{stem}." if stem else ""
     records = [r for path in jsonl_paths for r in load_jsonl([path])]
     destination.mkdir(parents=True, exist_ok=True)
-    meta: dict[str, object] = {}
-    for candidate in (jsonl_paths[0].parent / "run.json", jsonl_paths[0].with_suffix(".run.json")):
-        if candidate.exists():
-            meta = json.loads(candidate.read_text())
-            break
-    git = meta.get("git") if isinstance(meta.get("git"), dict) else {}
     first = records[0]
     title = stem or (destination.parent.name if destination.name == "report" else destination.name)
-    lines = [
-        f"# Run {title}",
-        "",
-        f"- **Date (UTC):** {str(first.timestamp)[:16]}  ",
-        f"- **Commit:** {str(git.get('commit', first.git_commit))[:7]}"  # type: ignore[union-attr]
-        + (" (uncommitted changes)" if git.get("dirty") else "") + "  ",  # type: ignore[union-attr]
-        f"- **Mode:** {first.evaluation_mode}  ",
-        f"- **Questions:** {len(records):,} across "
-        f"{len({r.system + '/' + r.ablation for r in records})} condition(s)",
-        "",
-        "How to read this: every table is one dataset; datasets are never mixed. "
-        "Percentages are averages over questions. Detail for every question is in "
-        "`questions.csv`; field definitions are in `results/SCHEMA.md`.", "",
-    ]
+    lines = [f"# Run {title}", "", f"mode: {first.evaluation_mode}",
+             f"date (UTC): {str(first.timestamp)[:16]}", f"commit: {str(first.git_commit)[:7]}", ""]
     for dataset in sorted({r.dataset for r in records}):
-        lines += _dataset_section(dataset, [r for r in records if r.dataset == dataset])
-    lines += _mistakes(records)
-    notes = []
-    if str(first.evaluation_mode).find("oracle") >= 0 or "answer=not-evaluated" in str(
-        first.evaluation_mode
-    ):
-        notes.append("Offline run: facts come from the generator's oracle labels, embeddings are "
-                     "a local hash, and no answer model ran, so 'answered correctly' is blank.")
-    if any(r.ablation == "vector_scope_filter" for r in records):
-        notes.append("`vector_scope_filter` is 0% 'pulled in other scopes' by construction: it "
-                     "filters on the same allowed scopes the measure uses.")
-    if len({r.scenario_id for r in records}) < 10:
-        notes.append("Fewer than 10 accounts/conversations: intervals are not pilot-grade.")
-    if notes:
-        lines += ["## Caveats", ""] + [f"- {n}" for n in notes] + [""]
+        subset = [r for r in records if r.dataset == dataset]
+        lines += [f"## {dataset}", ""]
+        locomo = locomo_diagnostics(subset) if dataset == "locomo" else {}
+        for system, values in aggregate_records(subset).items():
+            lines.append(f"### {system}")
+            for name in sorted(values):
+                if name.endswith(("_ci95_low", "_ci95_high")):
+                    continue
+                if dataset != "cross_scope_mem" and name in EXTERNAL_EXCLUDED:
+                    continue
+                lines.append(f"{name}: {_value(values[name])}")
+            block = locomo.get(system if "/" in system else f"{system}/full")
+            if isinstance(block, dict):
+                without_5 = block["excluding_category_5"]["judge_accuracy"]["mean"]
+                lines.append(f"judge_accuracy_without_category_5: {_value(without_5)}")
+                for category, stats in block["categories"].items():
+                    lines.append(f"category_{category}_judge_accuracy: "
+                                 f"{_value(stats['judge_accuracy'])}")
+            lines.append("")
     report = destination / f"{prefix}report.md"
     report.write_text("\n".join(lines))
     with (destination / f"{prefix}questions.csv").open("w", newline="") as handle:

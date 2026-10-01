@@ -155,9 +155,9 @@ turn) measure different things and must not be compared or averaged.
 ## Run artifacts
 
 New runs are named by local start time, `mm_dd__hh_mm` (a batch is a directory of that name; a
-second run in the same minute gets `_2`). When a run finishes it writes **`report.md`** (the file to
-read: headline table, full-vs-control comparison, LoCoMo categories, mistakes, caveats) and
-**`questions.csv`** (one row per question for spreadsheets). The raw `.jsonl` is the machine record.
+second run in the same minute gets `_2`). When a run finishes it writes **`report.md`** (a short list of
+`metric: value` lines for every condition: accuracy, F1, recall, contamination, latency, tokens, and so
+on; LoCoMo adds accuracy by category and without category 5) and **`questions.csv`** (one row per question for spreadsheets). The raw `.jsonl` is the machine record.
 `make eval-report` adds the detailed JSON/tables/figure under `report/`.
 
 Every new run writes `run.json` (batch directories) or `<name>.run.json` (single JSONL files):

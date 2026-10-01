@@ -239,8 +239,8 @@ async def test_new_runs_use_timestamp_names_and_write_a_readable_report(tmp_path
     batch = Path(paths[0]).parent
     assert re.fullmatch(r"\d\d_\d\d__\d\d_\d\d", batch.name)
     text = (batch / "report.md").read_text()
-    assert "Full ScopeGraph compared with each control" in text
-    assert "Pulled in other scopes' memories" in text
+    assert "### scopegraph/vector_scope_filter" in text
+    assert "cross_scope_contamination: " in text
     header = (batch / "questions.csv").read_text().splitlines()[0]
     assert header.startswith("condition,account,question_id")
 
@@ -253,3 +253,25 @@ async def test_new_runs_use_timestamp_names_and_write_a_readable_report(tmp_path
     assert re.fullmatch(r"\d\d_\d\d__\d\d_\d\d\.jsonl", out.name)
     assert (tmp_path / "ext" / f"{out.stem}.report.md").exists()
     assert (tmp_path / "ext" / f"{out.stem}.questions.csv").exists()
+
+
+def test_report_is_just_metric_name_value_lines():
+    import tempfile
+
+    from evals.analysis.tables import write_readable_report
+
+    with tempfile.TemporaryDirectory() as folder:
+        source = Path(folder) / "run.jsonl"
+        rows = paired(MIN_PILOT_ACCOUNTS) + [
+            locomo("1", "1", 1.0, ["a"], ["a"], ["a"]),
+            locomo("2", "5", 0.0, ["b"], [], []),
+        ]
+        source.write_text("".join(r.model_dump_json() + "\n" for r in rows))
+        text = write_readable_report([source], Path(folder) / "out").read_text()
+    assert "### scopegraph/vector_only_control" in text
+    assert "cross_scope_contamination: " in text and "recall_at_8: " in text
+    locomo_part = text[text.index("## locomo"):]
+    assert "official_llm_judge_accuracy: 0.5000" in locomo_part
+    assert "judge_accuracy_without_category_5: 1" in locomo_part
+    assert "category_1_judge_accuracy: 1" in locomo_part
+    assert "exact_match" not in locomo_part and "cross_scope_contamination" not in locomo_part
