@@ -28,6 +28,8 @@ class ArmContext:
     candidates: int = 0
     retrieval_seconds: float = 0.0
     retrieval_cost: CostSink = field(default_factory=CostSink)
+    # Everything the memory system holds for this history (arms B and D), for gold-in-store.
+    stored_text: str | None = None
 
 
 def fill_to_budget(texts: list[str], budget: int) -> list[str]:

@@ -49,9 +49,14 @@ def session_messages(session: Session) -> list[dict[str, str]]:
 
 
 def build_memory_config(cfg: dict[str, Any], vector_path: str, history_db: str) -> dict[str, Any]:
+    llm: dict[str, Any] = {"model": cfg["extraction_model"]}
+    if cfg.get("extraction_reasoning_effort"):
+        # Mem0 only recognises its own list of reasoning models. Declaring the model as one makes
+        # it send just messages, response_format and reasoning_effort.
+        llm |= {"is_reasoning_model": True, "reasoning_effort": cfg["extraction_reasoning_effort"]}
     return {
         "history_db_path": history_db,
-        "llm": {"provider": "openai", "config": {"model": cfg["extraction_model"]}},
+        "llm": {"provider": "openai", "config": llm},
         "embedder": {"provider": "openai", "config": {"model": cfg["embedding_model"]}},
         "vector_store": {
             "provider": "qdrant",
@@ -83,6 +88,10 @@ class Mem0Arm:
         self.ingest_sink = CostSink()
         self.query_sink = CostSink()
         self._ingested: set[str] = set()
+        # Sessions already written per store, so as-of checkpoints add only the new sessions.
+        self._sessions_done: dict[str, set[str]] = {}
+        self._documents_done: set[str] = set()
+        self._stored_text: dict[str, str] = {}
 
     @classmethod
     def create(
@@ -101,19 +110,38 @@ class Mem0Arm:
         meter.wrap(memory.embedding_model.client)
         return cls(cfg, retrieval, meter, memory)
 
-    def stored_count(self, user_id: str) -> int:
+    def stored_memories(self, user_id: str) -> list[str]:
         found = self.memory.get_all(filters={"user_id": user_id}, top_k=100_000)
-        return len(found["results"])
+        return [str(r["memory"]) for r in found["results"]]
+
+    def stored_count(self, user_id: str) -> int:
+        return len(self.stored_memories(user_id))
+
+    def stored_text(self, user_id: str) -> str:
+        """All stored facts for one store, cached until the next write to that store."""
+        if user_id not in self._stored_text:
+            self._stored_text[user_id] = "\n".join(self.stored_memories(user_id))
+        return self._stored_text[user_id]
+
+    def _batch_size(self, n_messages: int) -> int:
+        """Messages per add call: one turn, ten turns (the library-style default), or a whole
+        session. The pre-registered default is ten."""
+        granularity = self.cfg.get("write_granularity", "ten")
+        if granularity == "turn":
+            return 1
+        if granularity == "session":
+            return max(1, n_messages)
+        return int(self.cfg["turns_per_add"])
 
     def prepare(self, history: History) -> IngestStats | None:
-        user_id = history.user_id
         if history.history_id in self._ingested:
             return None
+        user_id = history.store_key
         before = self.ingest_sink.snapshot()
         start = time.perf_counter()
-        step = int(self.cfg["turns_per_add"])
+        done = self._sessions_done.setdefault(user_id, set())
         with self.meter.use_sink(self.ingest_sink):
-            if history.document is not None:
+            if history.document is not None and user_id not in self._documents_done:
                 # A verbatim document (MemoryAgentBench): one fixed-size chunk per add call.
                 size = int(self.cfg["document_chunk_tokens"])
                 for n, chunk in enumerate(chunk_document(history.document, size)):
@@ -123,15 +151,30 @@ class Mem0Arm:
                         metadata={"chunk": n},
                         infer=self.infer,
                     )
-            for session in history.sessions:
-                messages = session_messages(session)
-                for i in range(0, len(messages), step):
-                    self.memory.add(
-                        messages[i : i + step],
-                        user_id=user_id,
-                        metadata={"session_id": session.session_id},
-                        infer=self.infer,
+                self._documents_done.add(user_id)
+            batches = [
+                (session, messages[i : i + self._batch_size(len(messages))])
+                for session in history.sessions
+                if session.session_id not in done
+                for messages in [session_messages(session)]
+                for i in range(0, len(messages), self._batch_size(len(messages)))
+            ]
+            for n, (session, batch) in enumerate(batches, start=1):
+                self.memory.add(
+                    batch,
+                    user_id=user_id,
+                    metadata={"session_id": session.session_id},
+                    infer=self.infer,
+                )
+                if n % 5 == 0 or n == len(batches):
+                    # Each add is a model call and takes seconds; say so rather than look hung.
+                    print(
+                        f"  ingesting {history.history_id}: {n}/{len(batches)} adds, "
+                        f"{time.perf_counter() - start:.0f}s",
+                        flush=True,
                     )
+            done.update(s.session_id for s in history.sessions)
+        self._stored_text.pop(user_id, None)
         self._ingested.add(history.history_id)
         return IngestStats(
             seconds=time.perf_counter() - start,
@@ -155,7 +198,7 @@ class Mem0Arm:
         before = self.query_sink.snapshot()
         start = time.perf_counter()
         with self.meter.use_sink(self.query_sink):
-            results = self.search(item.question, history.user_id)
+            results = self.search(item.question, history.store_key)
         seconds = time.perf_counter() - start
         kept = fill_to_budget([r["memory"] for r in results], int(self.retrieval["token_budget"]))
         text = "\n".join(f"- {m}" for m in kept)
@@ -167,4 +210,5 @@ class Mem0Arm:
             candidates=len(results),
             retrieval_seconds=seconds,
             retrieval_cost=self.query_sink.since(before),
+            stored_text=self.stored_text(history.store_key),
         )

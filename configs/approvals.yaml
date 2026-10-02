@@ -1,12 +1,13 @@
 # Approval gates. The CLI refuses a paid command until the matching gate is true.
 # Only the study owner edits this file; an agent never flips a gate on its own.
 
-# G1: arms B and C embed text with text-embedding-3-small, a model other than GPT-6 Luna and
-# GPT-5 nano, and arm B extracts facts with Mem0's default gpt-5-mini. Approve to allow.
-g1_extra_models: false
+# G1: arms B, C and D embed text with text-embedding-3-small, a model other than GPT-6 Luna and
+# GPT-5 nano. Arm B (and D) extract facts with GPT-6 Luna; no other chat model is used. Approve to allow.
+g1_extra_models: true
 
-stage_smoke: false     # run with --num_cases: a few cases to check the plumbing
+stage_smoke: true     # run with --num_cases: a few cases to check the plumbing
 stage_pilot: false
+g2_supermemory_self_hosted: true
 stage_chat_locomo: false
 stage_chat_longmemeval: false
 stage_chat_memoryagentbench: false

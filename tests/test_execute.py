@@ -1,6 +1,7 @@
 """One named run end to end with fake clients: file naming, report content, immutability, resume."""
 
 import json
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace as NS
 
@@ -15,8 +16,10 @@ from memstudy.budget import Budget, BudgetExceeded
 from memstudy.cli import main, stage_gate
 from memstudy.config import config_hash
 from memstudy.execute import (
+    LivePrinter,
     ResultExists,
     execute_run,
+    format_summary,
     resolve_system,
     result_name,
     select_cases,
@@ -41,62 +44,80 @@ def rig(prices, budget, cfg, fn=handler):
     return client, reader, judge
 
 
-def run(prices, budget, cfg, tmp_path, n_items=2, num_cases=2, fn=handler):
+def run(
+    prices, budget, cfg, tmp_path, n_items=2, num_cases=2, fn=handler, name="no_memory_locomo_t",
+    progress=None, workers=1,
+):
     client, reader, judge = rig(prices, budget, cfg, fn)
     items = [make_item("h1", i) for i in range(n_items)]
     path = execute_run(
         system="no_memory", eval_name="locomo", num_cases=num_cases,
         arm=FullContextArm(100_000, 0.05), cases=items, histories={"h1": make_history("h1")},
         reader=reader, judge=judge, stage="smoke", budget_stage="pilot",
-        results_dir=tmp_path, cfg=cfg, cfg_hash=config_hash(cfg),
+        results_dir=tmp_path, cfg=cfg, cfg_hash=config_hash(cfg), name=name, progress=progress,
+        workers=workers,
     )
     return client, path
 
 
-def test_result_names_follow_system_eval_numcases():
-    assert result_name("mem0", "locomo", 1) == "mem0_locomo_1"
-    assert result_name("no_memory", "longmemeval", None) == "no_memory_longmemeval"
+def test_result_names_follow_system_eval_and_timestamp():
+    when = datetime(2026, 10, 2, 9, 32, 45)
+    assert result_name("mem0", "locomo", when) == "mem0_locomo_20261002_093245"
+    assert result_name("no_memory", "longmemeval", when) == "no_memory_longmemeval_20261002_093245"
     assert resolve_system("A") == ("no_memory", "A") and resolve_system("rag") == ("rag", "C")
     assert resolve_system("B")[0] == "mem0"
+    assert resolve_system("supermemory") == ("supermemory", "D") and resolve_system("D")[1] == "D"
     with pytest.raises(ValueError):
-        resolve_system("supermemory")
+        resolve_system("zep")
 
 
-def test_select_cases_takes_the_first_primary_items():
-    items = [make_item("h", i) for i in range(4)]
+def test_select_cases_takes_whole_histories_in_loader_order():
+    items = [make_item("h", i) for i in range(4)] + [make_item("g", i) for i in range(2)]
     items[1] = items[1].model_copy(update={"primary": False})
-    assert [i.item_id for i in select_cases(items, 2, False)] == ["h-0000", "h-0002"]
-    assert len(select_cases(items, None, False)) == 3 and len(select_cases(items, None, True)) == 4
+    assert [i.item_id for i in select_cases(items, 1, False)] == ["h-0000", "h-0002", "h-0003"]
+    assert [i.item_id for i in select_cases(items, 1, True)] == ["h-0000", "h-0001", "h-0002", "h-0003"]
+    assert len(select_cases(items, 2, False)) == 5 and len(select_cases(items, None, True)) == 6
     with pytest.raises(ValueError):
         select_cases(items, 0, False)
 
 
-def test_smoke_run_writes_one_readable_file_named_by_system_eval_and_cases(prices, budget, cfg, tmp_path):
+def test_smoke_run_writes_one_readable_file_and_nothing_else(prices, budget, cfg, tmp_path):
     _, path = run(prices, budget, cfg, tmp_path)
-    assert path == tmp_path / "no_memory_locomo_2.json"
+    assert path == tmp_path / "no_memory_locomo_t.json"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["ledger.jsonl", "no_memory_locomo_t.json"]
     report = json.loads(path.read_text())
     assert list(report) == ["run", "summary", "cases", "metric_notes"]
     assert report["run"]["memory_system"] == "no_memory" and report["run"]["num_cases"] == 2
-    assert report["run"]["stage"] == "smoke"
+    assert report["run"]["stage"] == "smoke" and report["run"]["status"] == "complete"
     s = report["summary"]
-    assert s["cases"]["selected"] == 2 and s["cases"]["completed"] == 2 and s["cases"]["errored"] == 0
-    assert s["accuracy"]["judge"] == 1.0 and s["accuracy"]["exact_match"] == 1.0
+    assert s["cases"]["questions"] == 2 and s["cases"]["answered"] == 2 and s["cases"]["errored"] == 0
+    assert s["cases"]["conversations"] == 1 and s["cases"]["incorrect_cases"] == []
+    assert s["accuracy"]["judge"] == 1.0 and s["accuracy"]["judge_correct"] == 2
+    assert s["accuracy"]["exact_match"] == 1.0 and s["accuracy"]["token_f1"] == 1.0
     assert s["accuracy"]["gold_in_context"] == 1.0 and s["by_category"]["cat1"]["n"] == 2
     assert s["tokens"]["reader_total"]["input"] == 8000 and s["tokens"]["answer_mean"] == 5
-    assert s["cost_usd"]["total"] > 0 and s["cost_usd"]["per_item"] == pytest.approx(s["cost_usd"]["total"] / 2)
-    assert s["latency_ms"]["reader"]["p50"] is not None and s["ingest"]["histories"] == 0
+    assert s["cost_usd"]["total"] > 0
+    assert s["cost_usd"]["per_item"] == pytest.approx(s["cost_usd"]["total"] / 2, abs=1e-5)
+    assert s["time"]["total_wall_s"] >= 0 and s["time"]["per_question_s"]["p50"] is not None
+    assert s["time"]["judge_s"]["mean"] is not None and s["ingest"]["histories"] == 0
     first = report["cases"][0]
     assert first["case"] == 1 and first["status"] == "ok" and first["answer"] == "alpha"
-    assert first["gold"] == ["alpha"] and first["correct"] is True and first["cost_usd"]["total"] > 0
+    assert first["gold"] == ["alpha"] and first["correct"] is True and first["token_f1"] == 1.0
+    assert first["cost_usd"] > 0 and first["seconds"]["total"] >= 0
+    assert "alpha" in format_summary(report) or "judge accuracy" in format_summary(report)
 
 
-def test_full_run_is_named_without_a_case_count(prices, budget, cfg, tmp_path):
-    _, path = run(prices, budget, cfg, tmp_path, num_cases=None)
-    assert path.name == "no_memory_locomo.json"
-    assert json.loads(path.read_text())["run"]["num_cases"] == "all"
+def test_live_printer_shows_question_gold_answer_verdict_and_f1(prices, budget, cfg, tmp_path, capsys):
+    run(prices, budget, cfg, tmp_path, progress=LivePrinter(2))
+    out = capsys.readouterr().out
+    for label in ("question:", "actual answer:", "given answer:", "judge: CORRECT", "f1: 1.000"):
+        assert label in out
+    assert "[2/2]" in out and "running: 2/2 correct" in out
 
 
-def test_an_existing_result_is_never_overwritten_and_costs_nothing(prices, budget, cfg, tmp_path):
+def test_a_timestamped_name_that_already_exists_is_never_overwritten_and_costs_nothing(
+    prices, budget, cfg, tmp_path
+):
     client, path = run(prices, budget, cfg, tmp_path)
     before, calls = path.read_text(), len(client.responses.calls)
     second = FakeClient(handler)
@@ -107,17 +128,19 @@ def test_an_existing_result_is_never_overwritten_and_costs_nothing(prices, budge
             reader=Reader(ModelCaller(second, prices["gpt-6-luna"], budget), cfg),
             judge=Judge(ModelCaller(second, prices["gpt-5-nano"], budget), cfg),
             stage="smoke", budget_stage="pilot", results_dir=tmp_path, cfg=cfg, cfg_hash="x",
+            name="no_memory_locomo_t",
         )
     assert path.read_text() == before and calls == 4 and not second.responses.calls
 
 
-def test_a_stopped_run_keeps_raw_records_and_resumes_without_repeating_calls(prices, cfg, tmp_path):
+def test_a_stopped_run_still_writes_its_one_file_marked_incomplete(prices, cfg, tmp_path):
     spent = Budget(tmp_path / "ledger.jsonl", stage_caps={"pilot": 0.0, "chat": 90.0})
     with pytest.raises(BudgetExceeded):
         run(prices, spent, cfg, tmp_path)
-    assert not (tmp_path / "no_memory_locomo_2.json").exists()
-    client, path = run(prices, Budget(tmp_path / "l2.jsonl"), cfg, tmp_path)
-    assert len(client.responses.calls) == 4 and path.exists()
+    report = json.loads((tmp_path / "no_memory_locomo_t.json").read_text())
+    assert report["run"]["status"].startswith("incomplete: BudgetExceeded")
+    assert report["summary"]["cases"]["answered"] == 0 and report["summary"]["cases"]["not_run"] == 2
+    assert [c["status"] for c in report["cases"]] == ["not_run", "not_run"]
 
 
 def test_failed_cases_stay_in_the_file_with_their_error(prices, budget, cfg, tmp_path):
@@ -126,7 +149,7 @@ def test_failed_cases_stay_in_the_file_with_their_error(prices, budget, cfg, tmp
     path = execute_run(
         system="no_memory", eval_name="locomo", num_cases=1, arm=big, cases=[make_item("h1", 0)],
         histories={"h1": make_history("h1")}, reader=reader, judge=judge, stage="smoke",
-        budget_stage="pilot", results_dir=tmp_path, cfg=cfg, cfg_hash="x",
+        budget_stage="pilot", results_dir=tmp_path, cfg=cfg, cfg_hash="x", name="r",
     )
     report = json.loads(path.read_text())
     assert report["summary"]["cases"]["errored"] == 1 and report["summary"]["cases"]["does_not_fit"] == ["h1"]
@@ -169,6 +192,28 @@ def test_dry_run_previews_without_gates_keys_or_calls(capsys, monkeypatch, tmp_p
     monkeypatch.chdir(ROOT)
     main(["run", "--memory_system", "no_memory", "--eval", "locomo", "--num_cases", "1", "--dry_run"])
     out = json.loads(capsys.readouterr().out)
-    assert out["dry_run"] and out["would_write"] == "results/no_memory_locomo_1.json" and out["cases"] == 1
+    assert out["dry_run"] and out["would_write"].startswith("results/no_memory_locomo_")
+    assert out["cases"] == 1 and out["questions"] > 100 and len(out["case_list"]) == 1
     assert out["case_list"][0]["fits_window"] and out["reader_worst_case_usd_total"] > 0
-    assert not Path("results/no_memory_locomo_1.json").exists()
+    assert not Path(out["would_write"]).exists()
+
+
+def test_parallel_questions_give_the_same_report_and_never_lose_or_repeat_a_case(prices, budget, cfg, tmp_path, capsys):
+    _, serial = run(prices, budget, cfg, tmp_path / "s", n_items=9, workers=1)
+    client, parallel = run(
+        prices, budget, cfg, tmp_path / "p", n_items=9, workers=4, progress=LivePrinter(9)
+    )
+    a, b = json.loads(serial.read_text()), json.loads(parallel.read_text())
+    assert b["run"]["parallel_questions"] == 4 and len(client.responses.calls) == 18
+    assert [c["item_id"] for c in b["cases"]] == [c["item_id"] for c in a["cases"]]
+    assert b["summary"]["accuracy"] == a["summary"]["accuracy"] and b["summary"]["cases"]["answered"] == 9
+    out = capsys.readouterr().out
+    assert out.count("given answer:") == 9 and "[9/9]" in out
+
+
+def test_a_budget_stop_in_a_parallel_run_still_writes_the_file(prices, cfg, tmp_path):
+    spent = Budget(tmp_path / "ledger.jsonl", stage_caps={"pilot": 0.0, "chat": 90.0})
+    with pytest.raises(BudgetExceeded):
+        run(prices, spent, cfg, tmp_path, n_items=6, workers=4)
+    report = json.loads((tmp_path / "no_memory_locomo_t.json").read_text())
+    assert report["run"]["status"].startswith("incomplete: BudgetExceeded")

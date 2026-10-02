@@ -8,7 +8,10 @@ from typing import Any
 
 from memstudy.llm import CallResult, ModelCaller
 from memstudy.prompts import JUDGE_INSTRUCTIONS, judge_prompt
-from memstudy.schema import Item
+from memstudy.schema import Item, Usage
+from memstudy.scoring import normalize
+
+RULE_MODEL = "rule:not_mentioned"
 
 _VERDICT = re.compile(r'"verdict"\s*:\s*"(CORRECT|INCORRECT)"', re.IGNORECASE)
 
@@ -45,6 +48,18 @@ class Judge:
     def grade(
         self, *, stage: str, tag: dict[str, Any], item: Item, model_answer: str
     ) -> JudgeResult:
+        # The reader's refusal string can never be right for a question that has a gold answer,
+        # so it is graded INCORRECT without a model call (and without the model's occasional slip).
+        if not item.meta.get("abstention") and normalize(model_answer) == "not mentioned":
+            verdict = CallResult(
+                text='{"verdict": "INCORRECT"}',
+                usage=Usage(),
+                latency_s=0.0,
+                model_returned=RULE_MODEL,
+                response_id="",
+                cost_usd=0.0,
+            )
+            return JudgeResult(correct=False, call=verdict)
         call = self.caller.call(
             stage=stage,
             tag={**tag, "purpose": "judge"},

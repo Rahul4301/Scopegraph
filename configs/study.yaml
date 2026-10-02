@@ -15,8 +15,8 @@ reader:
 
 judge:
   model: gpt-5-nano           # the sole grader; no second grader, no human grading
-  reasoning_effort: minimal   # lowest effort the model accepts
-  max_output_tokens: 256
+  reasoning_effort: medium    # was minimal; at minimal nano contradicted its own grading rules
+  max_output_tokens: 2048     # reasoning tokens count against this, so it needs room
 
 tokenizer:
   encoding: o200k_base        # proxy; the API's usage.input_tokens is authoritative
@@ -36,14 +36,40 @@ arms:
     threshold: 0.1            # library default
     rerank: false             # library default
     turns_per_add: 10
-    extraction_model: gpt-5-mini         # default of the pinned version, recorded
-    extraction_model_fallback: gpt-5-nano   # pre-registered switch if gpt-5-mini is withdrawn
+    extraction_model: gpt-6-luna          # same model as the reader; no other chat model is used besides the nano judge
+    extraction_reasoning_effort: none     # sent explicitly: mem0 does not know Luna, so without it
+                                          # it would send temperature and max_tokens, which Luna rejects
+    extraction_model_fallback: gpt-5-nano   # pre-registered switch if the extraction model is withdrawn
     embedding_model: text-embedding-3-small   # default of the pinned version, recorded
     document_chunk_tokens: 4096   # MemoryAgentBench: one chunk per add call
   C:
     name: rag
     chunk_tokens: 256
     embedding_model: text-embedding-3-small   # same embedder as Mem0
+  D:                          # exploratory: outside the confirmatory family (PREREG.md Section 10)
+    name: supermemory_self_hosted
+    server_version: 0.0.8     # release server-v0.0.8 (2026-08-17); repo is MIT but has no server source; 0.0.7+ locks the embedding plan
+    sdk_version: 3.62.0
+    base_url: http://localhost:6767
+    extraction_model: gpt-6-luna          # shared with arm B; set on the server as OPENAI_MODEL
+    embedding_model: text-embedding-3-small   # shared with arms B and C; server embedding provider openai
+    embedding_dimensions: 1536
+    task_type: memory         # full pipeline (facts, profile, graph)
+    search_mode: memories     # extracted facts only, like Mem0; hybrid would add raw chunks (arm C's job)
+    threshold: 0.6            # the server's own default (Mem0's library default is 0.1; scales differ)
+    rerank: false
+    rewrite_query: false
+    poll_seconds: 5
+    poll_timeout_seconds: 1800
+
+# Composite long histories (exploratory, RQ3): LongMemEval-S evidence sessions plus distractors
+# built to each target length (tokens, proxy tokenizer). The same seeded question subset is used
+# at every length. The subset size is set from pilot variance and the budget cap before the run.
+composite:
+  targets: [200000, 400000, 600000, 800000, 950000]
+  questions: 40
+  topical_threshold: 0.5      # conflict screen: share of a question's content words ...
+  topical_min_hits: 3         # ... and at least this many, found in a distractor, reject it
 
 pilot:
   locomo_questions: 30

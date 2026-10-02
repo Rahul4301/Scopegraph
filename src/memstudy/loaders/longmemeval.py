@@ -39,7 +39,10 @@ def load_longmemeval(path: Path) -> tuple[dict[str, History], list[Item]]:
                 question=entry["question"],
                 gold=str(entry["answer"]),
                 question_date=entry.get("question_date"),
-                meta={"abstention": qid.endswith("_abs")},
+                meta={
+                    "abstention": qid.endswith("_abs"),
+                    "evidence_session_ids": [str(x) for x in entry.get("answer_session_ids", [])],
+                },
             )
         )
     return histories, items

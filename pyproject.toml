@@ -12,6 +12,7 @@ license = { text = "MIT" }
 authors = [{ name = "Rahul Suthar" }]
 dependencies = [
   "mem0ai[nlp]==2.2.1",
+  "fastembed>=0.3.1",   # enables mem0 BM25 keyword search (hybrid retrieval); without it mem0 is vector-only
   "numpy>=1.26",
   "openai>=3.23,<4",
   "pyarrow>=15",
@@ -21,6 +22,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+supermemory = ["supermemory==3.62.0"]   # arm D client; the server is installed separately
 dev = [
   "mypy>=1.11,<2",
   "pytest>=8.3,<9",
@@ -54,5 +56,5 @@ packages = ["memstudy"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]
-module = ["mem0", "mem0.*", "pyarrow", "pyarrow.*", "spacy"]
+module = ["mem0", "mem0.*", "pyarrow", "pyarrow.*", "spacy", "supermemory", "supermemory.*"]
 ignore_missing_imports = true

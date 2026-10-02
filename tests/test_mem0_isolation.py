@@ -96,7 +96,10 @@ def test_longmemeval_roles_are_kept():
 
 def test_config_keeps_mem0_defaults_and_writes_nothing_under_home(cfg):
     b = build_memory_config(cfg["arms"]["B"], ".cache/v", ".cache/h.db")
-    assert b["llm"] == {"provider": "openai", "config": {"model": "gpt-5-mini"}}
+    assert b["llm"] == {
+        "provider": "openai",
+        "config": {"model": "gpt-6-luna", "is_reasoning_model": True, "reasoning_effort": "none"},
+    }
     assert b["embedder"]["config"]["model"] == "text-embedding-3-small"
     assert b["history_db_path"] == ".cache/h.db"
     assert os.path.expanduser("~/.mem0") not in b["vector_store"]["config"]["path"]

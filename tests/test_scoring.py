@@ -10,6 +10,11 @@ def test_normalize_drops_case_punctuation_and_articles():
     assert normalize("The  Dog, named Rex!") == "dog named rex"
 
 
+def test_normalize_treats_curly_quotes_like_straight_ones():
+    assert normalize("\u201cBecoming Nicole\u201d by Amy") == normalize('"Becoming Nicole" by Amy')
+    assert token_f1("\u201cBecoming Nicole\u201d", ['"Becoming Nicole"']) == 1.0
+
+
 def test_best_of_several_accepted_answers():
     golds = ["10th and 11th centuries", "in the 10th and 11th centuries"]
     assert exact_match("In the 10th and 11th centuries.", golds)

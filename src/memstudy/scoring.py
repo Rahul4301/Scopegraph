@@ -1,21 +1,27 @@
 """Deterministic answer metrics, computed beside the judge verdict and never instead of it.
 
-Normalization follows the usual QA convention (lowercase, no punctuation, no articles, collapsed
-whitespace). Every accepted answer of an item is tried and the best score is kept.
+Normalization follows the usual QA convention (lowercase, no punctuation including curly quotes
+and dashes, no articles, collapsed whitespace). Every accepted answer of an item is tried and the
+best score is kept.
 """
 
 from __future__ import annotations
 
 import re
 import string
+import unicodedata
 from collections import Counter
 
 _ARTICLES = re.compile(r"\b(a|an|the)\b")
 _PUNCT = set(string.punctuation)
 
 
+def _is_punct(ch: str) -> bool:
+    return ch in _PUNCT or unicodedata.category(ch).startswith("P")  # also curly quotes, dashes
+
+
 def normalize(text: str) -> str:
-    text = "".join(ch for ch in text.lower() if ch not in _PUNCT)
+    text = "".join(ch for ch in text.lower() if not _is_punct(ch))
     return " ".join(_ARTICLES.sub(" ", text).split())
 
 
@@ -58,3 +64,10 @@ def answer_metrics(prediction: str, context: str, golds: list[str]) -> dict[str,
         "token_f1": token_f1(prediction, golds),
         "gold_in_context": gold_in_context(context, golds),
     }
+
+
+def gold_in_store(store_text: str, golds: list[str]) -> bool:
+    """Extraction proxy: an accepted answer appears verbatim (after normalization) in the text of
+    everything a memory system stored for the history. Extracted facts paraphrase the source, so
+    this under-counts storage for extraction systems; PREREG.md Section 6 sizes that bias."""
+    return substring_match(store_text, golds)

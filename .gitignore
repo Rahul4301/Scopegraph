@@ -30,3 +30,6 @@ results/raw/*.jsonl
 # macOS
 .DS_Store
 **/.DS_Store
+
+# Supermemory self-hosted server data (holds its API key and an embedding plan)
+.supermemory/

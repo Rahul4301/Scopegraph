@@ -73,3 +73,43 @@ class ResultStore:
 
     def write_run(self, run_id: str, record: dict[str, Any]) -> None:
         self._write_new(self.root / "runs" / run_id / "run.json", record)
+
+
+class MemoryStore(ResultStore):
+    """Same interface as ResultStore, kept in memory so a run leaves no files behind. The run's
+    one result file is built from it at the end."""
+
+    def __init__(self) -> None:
+        super().__init__(Path("."))
+        self._items: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self._ingests: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self._errors: list[tuple[str, str, dict[str, Any]]] = []
+
+    def has_item(self, arm: str, bench: str, item_id: str) -> bool:
+        return (arm, bench, item_id) in self._items
+
+    def write_item(self, arm: str, bench: str, item_id: str, record: dict[str, Any]) -> None:
+        self._items[(arm, bench, item_id)] = record
+
+    def read_items(self, arm: str, bench: str) -> list[dict[str, Any]]:
+        return [r for (a, b, _), r in self._items.items() if (a, b) == (arm, bench)]
+
+    def has_ingest(self, arm: str, bench: str, history_id: str) -> bool:
+        return (arm, bench, history_id) in self._ingests
+
+    def write_ingest(
+        self, arm: str, bench: str, history_id: str, record: dict[str, Any]
+    ) -> None:
+        self._ingests[(arm, bench, history_id)] = record
+
+    def read_ingest(self, arm: str, bench: str) -> list[dict[str, Any]]:
+        return [r for (a, b, _), r in self._ingests.items() if (a, b) == (arm, bench)]
+
+    def write_error(self, arm: str, bench: str, item_id: str, record: dict[str, Any]) -> None:
+        self._errors.append((arm, bench, record))
+
+    def read_errors(self, arm: str, bench: str) -> list[dict[str, Any]]:
+        return [r for a, b, r in self._errors if (a, b) == (arm, bench)]
+
+    def write_run(self, run_id: str, record: dict[str, Any]) -> None:
+        pass

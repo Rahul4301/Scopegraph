@@ -26,10 +26,19 @@ class History(BaseModel):
     bench: str
     sessions: list[Session] = Field(default_factory=list)
     document: str | None = None  # verbatim text for benchmarks that are not session-structured
+    # As-of querying: a checkpoint history is a prefix of a conversation and shares that
+    # conversation's memory store, so its store_id is the full conversation's history_id.
+    store_id: str | None = None
 
     @property
     def user_id(self) -> str:
         return make_user_id(self.bench, self.history_id)
+
+    @property
+    def store_key(self) -> str:
+        """Scope of the memory store a history reads and writes. Equal to user_id except for
+        as-of checkpoints, which all share the store of the conversation they are cut from."""
+        return make_user_id(self.bench, self.store_id or self.history_id)
 
 
 class Item(BaseModel):

@@ -99,7 +99,7 @@ def test_incomplete_response_raises_but_cost_is_still_charged(prices, budget, cf
     assert budget.spent("pilot") > 0
 
 
-def test_judge_logs_reasoning_tokens_and_uses_lowest_effort(prices, budget, cfg):
+def test_judge_logs_reasoning_tokens_and_uses_the_configured_effort(prices, budget, cfg):
     handler = lambda kw: make_response(  # noqa: E731
         text='{"verdict": "CORRECT"}', input_tokens=300, output=64, reasoning=48
     )
@@ -108,9 +108,9 @@ def test_judge_logs_reasoning_tokens_and_uses_lowest_effort(prices, budget, cfg)
         stage="pilot", tag={"arm": "A"}, item=make_item(), model_answer="alpha"
     )
     sent = client.responses.calls[0]
-    assert sent["reasoning"] == {"effort": "minimal"}
+    assert sent["reasoning"] == {"effort": cfg["judge"]["reasoning_effort"]}
     assert "temperature" not in sent
-    assert sent["max_output_tokens"] == 256
+    assert sent["max_output_tokens"] == cfg["judge"]["max_output_tokens"]
     assert result.correct is True and result.call.usage.reasoning_tokens == 48
     expected = (300 * 0.05 + 64 * 0.40) / 1e6
     assert cost_usd(prices["gpt-5-nano"], result.call.usage) == pytest.approx(expected)
@@ -128,3 +128,16 @@ def test_judge_logs_reasoning_tokens_and_uses_lowest_effort(prices, budget, cfg)
 )
 def test_verdict_parsing(text, expected):
     assert parse_verdict(text) is expected
+
+
+def test_not_mentioned_is_graded_incorrect_without_a_call_unless_the_item_is_an_abstention(
+    prices, budget, cfg
+):
+    client, caller = _caller(prices, budget, lambda kw: make_response(text='{"verdict": "CORRECT"}'), "gpt-5-nano")
+    judge = Judge(caller, cfg)
+    ruled = judge.grade(stage="pilot", tag={}, item=make_item(), model_answer="Not mentioned.")
+    assert ruled.correct is False and not client.responses.calls
+    assert ruled.call.cost_usd == 0.0 and ruled.call.model_returned == "rule:not_mentioned"
+    abstain = make_item().model_copy(update={"meta": {"abstention": True}})
+    asked = judge.grade(stage="pilot", tag={}, item=abstain, model_answer="Not mentioned")
+    assert asked.correct is True and len(client.responses.calls) == 1
