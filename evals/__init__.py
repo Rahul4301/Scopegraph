@@ -1,1 +1,0 @@
-"""ScopeGraph evaluation package."""
