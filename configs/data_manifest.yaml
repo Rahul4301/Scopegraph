@@ -1,13 +1,39 @@
-# Checksums of the benchmark files in data/ (git-ignored). Verified by `memstudy verify-data`.
-# SHA-256 computed locally on 2026-10-01 from the files the loaders read.
-# The SWE Context Bench entries are filled in when that data is downloaded after approval.
+# Checksums of the benchmark files in data/ and pinned commits of the cloned repositories in
+# third_party/ (both git-ignored). Verified by `memstudy verify-data`. Computed 2026-10-01.
 
 files:
-  - path: data/locomo/locomo10.json
-    source_url: https://github.com/snap-research/locomo
-    bytes: 2805274
-    sha256: 79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4
-  - path: data/longmemeval/longmemeval_s_cleaned.json
-    source_url: https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned
-    bytes: 277383467
-    sha256: d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442
+- path: data/locomo/locomo10.json
+  source_url: https://github.com/snap-research/locomo
+  bytes: 2805274
+  sha256: 79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4
+- path: data/longmemeval/longmemeval_s_cleaned.json
+  source_url: https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned
+  bytes: 277383467
+  sha256: d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442
+- path: data/swectx/data/SWEContextBench_Experience.parquet
+  source_url: https://huggingface.co/datasets/jiayuanz3/SWEContextBench
+  bytes: 3968145
+  sha256: e10d452123257fabc604e77985e34184ad7504788106ee3ac3e7e8f621303610
+- path: data/swectx/data/SWEContextBench_Lite_Experience.parquet
+  source_url: https://huggingface.co/datasets/jiayuanz3/SWEContextBench
+  bytes: 1119540
+  sha256: 7a21f37b8bc179c7db5beeb14e88ac538ba283455c776e6b2535bbfb6e3551b4
+- path: data/swectx/data/SWEContextBench_Related.parquet
+  source_url: https://huggingface.co/datasets/jiayuanz3/SWEContextBench
+  bytes: 2222795
+  sha256: 394ce86dbf8e5b7471264625ad4879d70c676a5b43dd16e4d7416592547c8892
+- path: data/swectx/data/SWEContextBench_Related_Lite.parquet
+  source_url: https://huggingface.co/datasets/jiayuanz3/SWEContextBench
+  bytes: 538469
+  sha256: 1930b392f7beb17a0d87c2e79d1eb889af2c5996b23a003386651ba64a68b8f3
+- path: data/swectx/data/SWEContextBench_Relationship.parquet
+  source_url: https://huggingface.co/datasets/jiayuanz3/SWEContextBench
+  bytes: 24334
+  sha256: f59b1a0fd021c6608bd185f15113cbbd26f804c20494da6d4827adb9ea70edb5
+repos:
+- path: third_party/SWEContextBench
+  source_url: https://github.com/jiayuanz3/SWEContextBench
+  commit: 12ad6ab14e18e9378e1e293c9edbc3f7ce43d27b
+- path: third_party/SWE-bench
+  source_url: https://github.com/SWE-bench/SWE-bench
+  commit: 02e7a74ffd0b707aab73d203fe87bdc7c76afc8e

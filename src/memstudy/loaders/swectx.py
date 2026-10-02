@@ -7,7 +7,9 @@ verified-correct experience, not an agent trajectory.
 
 Scope mapping: one history per repository. user_id = "swectx_<owner>__<repo>". A related task
 only ever queries the history of its own repository, so memories from repo A are never
-retrievable in repo B.
+retrievable in repo B. A related task that is also an experience task is excluded (its own
+solution would be in the pool). The pool is not filtered by date, so it can hold tasks created
+after the target; that follows the benchmark's own oracle pool and is a stated limitation.
 """
 
 from __future__ import annotations
@@ -44,6 +46,12 @@ def _rows(path: Path) -> list[dict[str, Any]]:
     return list(pq.read_table(path).to_pylist())
 
 
+def overlap_ids(experience: list[dict[str, Any]], related: list[dict[str, Any]]) -> list[str]:
+    """Related tasks that also sit in the experience pool. They are excluded from the items."""
+    pool = {r["instance_id"] for r in experience}
+    return sorted(r["instance_id"] for r in related if r["instance_id"] in pool)
+
+
 def build_swectx(
     experience: list[dict[str, Any]],
     related: list[dict[str, Any]],
@@ -72,7 +80,9 @@ def build_swectx(
     items: list[Item] = []
     for row in related:
         if row["instance_id"] in experience_ids:
-            raise ValueError(f"{row['instance_id']} is in both the experience and related sets")
+            # The task's own solution is in its repository's pool, so memory would hand the
+            # reader the answer. Excluded from evaluation; see overlap_ids.
+            continue
         hid = repo_history_id(row["repo"])
         if hid not in histories:
             continue  # no experience for this repository, nothing for memory to supply

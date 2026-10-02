@@ -50,12 +50,13 @@ class Sandbox(Protocol):
 
 
 class DockerSandbox:
-    """One container per task. The repository is already at /testbed in SWE-bench images."""
+    """One container per task. The repository is at /testbed. The benchmark images are amd64, so on
+    Apple Silicon they run under emulation (slow but the same image the grader uses)."""
 
-    def __init__(self, image: str, workdir: str = "/testbed") -> None:
+    def __init__(self, image: str, workdir: str = "/testbed", platform: str = "linux/amd64") -> None:
         self.workdir = workdir
         started = subprocess.run(
-            ["docker", "run", "-d", "--rm", image, "sleep", "infinity"],
+            ["docker", "run", "-d", "--rm", "--platform", platform, image, "sleep", "infinity"],
             capture_output=True,
             text=True,
             check=True,
@@ -99,16 +100,32 @@ class Grader(Protocol):
     def grade(self, item: Item, patch: str) -> GradeResult: ...
 
 
+PATCH_FAILED = "Patch failed"  # the model patch did not apply: a real, unresolved outcome
+
+
 def parse_report(report: dict[str, Any], instance_id: str) -> GradeResult:
-    """Map the harness run report (resolved_ids, unresolved_ids, error_ids, ...) to a result."""
+    """Map a harness run report to a result.
+
+    The benchmark harness lists resolved_ids and unresolved_ids, and puts a per-instance record
+    under the instance id. A record with an `error` is an infrastructure failure (image missing,
+    no tests, image commit or verifier setup failed) and raises, except "Patch failed", which
+    means the model's patch did not apply and counts as unresolved.
+    """
+    record = report.get(instance_id)
+    if isinstance(record, dict) and record.get("error"):
+        if record["error"] == PATCH_FAILED:
+            return GradeResult("unresolved")
+        raise GradingError(f"{instance_id}: {record['error']}")
     if instance_id in report.get("resolved_ids", []):
         return GradeResult("resolved")
     if instance_id in report.get("unresolved_ids", []):
         return GradeResult("unresolved")
-    for key in ("error_ids", "incomplete_ids", "infra_failure_ids", "ambiguous_failure_ids"):
-        if instance_id in report.get(key, []):
-            raise GradingError(f"{instance_id} ended as {key}")
     raise GradingError(f"{instance_id} is absent from the harness report")
+
+
+def image_for_instance(instance_id: str) -> str:
+    """Docker image the benchmark harness uses for a task (find_docker_image in its harness)."""
+    return f"jiayuanz3/swecontextbench:{instance_id.replace('__', '.').lower()}"
 
 
 class SweContextBenchGrader:
@@ -139,9 +156,10 @@ class SweContextBenchGrader:
         runner: Any = subprocess.run,
         timeout: int = 3600,
     ) -> None:
-        self.repo_dir = Path(repo_dir)
+        # Absolute, because the harness runs with its own working directory.
+        self.repo_dir = Path(repo_dir).resolve()
         self.cases_dir = cases_dir
-        self.work_root = Path(work_root)
+        self.work_root = Path(work_root).resolve()
         self.python = python
         self.runner = runner
         self.timeout = timeout

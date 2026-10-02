@@ -107,8 +107,14 @@ Mem0's self-reported scores are never used as a baseline. Every number comes fro
   (`swebench_memory`, run through `combine_instances` then `run_evaluation`, as its
   `evaluation.sh` does) with its own Docker images (`jiayuanz3/swecontextbench`). Stock
   `swebench` 5.0.2 cannot grade these rows (it needs `image`, `eval_script`, `log_parser`
-  fields). A harness failure is recorded as an error, never as unresolved. Cloning the benchmark
-  repository at a pinned commit and pulling the images need the owner's approval. The related-task count
+  fields). A harness failure is recorded as an error, never as unresolved; only a model patch
+  that fails to apply counts as unresolved. Cloned 2026-10-01 at pinned commits (SWEContextBench
+  `12ad6ab`, SWE-bench `02e7a74`, both in `configs/data_manifest.yaml`). The grader was verified
+  on a pilot task: the gold patch grades resolved, a non-applying patch grades unresolved. Task
+  images are `jiayuanz3/swecontextbench:<id>` (amd64, emulated on Apple Silicon). Loaded counts:
+  Lite 300 experience and 99 related tasks; full 1,007 experience and 362 related tasks, of
+  which 346 are evaluable (1 is also an experience task, 15 have no experience pool in their
+  repository). The experience pool is not date-filtered, a stated limitation. The related-task count
   differs between the paper (376) and the dataset README (362); the loaded file is authoritative.
   Arms: memory off versus Mem0 memory on; RAG only if the pilot shows budget room.
 - Full sets, no slices, one seed (0).

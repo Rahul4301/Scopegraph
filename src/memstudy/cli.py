@@ -22,7 +22,7 @@ from memstudy.arms.full_context import FullContextArm
 from memstudy.arms.mem0_arm import Mem0Arm
 from memstudy.arms.rag import RagArm
 from memstudy.budget import Budget, ModelPrice, load_prices
-from memstudy.coding import DockerSandbox, SweContextBenchGrader, run_coding
+from memstudy.coding import DockerSandbox, SweContextBenchGrader, image_for_instance, run_coding
 from memstudy.config import DEFAULT_CONFIG, DEFAULT_PRICES, config_hash, load_config
 from memstudy.datacheck import verify as verify_data
 from memstudy.judge import Judge
@@ -292,7 +292,7 @@ def cmd_coding_run(args: argparse.Namespace) -> None:
         grader=SweContextBenchGrader(
             Path(args.bench_repo), args.cases_dir, results_root(args.stage) / "grading"
         ),
-        make_sandbox=lambda item: DockerSandbox(args.image_template.format(instance_id=item.item_id)),
+        make_sandbox=lambda item: DockerSandbox(image_for_instance(item.item_id)),
         store=ResultStore(results_root(args.stage)),
         stage=args.stage,
         run_id=run_id,
@@ -330,10 +330,9 @@ def main(argv: list[str] | None = None) -> int:
     code = add("coding-run", cmd_coding_run, "(paid) run the coding benchmark, memory off or Mem0")
     code.add_argument("--arm", choices=["off", "B"], required=True)
     code.add_argument("--stage", choices=["pilot", "coding"], required=True)
-    code.add_argument("--data-dir", default="data/swectx")
+    code.add_argument("--data-dir", default="data/swectx/data")
     code.add_argument("--lite", action="store_true")
-    code.add_argument("--image-template", required=True, help="Docker image per task, with {instance_id}")
-    code.add_argument("--bench-repo", required=True, help="pinned clone of jiayuanz3/SWEContextBench")
+    code.add_argument("--bench-repo", default="third_party/SWEContextBench", help="pinned benchmark clone")
     code.add_argument("--cases-dir", default="cases/SWEContextBench Lite", help="relative to --bench-repo")
     args = parser.parse_args(argv)
     args.fn(args)

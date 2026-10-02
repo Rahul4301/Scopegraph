@@ -6,7 +6,7 @@ from conftest import ROOT
 
 from memstudy.loaders.locomo import ABSTAIN_GOLD, load_locomo
 from memstudy.loaders.longmemeval import load_longmemeval
-from memstudy.loaders.swectx import build_swectx, repo_history_id
+from memstudy.loaders.swectx import build_swectx, overlap_ids, repo_history_id
 
 
 def test_locomo_loader_splits_primary_and_adversarial(tmp_path):
@@ -102,6 +102,9 @@ def test_swectx_histories_are_repo_scoped():
     assert repo_history_id("o/a") == "o__a"
 
 
-def test_swectx_rejects_a_task_that_is_both_experience_and_related():
-    with pytest.raises(ValueError):
-        build_swectx([_task("a-1", "o/a")], [_task("a-1", "o/a")], [])
+def test_swectx_excludes_a_related_task_that_is_in_the_experience_pool():
+    experience = [_task("a-1", "o/a"), _task("a-2", "o/a")]
+    related = [_task("a-1", "o/a"), _task("a-9", "o/a")]
+    _, items = build_swectx(experience, related, [])
+    assert [i.item_id for i in items] == ["a-9"]
+    assert overlap_ids(experience, related) == ["a-1"]

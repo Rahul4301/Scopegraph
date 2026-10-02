@@ -14,6 +14,7 @@ from memstudy.coding import (
     SweContextBenchGrader,
     cap_observation,
     cap_query,
+    image_for_instance,
     parse_command,
     parse_report,
     run_coding,
@@ -194,14 +195,25 @@ def test_grading_failure_is_an_error_not_an_unresolved_task(prices, cfg, tmp_pat
 
 def test_report_parsing_separates_resolved_unresolved_and_infrastructure():
     report = {
-        "resolved_ids": ["a"], "unresolved_ids": ["b"], "error_ids": ["c"],
-        "incomplete_ids": ["d"], "infra_failure_ids": ["e"],
+        "resolved_ids": ["a"],
+        "unresolved_ids": ["b", "c", "d", "e"],
+        "a": {"instance_id": "a", "resolved": True},
+        "b": {"instance_id": "b", "resolved": False},
+        "c": {"instance_id": "c", "resolved": False, "error": "Patch failed"},
+        "d": {"instance_id": "d", "resolved": False, "error": "Hardened image not found for instance: d"},
+        "e": {"instance_id": "e", "resolved": False, "error": "x", "failure_type": "verifier_setup_failed"},
     }
     assert parse_report(report, "a").resolved is True
     assert parse_report(report, "b").status == "unresolved"
-    for bad in ("c", "d", "e", "missing"):
+    assert parse_report(report, "c").status == "unresolved"  # the model patch did not apply
+    for bad in ("d", "e", "missing"):
         with pytest.raises(GradingError):
             parse_report(report, bad)
+
+
+def test_image_name_matches_the_benchmark_harness():
+    assert image_for_instance("django__django-11776") == "jiayuanz3/swecontextbench:django.django-11776"
+    assert image_for_instance("Astropy__Astropy-15082").endswith(":astropy.astropy-15082")
 
 
 class FakeHarness:
@@ -255,3 +267,11 @@ def test_grader_reports_an_unresolved_task(tmp_path):
 def test_grader_raises_when_the_harness_process_fails(tmp_path):
     with pytest.raises(GradingError, match="exit code 3"):
         _grader(tmp_path, FakeHarness(rc=3)).grade(_item(), "p")
+
+
+def test_grader_resolves_relative_paths_before_changing_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner = FakeHarness()
+    SweContextBenchGrader(Path("bench"), "cases/Lite", Path("grading"), "py", runner).grade(_item(), "p")
+    cmd, cwd, env = runner.calls[0]
+    assert Path(cwd).is_absolute() and env["PYTHONPATH"].startswith(str(tmp_path.resolve() / "bench"))

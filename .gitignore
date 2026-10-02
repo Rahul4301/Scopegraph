@@ -9,8 +9,9 @@ __pycache__/
 dist/
 build/
 
-# benchmark data is downloaded locally, never committed
+# benchmark data and cloned benchmark repositories are local, never committed
 data/
+third_party/
 
 # local caches and stores (embeddings, Mem0 vector stores); never results
 .cache/
