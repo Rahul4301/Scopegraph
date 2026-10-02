@@ -1,0 +1,79 @@
+# Every price used by budget.py lives here, with a source URL and retrieval date.
+# Prices are USD per 1M tokens. A model with verified: false is refused by the budget guard.
+# Retrieval date for every entry below: 2026-10-01.
+
+models:
+  gpt-6-luna:
+    role: reader
+    verified: true
+    source_url: https://developers.openai.com/api/docs/models/gpt-6-luna
+    pricing_page: https://developers.openai.com/api/docs/pricing
+    retrieved: 2026-10-01
+    context_window: 1050000
+    max_output_tokens: 128000
+    # Prompts above this many input tokens are priced at the multipliers below for the full request.
+    long_context_threshold: 272000
+    long_context_multiplier:
+      input: 2.0
+      cached_input: 2.0
+      cache_write: 2.0
+      output: 1.5
+    standard:
+      input: 0.10
+      cached_input: 0.01
+      cache_write: 0.125
+      output: 0.50
+    notes: >
+      Cache writes are billed at 1.25x uncached input. Cached reads at 0.1x. Only the alias
+      gpt-6-luna is listed on the model page; no dated snapshot is published. The snapshot
+      actually served is recorded from response.model on every call.
+
+  gpt-5-nano:
+    role: judge
+    verified: true
+    source_url: https://developers.openai.com/api/docs/models/gpt-5-nano
+    retrieved: 2026-10-01
+    context_window: 400000
+    max_output_tokens: 128000
+    long_context_threshold: null
+    standard:
+      input: 0.05
+      cached_input: 0.005
+      cache_write: 0.05
+      output: 0.40
+    notes: >
+      No cache-write surcharge is listed for this model, so cache_write is set equal to input.
+      The dated snapshot gpt-5-nano-2025-08-07 is marked Deprecated on the model page; the
+      alias gpt-5-nano is what is called. The snapshot served is recorded from response.model.
+
+  text-embedding-3-small:
+    role: embedder
+    verified: true
+    source_url: https://developers.openai.com/api/docs/models/text-embedding-3-small
+    retrieved: 2026-10-01
+    context_window: 8191
+    long_context_threshold: null
+    standard:
+      input: 0.02
+      cached_input: 0.02
+      cache_write: 0.02
+      output: 0.0
+    notes: >
+      Used by arm B (Mem0's default embedder) and arm C. GPT-6 Luna and GPT-5 nano cannot embed,
+      so this is the one model besides them; see PREREG.md gate G1.
+
+  gpt-5-mini:
+    role: mem0-extraction-default
+    verified: true
+    source_url: https://developers.openai.com/api/docs/models/gpt-5-mini
+    retrieved: 2026-10-01
+    context_window: 400000
+    long_context_threshold: null
+    standard:
+      input: 0.25
+      cached_input: 0.025
+      cache_write: 0.25
+      output: 2.00
+    notes: >
+      Default extraction model of the mem0ai 2.2.1 library. Marked Deprecated on its model page,
+      so it may be withdrawn; the proposal fixes Mem0 at its default models, recorded here.

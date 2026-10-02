@@ -1,0 +1,32 @@
+# Checksums of the benchmark files in data/ (git-ignored). Verified by `memstudy verify-data`.
+# Computed 2026-10-01.
+
+files:
+- path: data/locomo/locomo10.json
+  source_url: https://github.com/snap-research/locomo
+  bytes: 2805274
+  sha256: 79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4
+- path: data/longmemeval/longmemeval_s_cleaned.json
+  source_url: https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned
+  bytes: 277383467
+  sha256: d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442
+- path: data/memoryagentbench/data/Accurate_Retrieval-00000-of-00001.parquet
+  source_url: https://huggingface.co/datasets/ai-hyz/MemoryAgentBench/tree/7ea066982b140a19337e17e60d45d4076e042faf
+  bytes: 20024386
+  sha256: 56c3cd80fb6731a3e53cd1a6be3148f54df60ff2d290ee50e28f8acebf9655c1
+- path: data/memoryagentbench/data/Conflict_Resolution-00000-of-00001.parquet
+  source_url: https://huggingface.co/datasets/ai-hyz/MemoryAgentBench/tree/7ea066982b140a19337e17e60d45d4076e042faf
+  bytes: 1491588
+  sha256: 24d5c3f09ce0ce15625cb9f8a98f44f0d864ca6c94d7b4ad04eb697ca3a5ff45
+- path: data/memoryagentbench/data/Long_Range_Understanding-00000-of-00001.parquet
+  source_url: https://huggingface.co/datasets/ai-hyz/MemoryAgentBench/tree/7ea066982b140a19337e17e60d45d4076e042faf
+  bytes: 49342452
+  sha256: 5ab175461954db67770d4a4cb69e569b513ebb96aceb9ee79b57f67488bcd539
+- path: data/memoryagentbench/data/Test_Time_Learning-00000-of-00001.parquet
+  source_url: https://huggingface.co/datasets/ai-hyz/MemoryAgentBench/tree/7ea066982b140a19337e17e60d45d4076e042faf
+  bytes: 3947476
+  sha256: 5338753be48f925d03318eed66117286e3489025fabe050a547bd086cd7d79c0
+- path: data/memoryagentbench/entity2id.json
+  source_url: https://huggingface.co/datasets/ai-hyz/MemoryAgentBench/tree/7ea066982b140a19337e17e60d45d4076e042faf
+  bytes: 1758081
+  sha256: 63353aca481bc9558b502f91cb98f6fa26438796fdd7e0bc06b5a1532126e8b5
