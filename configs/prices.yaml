@@ -59,7 +59,7 @@ models:
       cache_write: 0.02
       output: 0.0
     notes: >
-      Used by arm B (Mem0's default embedder) and arm D. GPT-6 Luna and GPT-5 nano cannot embed,
+      Used by arm B (Mem0's default embedder) and arm C. GPT-6 Luna and GPT-5 nano cannot embed,
       so this is the one model besides them; see PREREG.md gate G1.
 
   gpt-5-mini:
@@ -77,18 +77,3 @@ models:
     notes: >
       Default extraction model of the mem0ai 2.2.1 library. Marked Deprecated on its model page,
       so it may be withdrawn; the proposal fixes Mem0 at its default models, recorded here.
-
-# Services billed outside OpenAI token usage. These costs are computed from the published rate
-# card and our own token counts, so they are estimates, not measurements. The unit is the
-# service's own "SM token", assumed equal to one o200k_base token.
-services:
-  supermemory:
-    verified: true
-    source_url: https://supermemory.ai/pricing/
-    retrieved: 2026-10-01
-    usd_per_1m_memory_tokens: 5.00   # taskType "memory" (full pipeline: facts, profile, graph)
-    usd_per_1m_queries: 5.00
-    usd_per_1m_operations: 100.00
-    notes: >
-      Plans (Free $5 credits, Pro $19 per month with $20 credits) include usage credits; this
-      study costs usage at the rate card regardless of included credits.

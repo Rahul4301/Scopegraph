@@ -52,7 +52,7 @@ def memory_cost(
     shape: QueryShape,
     retrieval_usd_per_query: float = 0.0,
 ) -> float:
-    """Arm B or C cost for one history: ingestion once, then retrieval plus an uncached read."""
+    """Arm B, C or D cost for one history: ingestion once, then retrieval plus an uncached read."""
     prompt = context_tokens + shape.question_tokens
     r_in, _, _, r_out = _rates(price, prompt)
     per_query = prompt * r_in + shape.answer_tokens * r_out + retrieval_usd_per_query

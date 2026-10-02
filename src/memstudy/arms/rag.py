@@ -1,4 +1,4 @@
-"""Arm D: plain RAG over verbatim chunks. The control arm: no extraction, no memory logic."""
+"""Arm C: plain RAG over verbatim chunks. The control arm: no extraction, no memory logic."""
 
 from __future__ import annotations
 
@@ -10,18 +10,12 @@ from typing import Any
 import numpy as np
 
 from memstudy.arms.base import ArmContext, IngestStats, fill_to_budget
+from memstudy.chunking import chunk_document, split_oversized
 from memstudy.metering import CostSink, Meter
 from memstudy.schema import History, Item, Session, render_session
-from memstudy.tokens import count_tokens, encoding
+from memstudy.tokens import count_tokens
 
 EMBED_BATCH = 256
-
-
-def _split_oversized(text: str, max_tokens: int) -> list[str]:
-    """Split one very long line into token windows. All content is kept (no truncation)."""
-    enc = encoding()
-    ids = enc.encode(text, disallowed_special=())
-    return [enc.decode(ids[i : i + max_tokens]) for i in range(0, len(ids), max_tokens)]
 
 
 def chunk_session(session: Session, chunk_tokens: int) -> list[str]:
@@ -31,7 +25,7 @@ def chunk_session(session: Session, chunk_tokens: int) -> list[str]:
     for turn in session.turns:
         line = f"{turn.speaker}: {turn.text}"
         if count_tokens(line) > chunk_tokens:
-            lines.extend(_split_oversized(line, chunk_tokens))
+            lines.extend(split_oversized(line, chunk_tokens))
         else:
             lines.append(line)
     chunks: list[str] = []
@@ -50,6 +44,8 @@ def chunk_session(session: Session, chunk_tokens: int) -> list[str]:
 
 
 def chunk_history(history: History, chunk_tokens: int) -> list[str]:
+    if history.document is not None:
+        return chunk_document(history.document, chunk_tokens)
     return [c for s in history.sessions for c in chunk_session(s, chunk_tokens)]
 
 
@@ -59,7 +55,7 @@ def _normalize(vectors: np.ndarray) -> np.ndarray:
 
 
 class RagArm:
-    name = "D"
+    name = "C"
 
     def __init__(
         self,

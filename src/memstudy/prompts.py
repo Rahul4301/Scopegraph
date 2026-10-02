@@ -8,11 +8,15 @@ from __future__ import annotations
 
 from memstudy.schema import Item
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
 READER_INSTRUCTIONS = (
-    "You answer a question using only the context provided. "
+    "You answer a question about a conversation or document. The context is the full text or "
+    "excerpts from it; sessions carry dates. Use only the context. "
     "Answer in one short phrase or sentence. "
+    "For time questions, work out the actual date from the session dates instead of repeating "
+    "relative words like \"last week\". "
+    "If the context conflicts, use the most recent information. "
     "If the context does not contain the answer, reply exactly: Not mentioned."
 )
 
@@ -27,52 +31,32 @@ def question_block(question: str, question_date: str | None) -> str:
 
 
 JUDGE_INSTRUCTIONS = (
-    "You grade an answer to a question about a conversation history. "
-    "Compare the model answer with the gold answer. "
+    "You grade a model answer against a gold answer. "
+    "The answer is CORRECT if it has the core components of the gold answer and means the same "
+    "thing. Ignore wording, format, and extra detail. "
+    "Dates and numbers match if they are the same value in any format. "
+    "A longer answer is fine if it contains the core and does not contradict the gold. "
+    "If the gold says the information is not available, the answer is CORRECT only if it also "
+    "says so. Otherwise it is INCORRECT. "
     "Reply with only this JSON: {\"verdict\": \"CORRECT\"} or {\"verdict\": \"INCORRECT\"}."
 )
 
-_GUIDANCE_DEFAULT = (
-    "The answer is CORRECT if it contains the key information of the gold answer. "
-    "Extra detail is fine. A contradiction of the gold answer is INCORRECT."
-)
-_GUIDANCE_TEMPORAL = (
-    "Dates and durations may be written in any format. For counts of days, weeks, or months, "
-    "an off-by-one answer is CORRECT. Otherwise follow the default rule: "
-    + _GUIDANCE_DEFAULT
-)
-_GUIDANCE_UPDATE = (
-    "The gold answer is the most recent value. The answer is CORRECT only if it gives the most "
-    "recent value as the current one. Mentioning an older value as past is fine."
-)
-_GUIDANCE_PREFERENCE = (
-    "The gold text describes what a good personalized answer should take into account, not an "
-    "exact string. The answer is CORRECT if it uses the user's stated preferences as described."
-)
-_GUIDANCE_ABSTAIN = (
-    "The information is not in the conversation. The answer is CORRECT only if it says the "
-    "information is not mentioned or not available. Any specific claim is INCORRECT."
-)
 
-TEMPORAL_CATEGORIES = {"cat2", "temporal-reasoning"}
-
-
-def judge_guidance(item: Item) -> str:
-    if item.meta.get("abstention"):
-        return _GUIDANCE_ABSTAIN
-    if item.category == "knowledge-update":
-        return _GUIDANCE_UPDATE
-    if item.category == "single-session-preference":
-        return _GUIDANCE_PREFERENCE
-    if item.category in TEMPORAL_CATEGORIES:
-        return _GUIDANCE_TEMPORAL
-    return _GUIDANCE_DEFAULT
+def accepted_answers(item: Item) -> list[str]:
+    """Distinct accepted answers in order; just the gold when the item lists no others."""
+    listed = [str(a) for a in item.meta.get("answers", [])]
+    return list(dict.fromkeys(listed)) or [item.gold]
 
 
 def judge_prompt(item: Item, model_answer: str) -> str:
+    golds = accepted_answers(item)
+    gold_line = (
+        f"Gold answer: {golds[0]}"
+        if len(golds) == 1
+        else "Gold answers (matching any one is correct): " + " | ".join(golds)
+    )
     return (
-        f"{judge_guidance(item)}\n\n"
         f"Question: {item.question}\n"
-        f"Gold answer: {item.gold}\n"
+        f"{gold_line}\n"
         f"Model answer: {model_answer}"
     )

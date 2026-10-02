@@ -24,7 +24,8 @@ class History(BaseModel):
 
     history_id: str
     bench: str
-    sessions: list[Session]
+    sessions: list[Session] = Field(default_factory=list)
+    document: str | None = None  # verbatim text for benchmarks that are not session-structured
 
     @property
     def user_id(self) -> str:
@@ -101,5 +102,8 @@ def render_session(session: Session) -> str:
 
 
 def render_transcript(history: History) -> str:
-    """Deterministic transcript. Arm A sends this verbatim, arm C chunks it."""
+    """Deterministic transcript. Arm A sends this verbatim, arm C chunks it. A history that is
+    one verbatim document is returned unchanged."""
+    if history.document is not None:
+        return history.document
     return "\n\n".join(render_session(s) for s in history.sessions)

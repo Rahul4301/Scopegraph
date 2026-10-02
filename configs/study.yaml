@@ -10,7 +10,7 @@ reader:
   max_output_tokens: 512
   cache_ttl: 30m
   # Arm A uses one explicit cache breakpoint after the history when a history is queried at
-  # least twice. Arms B, C and D use explicit mode with no breakpoint, so they pay the plain
+  # least twice. Arms B and C use explicit mode with no breakpoint, so they pay the plain
   # input rate and never a cache-write surcharge.
 
 judge:
@@ -22,7 +22,7 @@ tokenizer:
   encoding: o200k_base        # proxy; the API's usage.input_tokens is authoritative
   safety_margin: 0.05
 
-# Arms B, C and D place retrieved context in the prompt under one shared token budget.
+# Arms B and C place retrieved context in the prompt under one shared token budget.
 # 7,000 matches the mean tokens Mem0 reports per query (6,956 on LoCoMo, 6,787 on LongMemEval).
 retrieval:
   token_budget: 7000
@@ -38,20 +38,14 @@ arms:
     turns_per_add: 10
     extraction_model: gpt-5-mini         # default of the pinned version, recorded
     embedding_model: text-embedding-3-small   # default of the pinned version, recorded
+    document_chunk_tokens: 4096   # MemoryAgentBench: one chunk per add call
   C:
-    name: supermemory
-    sdk_version: 3.62.0
-    task_type: memory         # full pipeline (facts, profile, graph)
-    search_mode: hybrid       # memories plus document chunks, the documented default
-    poll_seconds: 5
-    poll_timeout_seconds: 1800
-  D:
     name: rag
     chunk_tokens: 256
     embedding_model: text-embedding-3-small   # same embedder as Mem0
 
 pilot:
   locomo_questions: 30
-  locomo_conversations: 3     # bounds Mem0 and Supermemory ingestion cost
+  locomo_conversations: 3     # bounds Mem0 ingestion cost
   longmemeval_questions: 20
   judge_flip_per_arm: 50      # 50 from arm A and 50 from arm B

@@ -21,8 +21,10 @@ from memstudy.arms.base import Arm, ArmContext
 from memstudy.budget import BudgetExceeded
 from memstudy.judge import Judge
 from memstudy.llm import CallResult, IncompleteResponse
+from memstudy.prompts import accepted_answers
 from memstudy.reader import Reader
 from memstudy.schema import History, Item
+from memstudy.scoring import answer_metrics
 from memstudy.store import ResultStore
 from memstudy.tokens import DoesNotFit
 
@@ -59,9 +61,15 @@ def build_record(
         "abstention": bool(item.meta.get("abstention", False)),
         "question": item.question,
         "gold": item.gold,
+        "gold_answers": accepted_answers(item),
         "model_answer": read.text,
+        # Abstention items have no answer string to match, so only the judge scores them.
+        "metrics": None
+        if item.meta.get("abstention")
+        else answer_metrics(read.text, ctx.text, accepted_answers(item)),
         "context_tokens_counted": ctx.context_tokens,
         "retrieved": ctx.retrieved,
+        "candidates": ctx.candidates,
         "reader": {
             "model_returned": read.model_returned,
             "response_id": read.response_id,
@@ -127,7 +135,13 @@ def run_chat(
                     arm.name,
                     bench,
                     item.item_id,
-                    {"error": "does_not_fit", "tokens": err.tokens, "limit": err.limit},
+                    {
+                        "item_id": item.item_id,
+                        "history_id": history_id,
+                        "error": "does_not_fit",
+                        "tokens": err.tokens,
+                        "limit": err.limit,
+                    },
                 )
             summary.does_not_fit.append(history_id)
             summary.errors += len(pending)
@@ -179,7 +193,12 @@ def run_chat(
                     arm.name,
                     bench,
                     item.item_id,
-                    {"error": type(err).__name__, "message": str(err)},
+                    {
+                        "item_id": item.item_id,
+                        "history_id": history_id,
+                        "error": type(err).__name__,
+                        "message": str(err),
+                    },
                 )
                 summary.errors += 1
     return summary
@@ -205,10 +224,41 @@ def versions() -> dict[str, Any]:
     return {"python": platform.python_version(), "packages": pkgs, "git_commit": _git_commit()}
 
 
+def _dist(values: list[float], scale: float = 1.0) -> dict[str, float | None]:
+    """mean, p50, p95 and max of values (times scale); None throughout when there are none."""
+    if not values:
+        return {"mean": None, "p50": None, "p95": None, "max": None}
+    ordered = sorted(v * scale for v in values)
+    n = len(ordered)
+    return {
+        "mean": statistics.fmean(ordered),
+        "p50": ordered[n // 2],
+        "p95": ordered[min(n - 1, int(0.95 * n))],
+        "max": ordered[-1],
+    }
+
+
+def _rate(flags: list[bool]) -> float | None:
+    return (sum(flags) / len(flags)) if flags else None
+
+
+def _group_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    graded = [r for r in records if r.get("correct") is not None]
+    scored = [r["metrics"] for r in records if r.get("metrics")]
+    return {
+        "n": len(records),
+        "accuracy_judge": _rate([bool(r["correct"]) for r in graded]),
+        "exact_match": _rate([m["exact_match"] for m in scored]),
+        "substring_match": _rate([m["substring_match"] for m in scored]),
+        "token_f1": statistics.fmean([m["token_f1"] for m in scored]) if scored else None,
+    }
+
+
 def summarize_records(
     records: list[dict[str, Any]], ingests: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """Token, latency, and cost totals for a set of raw records (always derived from files)."""
+    """Accuracy, token, latency, and cost totals for a set of raw records (always derived from
+    files). Latencies are reported in milliseconds, costs in USD."""
     tot = {k: 0 for k in ("input", "cached", "cache_write", "output", "reasoning")}
     judge_tot = {"input": 0, "output": 0, "reasoning": 0}
     reader_usd = judge_usd = retrieval_usd = 0.0
@@ -235,10 +285,35 @@ def summarize_records(
     n = len(records)
     graded = [r for r in records if r.get("correct") is not None]
     ordered = sorted(latencies)
+    ingest_usd = sum(i["cost"]["usd"] for i in ingests)
+    total_usd = reader_usd + judge_usd + retrieval_usd + ingest_usd
+    by_category: dict[str, list[dict[str, Any]]] = {}
+    for r in records:
+        by_category.setdefault(r["category"], []).append(r)
+    scored = [r["metrics"] for r in records if r.get("metrics")]
     return {
         "n_items": n,
         "n_graded": len(graded),
+        "n_judge_unparseable": sum(1 for r in records if "judge" in r and r.get("correct") is None),
         "accuracy": (sum(1 for r in graded if r["correct"]) / len(graded)) if graded else None,
+        "answer_metrics": {
+            "exact_match": _rate([m["exact_match"] for m in scored]),
+            "substring_match": _rate([m["substring_match"] for m in scored]),
+            "token_f1": statistics.fmean([m["token_f1"] for m in scored]) if scored else None,
+            "gold_in_context": _rate([m["gold_in_context"] for m in scored]),
+            "n_scored": len(scored),
+        },
+        "by_category": {c: _group_summary(rs) for c, rs in sorted(by_category.items())},
+        "context_tokens": _dist([r["context_tokens_counted"] for r in records]),
+        "answer_tokens_mean": (tot["output"] / n) if n else None,
+        "retrieval": {
+            "candidates_mean": statistics.fmean([r.get("candidates", 0) for r in records])
+            if records
+            else None,
+            "items_in_context_mean": statistics.fmean([len(r["retrieved"]) for r in records])
+            if records
+            else None,
+        },
         "reader_tokens": tot,
         "cache_hit_rate": (tot["cached"] / tot["input"]) if tot["input"] else 0.0,
         "judge_tokens": judge_tot,
@@ -247,16 +322,25 @@ def summarize_records(
             "p50": ordered[n // 2] if n else None,
             "p95": ordered[min(n - 1, int(0.95 * n))] if n else None,
         },
+        "latency_ms": {
+            "retrieval": _dist([r["latency_s"]["retrieval"] for r in records], 1000.0),
+            "reader": _dist([r["latency_s"]["reader"] for r in records], 1000.0),
+            "query_total": _dist(latencies, 1000.0),
+        },
         "cost_usd": {
             "reader": reader_usd,
             "judge": judge_usd,
             "retrieval": retrieval_usd,
-            "ingest": sum(i["cost"]["usd"] for i in ingests),
+            "ingest": ingest_usd,
+            "total": total_usd,
+            "per_item": (total_usd / n) if n else None,
         },
         "ingest": {
             "histories": len(ingests),
             "seconds": sum(i["seconds"] for i in ingests),
             "calls": sum(i["cost"]["calls"] for i in ingests),
+            "tokens": sum(i["cost"]["usage"]["input_tokens"] for i in ingests),
+            "stored_units": sum(i["stored_units"] for i in ingests),
         },
         "models_returned": sorted(models),
     }

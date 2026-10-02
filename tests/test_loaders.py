@@ -76,3 +76,87 @@ def test_real_longmemeval_has_500_questions_each_with_its_own_history():
     histories, items = load_longmemeval(Path(LME))
     assert len(items) == 500 and len(histories) == 500
     assert len({h.user_id for h in histories.values()}) == 500
+
+
+def _write_mab(tmp_path, competency, rows):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    pq.write_table(pa.Table.from_pylist(rows), tmp_path / f"{competency}-00000-of-00001.parquet")
+
+
+def test_memoryagentbench_loader_keeps_context_verbatim_and_all_answers(tmp_path):
+    from memstudy.loaders.memoryagentbench import load_memoryagentbench
+    from memstudy.schema import render_transcript
+
+    context = "Document 1:\nline one\n\nDocument 2:\nline two  "
+    meta = {"source": "ruler_qa1_197K", "qa_pair_ids": ["a0", "a1"], "demo": None}
+    _write_mab(tmp_path, "Accurate_Retrieval", [
+        {"context": context, "questions": ["q0", "q1"], "answers": [["France", "FR"], ["10th"]], "metadata": meta}
+    ])
+    _write_mab(tmp_path, "Conflict_Resolution", [
+        {"context": "c", "questions": ["q"], "answers": [["x"]], "metadata": {"source": "factconsolidation_sh_6k"}}
+    ])
+    _write_mab(tmp_path, "Long_Range_Understanding", [
+        {"context": "l", "questions": ["q"], "answers": [["y"]],
+         "metadata": {"source": "infbench_sum_eng_shots2", "demo": "D", "keypoints": ["k1", "k2"]}}
+    ])
+    _write_mab(tmp_path, "Test_Time_Learning", [
+        {"context": "t", "questions": ["q"], "answers": [["7"]], "metadata": {"source": "icl_x"}}
+    ])
+    histories, items = load_memoryagentbench(tmp_path)
+    first = histories["accurate_retrieval-ruler_qa1_197K-r00"]
+    assert render_transcript(first) == context and first.user_id.startswith("memoryagentbench_")
+    q0, q1 = items[0], items[1]
+    assert q0.gold == "France" and q0.meta["answers"] == ["France", "FR"] and q0.meta["qa_pair_id"] == "a0"
+    assert q1.item_id == "accurate_retrieval-ruler_qa1_197K-r00-q001"
+    primary = {i.category: i.primary for i in items}
+    assert primary == {
+        "Accurate_Retrieval": True,
+        "Conflict_Resolution": True,
+        "Long_Range_Understanding": False,
+        "Test_Time_Learning": False,
+    }
+    lru = next(i for i in items if i.category == "Long_Range_Understanding")
+    assert lru.meta["demo"] == "D" and lru.meta["keypoints"] == ["k1", "k2"]
+
+
+def test_memoryagentbench_loader_flags_longmemeval_overlap_and_abstention(tmp_path):
+    from memstudy.loaders.memoryagentbench import load_memoryagentbench
+
+    meta = {
+        "source": "longmemeval_s*", "question_ids": ["x_abs"], "question_dates": ["2023/05/30"],
+        "question_types": ["multi-session"], "qa_pair_ids": ["p"],
+    }
+    def row(metadata):
+        return [{"context": "c", "questions": ["q"], "answers": [["a"]], "metadata": metadata}]
+
+    _write_mab(tmp_path, "Accurate_Retrieval", row(meta))
+    for comp in ("Conflict_Resolution", "Long_Range_Understanding", "Test_Time_Learning"):
+        _write_mab(tmp_path, comp, row({"source": "s"}))
+    _, items = load_memoryagentbench(tmp_path)
+    item = items[0]
+    assert "*" not in item.item_id and item.question_date == "2023/05/30"
+    assert item.meta["overlaps_longmemeval"] is True and item.meta["abstention"] is True
+
+
+MAB = ROOT / "data/memoryagentbench/data"
+
+
+@pytest.mark.skipif(not MAB.exists(), reason="MemoryAgentBench data not downloaded")
+def test_real_memoryagentbench_matches_the_census():
+    from memstudy.loaders.memoryagentbench import load_memoryagentbench
+
+    histories, items = load_memoryagentbench(MAB)
+    assert len(histories) == 146 and len(items) == 3671
+    by_comp: dict[str, int] = {}
+    for i in items:
+        by_comp[i.category] = by_comp.get(i.category, 0) + 1
+    assert by_comp == {
+        "Accurate_Retrieval": 2000,
+        "Conflict_Resolution": 800,
+        "Long_Range_Understanding": 171,
+        "Test_Time_Learning": 700,
+    }
+    assert len({i.item_id for i in items}) == len(items)
+    assert all(i.history_id in histories for i in items)

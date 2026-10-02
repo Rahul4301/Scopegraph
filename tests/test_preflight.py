@@ -52,13 +52,3 @@ def test_key_var_lets_a_differently_named_variable_supply_the_key(monkeypatch, t
     import os
 
     assert os.environ["OPENAI_API_KEY"] == "sk-other" and capsys.readouterr().out == ""
-
-
-def test_supermemory_key_is_loaded_into_its_own_variable(monkeypatch, tmp_path):
-    monkeypatch.delenv("SUPERMEMORY_API_KEY", raising=False)
-    env = tmp_path / ".env"
-    env.write_text("SUPERMEMORY_API_KEY=sm_secret\n")
-    pf.load_env_key("SUPERMEMORY_API_KEY", env)
-    import os
-
-    assert os.environ["SUPERMEMORY_API_KEY"] == "sm_secret"

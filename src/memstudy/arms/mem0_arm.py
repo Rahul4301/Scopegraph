@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 from memstudy.arms.base import ArmContext, IngestStats, fill_to_budget
+from memstudy.chunking import chunk_document
 from memstudy.metering import CostSink, Meter
 from memstudy.schema import History, Item, Session
 from memstudy.tokens import count_tokens
@@ -112,6 +113,16 @@ class Mem0Arm:
         step = int(self.cfg["turns_per_add"])
         speakers: dict[str, str] = {}
         with self.meter.use_sink(self.ingest_sink):
+            if history.document is not None:
+                # A verbatim document (MemoryAgentBench): one fixed-size chunk per add call.
+                size = int(self.cfg["document_chunk_tokens"])
+                for n, chunk in enumerate(chunk_document(history.document, size)):
+                    self.memory.add(
+                        [{"role": "user", "content": chunk}],
+                        user_id=user_id,
+                        metadata={"chunk": n},
+                        infer=self.infer,
+                    )
             for session in history.sessions:
                 messages = session_messages(session, speakers)
                 for i in range(0, len(messages), step):

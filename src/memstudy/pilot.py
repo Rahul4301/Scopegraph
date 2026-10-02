@@ -197,7 +197,7 @@ def project_full_cost(
     queries) for every history of the benchmark. Judge cost is added separately by the caller.
 
     Arm A: low assumes the cache stays warm (one write, then reads), high assumes no cache hits.
-    Arms B, C and D: ingestion cost is scaled by history tokens using the measured USD per token;
+    Arms B and C: ingestion cost is scaled by history tokens using the measured USD per token;
     low, mid, and high are the cheapest, mean, and dearest pilot history.
     """
     shape = QueryShape(
