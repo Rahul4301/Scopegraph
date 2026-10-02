@@ -77,20 +77,21 @@ def test_context_refuses_a_history_that_was_not_ingested(arm):
         arm.context(make_item("conv-1"), make_history("conv-1"))
 
 
-def test_session_messages_carry_the_date_and_map_speakers():
+def test_session_messages_carry_the_date_and_send_every_peer_as_a_user():
     session = Session(
         session_id="1",
         timestamp="1 May 2023",
         turns=[Turn(speaker="Ann", text="hi"), Turn(speaker="Bob", text="yo")],
     )
-    msgs = session_messages(session, {})
-    assert [m["role"] for m in msgs] == ["user", "assistant"]
+    msgs = session_messages(session)
+    assert [m["role"] for m in msgs] == ["user", "user"]
+    assert msgs[1]["content"] == "[1 May 2023] Bob: yo"
     assert msgs[0]["content"] == "[1 May 2023] Ann: hi"
 
 
 def test_longmemeval_roles_are_kept():
     session = Session(session_id="s", turns=[Turn(speaker="assistant", text="a")])
-    assert session_messages(session, {}) == [{"role": "assistant", "content": "a"}]
+    assert session_messages(session) == [{"role": "assistant", "content": "a"}]
 
 
 def test_config_keeps_mem0_defaults_and_writes_nothing_under_home(cfg):

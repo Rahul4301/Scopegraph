@@ -126,7 +126,10 @@ candidates; nothing is cut mid-item.
   default; extraction models are never mixed within a benchmark. The fallback has not yet been
   tested with Mem0 `2.2.1`. Library defaults
   `threshold=0.1`, `rerank=false`. Ingestion: 10 turns per `add`, session date written into each
-  message (the OSS `timestamp` argument is Platform-only). spaCy `en_core_web_sm` is required
+  message (the OSS `timestamp` argument is Platform-only). Mem0's default extraction prompt reads
+  only user messages, so LoCoMo's two peer speakers are both sent as user messages prefixed with
+  their names; LongMemEval keeps its real user and assistant roles, so assistant-only facts are
+  not extracted (Mem0 as released). spaCy `en_core_web_sm` is required
   (without it Mem0 silently degrades to semantic-only retrieval, so the arm refuses to start).
   Telemetry off. The open-source library is used, not the hosted Platform, so numbers are not
   comparable to Mem0's published ones.

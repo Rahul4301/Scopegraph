@@ -33,7 +33,7 @@ class ArmContext:
 def fill_to_budget(texts: list[str], budget: int) -> list[str]:
     """Whole retrieved items in rank order until the next one would exceed the token budget.
 
-    Arms B and C all use this rule with the same budget, so they differ in what is retrieved
+    Arms B and C both use this rule with the same budget, so they differ in what is retrieved
     and not in how much context the reader gets. Nothing is cut mid-item.
     """
     kept: list[str] = []

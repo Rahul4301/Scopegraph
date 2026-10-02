@@ -32,17 +32,18 @@ def require_nlp() -> None:
         )
 
 
-def session_messages(session: Session, speakers: dict[str, str]) -> list[dict[str, str]]:
-    """Messages for one session. LoCoMo speakers are mapped to user/assistant by first
-    appearance; LongMemEval roles are kept. Each message carries the session date."""
+def session_messages(session: Session) -> list[dict[str, str]]:
+    """Messages for one session, each carrying the session date. LongMemEval keeps its real
+    user/assistant roles. LoCoMo speakers are peers, so every turn is sent as a user message
+    prefixed with the speaker's name: Mem0's default extraction prompt only reads user messages
+    and would drop everything one of the two speakers said if that speaker were the assistant."""
     stamp = f"[{session.timestamp}] " if session.timestamp else ""
     out: list[dict[str, str]] = []
     for turn in session.turns:
         if turn.speaker in ("user", "assistant"):
             role, content = turn.speaker, turn.text
         else:
-            role = speakers.setdefault(turn.speaker, "user" if not speakers else "assistant")
-            content = f"{turn.speaker}: {turn.text}"
+            role, content = "user", f"{turn.speaker}: {turn.text}"
         out.append({"role": role, "content": f"{stamp}{content}"})
     return out
 
@@ -111,7 +112,6 @@ class Mem0Arm:
         before = self.ingest_sink.snapshot()
         start = time.perf_counter()
         step = int(self.cfg["turns_per_add"])
-        speakers: dict[str, str] = {}
         with self.meter.use_sink(self.ingest_sink):
             if history.document is not None:
                 # A verbatim document (MemoryAgentBench): one fixed-size chunk per add call.
@@ -124,7 +124,7 @@ class Mem0Arm:
                         infer=self.infer,
                     )
             for session in history.sessions:
-                messages = session_messages(session, speakers)
+                messages = session_messages(session)
                 for i in range(0, len(messages), step):
                     self.memory.add(
                         messages[i : i + step],
