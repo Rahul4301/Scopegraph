@@ -1,12 +1,21 @@
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 from conftest import FakeClient, make_history, make_response
 
 from memstudy.arms.base import ArmContext
 from memstudy.budget import Budget
 from memstudy.coding import (
     OBSERVATION_CAP_TOKENS,
+    GradeResult,
+    GradingError,
+    SweContextBenchGrader,
     cap_observation,
     cap_query,
     parse_command,
+    parse_report,
     run_coding,
     task_prompt,
 )
@@ -68,7 +77,12 @@ class FakeSandbox:
 
 class AlwaysResolves:
     def grade(self, item, patch):
-        return bool(patch)
+        return GradeResult("resolved" if patch else "unresolved")
+
+
+class Undecidable:
+    def grade(self, item, patch):
+        raise GradingError("container failed to start")
 
 
 class FakeMemory:
@@ -154,7 +168,7 @@ def test_empty_patch_is_not_resolved(prices, cfg, tmp_path):
     class Spy:
         def grade(self, item, patch):
             graded.append(patch)
-            return True
+            return GradeResult("resolved")
 
     store = ResultStore(tmp_path / "res")
     run_coding(
@@ -163,3 +177,81 @@ def test_empty_patch_is_not_resolved(prices, cfg, tmp_path):
         store=store, stage="pilot", run_id="r1", cfg=cfg,
     )
     assert graded == [] and store.read_items("off", "swectx")[0]["resolved"] is False
+
+
+def test_grading_failure_is_an_error_not_an_unresolved_task(prices, cfg, tmp_path):
+    client, caller = _caller(prices, tmp_path)
+    store = ResultStore(tmp_path / "res")
+    counts = run_coding(
+        items=[_item()], histories={"o__a": make_history("o__a", "swectx")}, arm=None,
+        arm_name="off", caller=caller, grader=Undecidable(), make_sandbox=lambda i: FakeSandbox(),
+        store=store, stage="pilot", run_id="r1", cfg=cfg,
+    )
+    assert counts["errors"] == 1 and counts["completed"] == 0
+    assert store.read_items("off", "swectx") == []
+    assert "container failed" in store.read_errors("off", "swectx")[0]["error"]
+
+
+def test_report_parsing_separates_resolved_unresolved_and_infrastructure():
+    report = {
+        "resolved_ids": ["a"], "unresolved_ids": ["b"], "error_ids": ["c"],
+        "incomplete_ids": ["d"], "infra_failure_ids": ["e"],
+    }
+    assert parse_report(report, "a").resolved is True
+    assert parse_report(report, "b").status == "unresolved"
+    for bad in ("c", "d", "e", "missing"):
+        with pytest.raises(GradingError):
+            parse_report(report, bad)
+
+
+class FakeHarness:
+    """Stands in for subprocess.run; plays the two benchmark harness modules."""
+
+    def __init__(self, resolved=True, rc=0):
+        self.calls, self.resolved, self.rc = [], resolved, rc
+
+    def __call__(self, cmd, cwd, env, **kwargs):
+        self.calls.append((cmd, Path(cwd), env))
+        module = cmd[2]
+        if module.endswith("run_evaluation") and self.rc == 0:
+            run_id = cmd[cmd.index("--run_id") + 1]
+            key = "resolved_ids" if self.resolved else "unresolved_ids"
+            (Path(cwd) / f"{run_id}.json").write_text(json.dumps({key: ["repo-0"]}))
+        return SimpleNamespace(returncode=self.rc, stderr="boom", stdout="")
+
+
+def _grader(tmp_path, runner):
+    return SweContextBenchGrader(tmp_path / "bench", "cases/Lite", tmp_path / "grading", "py", runner)
+
+
+def test_grader_follows_the_benchmarks_own_evaluation_steps(tmp_path):
+    runner = FakeHarness()
+    result = _grader(tmp_path, runner).grade(_item(), "diff --git a b")
+    assert result.resolved
+    combine, evaluate = runner.calls
+    assert combine[0][2] == "swebench_memory.harness.combine_instances"
+    assert str(tmp_path / "bench" / "cases/Lite") in combine[0]
+    assert evaluate[0][2] == "swebench_memory.harness.run_evaluation"
+    assert evaluate[0][evaluate[0].index("--dataset_name") + 1] == "batch_dataset.json"
+    assert str(tmp_path / "bench") in evaluate[2]["PYTHONPATH"]
+    pred = json.loads((tmp_path / "grading/repo-0/predictions/repo-0_preds.json").read_text())
+    assert pred["repo-0"] == {
+        "model_name_or_path": "memstudy", "instance_id": "repo-0", "model_patch": "diff --git a b"
+    }
+
+
+def test_grader_reads_an_existing_report_instead_of_rerunning(tmp_path):
+    runner = FakeHarness()
+    grader = _grader(tmp_path, runner)
+    grader.grade(_item(), "p")
+    calls = len(runner.calls)
+    assert grader.grade(_item(), "p").resolved and len(runner.calls) == calls
+
+
+def test_grader_reports_an_unresolved_task(tmp_path):
+    assert _grader(tmp_path, FakeHarness(resolved=False)).grade(_item(), "p").status == "unresolved"
+
+
+def test_grader_raises_when_the_harness_process_fails(tmp_path):
+    with pytest.raises(GradingError, match="exit code 3"):
+        _grader(tmp_path, FakeHarness(rc=3)).grade(_item(), "p")

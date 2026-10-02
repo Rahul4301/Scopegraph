@@ -39,14 +39,16 @@ def require_gates(*gates: str, approvals_path: Path = APPROVALS) -> None:
             raise NotApproved(f"gate {gate} is not approved in {approvals_path}")
 
 
-def load_openai_key(env_file: Path = Path(".env")) -> None:
-    """Make OPENAI_API_KEY available without ever printing it. Only that one key is read."""
-    if os.environ.get("OPENAI_API_KEY"):
+def load_openai_key(env_file: Path = Path(".env"), key_var: str = "OPENAI_API_KEY") -> None:
+    """Make OPENAI_API_KEY available without ever printing it. Only the one named variable is
+    read, from the environment or the env file; key_var lets the owner point at a differently
+    named variable that holds an OpenAI key."""
+    if key_var == "OPENAI_API_KEY" and os.environ.get("OPENAI_API_KEY"):
         return
     if env_file.exists():
         for line in env_file.read_text().splitlines():
             name, _, value = line.partition("=")
-            if name.strip() == "OPENAI_API_KEY":
+            if name.strip() == key_var and value.strip():
                 os.environ["OPENAI_API_KEY"] = value.strip().strip("\"'")
                 return
-    raise NotApproved("OPENAI_API_KEY is not set in the environment or .env")
+    raise NotApproved(f"{key_var} is not set in the environment or {env_file}")

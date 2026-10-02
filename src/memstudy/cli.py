@@ -22,7 +22,7 @@ from memstudy.arms.full_context import FullContextArm
 from memstudy.arms.mem0_arm import Mem0Arm
 from memstudy.arms.rag import RagArm
 from memstudy.budget import Budget, ModelPrice, load_prices
-from memstudy.coding import DockerSandbox, SweBenchGrader, run_coding
+from memstudy.coding import DockerSandbox, SweContextBenchGrader, run_coding
 from memstudy.config import DEFAULT_CONFIG, DEFAULT_PRICES, config_hash, load_config
 from memstudy.datacheck import verify as verify_data
 from memstudy.judge import Judge
@@ -71,8 +71,8 @@ class Runtime:
     judge: Judge
 
 
-def build_runtime() -> Runtime:
-    load_openai_key()
+def build_runtime(key_var: str = "OPENAI_API_KEY") -> Runtime:
+    load_openai_key(key_var=key_var)
     cfg = load_config(DEFAULT_CONFIG)
     prices = load_prices(DEFAULT_PRICES)
     budget = Budget(LEDGER)
@@ -107,6 +107,40 @@ def _write_new_json(path: Path, payload: Any) -> None:
     with path.open("x") as fh:
         json.dump(payload, fh, indent=2, sort_keys=True)
         fh.write("\n")
+
+
+def cmd_api_check(args: argparse.Namespace) -> None:
+    """Two tiny reader calls with the exact request shape the study uses (effort none,
+    temperature 0, explicit cache breakpoint on a prefix over 1,024 tokens). Reports what the
+    API accepted and returned. Cost is a few hundredths of a cent, recorded in the ledger."""
+    if not args.yes:
+        raise SystemExit("api-check makes two paid calls (under $0.001); pass --yes to run")
+    rt = build_runtime(args.key_var)
+    filler = " ".join(f"fact{i} is the number {i * 7 % 101}." for i in range(260))
+    results = []
+    for _ in range(2):
+        call = rt.reader.answer(
+            stage="pilot",
+            tag={"arm": "check", "item": "api-check"},
+            context=filler,
+            question="What number is fact7? Reply with the number only.",
+            question_date=None,
+            cache_prefix=True,
+            cache_key="api-check",
+        )
+        results.append(call)
+    report = {
+        "model_requested": rt.cfg["reader"]["model"],
+        "model_returned": results[0].model_returned,
+        "temperature_accepted": True,
+        "answers": [r.text for r in results],
+        "deterministic_pair": results[0].text == results[1].text,
+        "usage": [r.usage.model_dump() for r in results],
+        "warnings": [r.warnings for r in results],
+        "cost_usd": [r.cost_usd for r in results],
+        "ledger_total_usd": rt.budget.spent_total,
+    }
+    print(json.dumps(report, indent=2))
 
 
 def cmd_verify_data(args: argparse.Namespace) -> None:
@@ -255,7 +289,9 @@ def cmd_coding_run(args: argparse.Namespace) -> None:
         arm=arm,
         arm_name=args.arm,
         caller=rt.reader.caller,
-        grader=SweBenchGrader(namespace=args.namespace),
+        grader=SweContextBenchGrader(
+            Path(args.bench_repo), args.cases_dir, results_root(args.stage) / "grading"
+        ),
         make_sandbox=lambda item: DockerSandbox(args.image_template.format(instance_id=item.item_id)),
         store=ResultStore(results_root(args.stage)),
         stage=args.stage,
@@ -275,6 +311,9 @@ def main(argv: list[str] | None = None) -> int:
         return p
 
     add("verify-data", cmd_verify_data, "(free) check data/ files against the checksum manifest")
+    check = add("api-check", cmd_api_check, "(paid, under $0.001) verify the reader request shape")
+    check.add_argument("--yes", action="store_true")
+    check.add_argument("--key-var", default="OPENAI_API_KEY", help="name of the variable holding the key")
     add("census", cmd_census, "(free) token census of every history")
     add("pilot-select", cmd_pilot_select, "(free) write the deterministic pilot sample")
     run = add("run", cmd_run, "(paid) run one arm on one chat benchmark")
@@ -294,7 +333,8 @@ def main(argv: list[str] | None = None) -> int:
     code.add_argument("--data-dir", default="data/swectx")
     code.add_argument("--lite", action="store_true")
     code.add_argument("--image-template", required=True, help="Docker image per task, with {instance_id}")
-    code.add_argument("--namespace", default=None)
+    code.add_argument("--bench-repo", required=True, help="pinned clone of jiayuanz3/SWEContextBench")
+    code.add_argument("--cases-dir", default="cases/SWEContextBench Lite", help="relative to --bench-repo")
     args = parser.parse_args(argv)
     args.fn(args)
     return 0

@@ -38,9 +38,14 @@ Phase 0 confirmed (all 2026-10-01, sources in `configs/prices.yaml`):
   confirms it.
 - Pinning: the model page lists only the alias, no dated snapshot. The snapshot actually served is
   recorded from `response.model` on every call and reported. This is a limitation of the pin.
-- Temperature 0: the model page documents `reasoning.effort` but not temperature. The first
-  pilot call checks that the API accepts `temperature=0`. If it is rejected the code raises; it
-  never drops the parameter silently. The study owner decides before continuing.
+- Temperature 0: verified live on 2026-10-01 (`memstudy api-check`, two calls, $0.0003). With
+  reasoning effort `none` the API accepted `temperature=0`; two identical calls returned the same
+  answer; `response.model` was `gpt-6-luna`. The explicit cache breakpoint worked as designed:
+  the first call reported 2,125 `cache_write_tokens`, the second 2,125 `cached_tokens`, and the
+  billed cost matched the price formula to the last digit. Reported cached counts were not
+  rounded to a multiple of 128 in this case. With reasoning active, temperature is reportedly
+  rejected; the study never enables reasoning for the reader. If the API ever rejects the
+  parameter the code raises; it never drops it silently.
 - GPT-5 nano: $0.05 input, $0.005 cached, $0.40 output per 1M. Context 400,000. The dated
   snapshot `gpt-5-nano-2025-08-07` is marked Deprecated on its model page, so the alias is used
   and the served snapshot is logged. "Lowest reasoning effort" is `minimal`; the first pilot call
@@ -97,8 +102,13 @@ Mem0's self-reported scores are never used as a baseline. Every number comes fro
   "Coming", and no trajectories are published (checked 2026-10-01). Fallback: SWE Context Bench
   (arXiv 2602.08316, Hugging Face `jiayuanz3/SWEContextBench`, MIT). Caveats: it also ships no
   trajectories, so the memory history is each prior task's issue plus gold patch (a verified
-  experience, not an agent trajectory). Related tasks run in Docker images from Docker Hub
-  (`jiayuanz3/swecontextbench`); pulling them needs the owner's approval. The related-task count
+  experience, not an agent trajectory). Grading uses the benchmark's own evaluation system, not
+  the stock `swebench` package: the benchmark repository ships a fork of the SWE-bench harness
+  (`swebench_memory`, run through `combine_instances` then `run_evaluation`, as its
+  `evaluation.sh` does) with its own Docker images (`jiayuanz3/swecontextbench`). Stock
+  `swebench` 5.0.2 cannot grade these rows (it needs `image`, `eval_script`, `log_parser`
+  fields). A harness failure is recorded as an error, never as unresolved. Cloning the benchmark
+  repository at a pinned commit and pulling the images need the owner's approval. The related-task count
   differs between the paper (376) and the dataset README (362); the loaded file is authoritative.
   Arms: memory off versus Mem0 memory on; RAG only if the pilot shows budget room.
 - Full sets, no slices, one seed (0).

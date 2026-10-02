@@ -4,17 +4,19 @@ Arms: "off" (no memory) and "B" (Mem0 memory of the same repository). The agent 
 fenced bash block per turn; the command `submit` ends the episode and the sandbox diff is the
 patch. Grading applies the patch and runs the benchmark's tests, nothing else.
 
-The Docker sandbox and the SWE-bench grader are written against the documented interfaces but are
+The Docker sandbox and the benchmark grader are written against the documented interfaces but are
 not exercised offline; they first run in the Phase 2 pilot after approval. Tests use fakes.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
-import tempfile
+import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -79,55 +81,128 @@ class DockerSandbox:
         subprocess.run(["docker", "rm", "-f", self.container], capture_output=True)
 
 
+class GradingError(RuntimeError):
+    """The harness could not decide. Never recorded as unresolved: an infrastructure failure
+    would otherwise bias the resolved rate downward."""
+
+
+@dataclass(frozen=True)
+class GradeResult:
+    status: str  # "resolved" or "unresolved"; anything else raises GradingError
+
+    @property
+    def resolved(self) -> bool:
+        return self.status == "resolved"
+
+
 class Grader(Protocol):
-    def grade(self, item: Item, patch: str) -> bool: ...
+    def grade(self, item: Item, patch: str) -> GradeResult: ...
 
 
-class SweBenchGrader:
-    """Runs swebench.harness.run_evaluation on one prediction and reads the resolved list."""
+def parse_report(report: dict[str, Any], instance_id: str) -> GradeResult:
+    """Map the harness run report (resolved_ids, unresolved_ids, error_ids, ...) to a result."""
+    if instance_id in report.get("resolved_ids", []):
+        return GradeResult("resolved")
+    if instance_id in report.get("unresolved_ids", []):
+        return GradeResult("unresolved")
+    for key in ("error_ids", "incomplete_ids", "infra_failure_ids", "ambiguous_failure_ids"):
+        if instance_id in report.get(key, []):
+            raise GradingError(f"{instance_id} ended as {key}")
+    raise GradingError(f"{instance_id} is absent from the harness report")
 
-    def __init__(self, namespace: str | None = None, timeout: int = 1800) -> None:
-        self.namespace = namespace
+
+class SweContextBenchGrader:
+    """Grades with the benchmark's own harness, the way its evaluation.sh does.
+
+    SWE Context Bench ships a fork of the SWE-bench harness (package `swebench_memory`, in
+    github.com/jiayuanz3/SWEContextBench) with its own Docker images (jiayuanz3/swecontextbench).
+    The stock `swebench` package (5.x) cannot grade this dataset: it needs `image`, `eval_script`
+    and `log_parser` fields these rows do not have. Steps per task, mirroring evaluation.sh:
+
+    1. write `<instance_id>_preds.json` in the format the README specifies,
+    2. `python -m swebench_memory.harness.combine_instances` to build the dataset and predictions,
+    3. `python -m swebench_memory.harness.run_evaluation`,
+    4. read `<run_id>.json` and map the instance to resolved or unresolved.
+
+    Run directories are kept under work_root for audit and are never overwritten; an existing
+    report is read instead of re-running. Needs a pinned clone of the benchmark repository and its
+    dependencies, plus the Docker images, all after the owner's approval. Not run offline: tests
+    use an injected runner.
+    """
+
+    def __init__(
+        self,
+        repo_dir: Path,
+        cases_dir: str,
+        work_root: Path,
+        python: str = sys.executable,
+        runner: Any = subprocess.run,
+        timeout: int = 3600,
+    ) -> None:
+        self.repo_dir = Path(repo_dir)
+        self.cases_dir = cases_dir
+        self.work_root = Path(work_root)
+        self.python = python
+        self.runner = runner
         self.timeout = timeout
 
-    def grade(self, item: Item, patch: str) -> bool:
-        instance = item.meta["swebench_instance"]
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp)
-            (work / "dataset.json").write_text(json.dumps([instance]))
-            (work / "preds.json").write_text(
-                json.dumps(
-                    [
-                        {
-                            "instance_id": item.item_id,
-                            "model_name_or_path": "memstudy",
-                            "model_patch": patch,
-                        }
-                    ]
-                )
+    def _run(self, args: list[str], cwd: Path) -> None:
+        env = {**os.environ, "PYTHONPATH": f"{self.repo_dir}{os.pathsep}{os.environ.get('PYTHONPATH', '')}"}
+        done = self.runner(
+            [self.python, "-m", *args],
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=self.timeout,
+        )
+        if done.returncode != 0:
+            raise GradingError(f"{args[0]} failed with exit code {done.returncode}: {done.stderr[-500:]}")
+
+    def grade(self, item: Item, patch: str) -> GradeResult:
+        run_id = f"memstudy-{item.item_id}"
+        work = self.work_root / item.item_id
+        report_file = work / f"{run_id}.json"
+        if not report_file.exists():
+            preds = work / "predictions"
+            preds.mkdir(parents=True, exist_ok=True)
+            prediction = {
+                item.item_id: {
+                    "model_name_or_path": "memstudy",
+                    "instance_id": item.item_id,
+                    "model_patch": patch,
+                }
+            }
+            (preds / f"{item.item_id}_preds.json").write_text(json.dumps(prediction))
+            self._run(
+                [
+                    "swebench_memory.harness.combine_instances",
+                    "--instances",
+                    str(self.repo_dir / self.cases_dir),
+                    "--predictions",
+                    str(preds),
+                    "--dataset-output",
+                    "batch_dataset.json",
+                    "--predictions-output",
+                    "batch_predictions.json",
+                ],
+                work,
             )
-            cmd = [
-                "python",
-                "-m",
-                "swebench.harness.run_evaluation",
-                "--dataset_name",
-                str(work / "dataset.json"),
-                "--predictions_path",
-                str(work / "preds.json"),
-                "--instance_ids",
-                item.item_id,
-                "--run_id",
-                "memstudy",
-                "--max_workers",
-                "1",
-            ]
-            if self.namespace:
-                cmd += ["--namespace", self.namespace]
-            subprocess.run(cmd, cwd=work, capture_output=True, text=True, timeout=self.timeout)
-            reports = list(work.glob("*.memstudy.json"))
-            if not reports:
-                return False
-            return item.item_id in json.loads(reports[0].read_text()).get("resolved_ids", [])
+            self._run(
+                [
+                    "swebench_memory.harness.run_evaluation",
+                    "--dataset_name",
+                    "batch_dataset.json",
+                    "--predictions_path",
+                    "batch_predictions.json",
+                    "--run_id",
+                    run_id,
+                ],
+                work,
+            )
+        if not report_file.exists():
+            raise GradingError(f"harness wrote no report at {report_file}")
+        return parse_report(json.loads(report_file.read_text()), item.item_id)
 
 
 def parse_command(reply: str) -> str | None:
@@ -260,10 +335,14 @@ def run_coding(
                 arm=arm_name,
                 cfg=cfg,
             )
-            resolved = grader.grade(item, outcome["patch"]) if outcome["patch"].strip() else False
+            grade = (
+                grader.grade(item, outcome["patch"])
+                if outcome["patch"].strip()
+                else GradeResult("unresolved")  # an empty patch cannot resolve the task
+            )
         except BudgetExceeded:
             raise
-        except IncompleteResponse as err:
+        except (IncompleteResponse, GradingError) as err:
             store.write_error(arm_name, item.bench, item.item_id, {"error": str(err)})
             counts["errors"] += 1
             continue
@@ -280,7 +359,8 @@ def run_coding(
                 "item_id": item.item_id,
                 "history_id": item.history_id,
                 "category": item.category,
-                "resolved": resolved,
+                "resolved": grade.resolved,
+                "grade_status": grade.status,
                 "memory": memory_meta,
                 "memory_tokens_counted": count_tokens(memory),
                 **outcome,

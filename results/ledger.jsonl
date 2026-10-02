@@ -1,0 +1,2 @@
+{"arm": "check", "cache_write_tokens": 2125, "cached_tokens": 0, "input_tokens": 2144, "item": "api-check", "model": "gpt-6-luna", "output_tokens": 5, "purpose": "read", "reasoning_tokens": 0, "stage": "pilot", "ts": 1790903121.773676, "usd": 0.00027002499999999996}
+{"arm": "check", "cache_write_tokens": 0, "cached_tokens": 2125, "input_tokens": 2144, "item": "api-check", "model": "gpt-6-luna", "output_tokens": 5, "purpose": "read", "reasoning_tokens": 0, "stage": "pilot", "ts": 1790903123.864573, "usd": 2.565e-05}
