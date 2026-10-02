@@ -14,9 +14,9 @@ dependencies = [
   "mem0ai[nlp]==2.2.1",
   "numpy>=1.26",
   "openai>=3.23,<4",
-  "pyarrow>=18",
   "pydantic>=2.9,<3",
   "pyyaml>=6,<7",
+  "supermemory==3.62.0",
   "tiktoken==0.14.0",
 ]
 
@@ -54,5 +54,5 @@ packages = ["memstudy"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]
-module = ["mem0", "mem0.*", "spacy", "pyarrow", "pyarrow.*"]
+module = ["mem0", "mem0.*", "spacy", "supermemory", "supermemory.*"]
 ignore_missing_imports = true

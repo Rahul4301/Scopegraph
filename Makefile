@@ -1,4 +1,4 @@
-.PHONY: install check lint typecheck test census pilot-select judge-export judge-eval coding-baseline pilot-report
+.PHONY: install check lint typecheck test census pilot-select pilot-report verify-data judge-diagnostics
 
 PYTHON ?= .venv/bin/python
 export PYTHONPATH := src
@@ -18,7 +18,7 @@ typecheck:
 test:
 	$(PYTHON) -m pytest
 
-# Free commands (no model call). Paid commands (run, judge-rerun, coding-run) are deliberately
+# Free commands (no model call). Paid commands (run, judge-flip, api-check) are deliberately
 # not make targets: invoke `python -m memstudy <command>` after approval, with the gates open in
 # configs/approvals.yaml.
 census:
@@ -27,15 +27,11 @@ census:
 pilot-select:
 	$(PYTHON) -m memstudy pilot-select
 
-judge-export:
-	$(PYTHON) -m memstudy judge-export
+verify-data:
+	$(PYTHON) -m memstudy verify-data
 
-judge-eval:
-	@test -n "$(LABELED)" || (echo 'Set LABELED=<path to hand-labeled csv>'; exit 1)
-	$(PYTHON) -m memstudy judge-eval $(LABELED)
-
-coding-baseline:
-	$(PYTHON) -m memstudy coding-baseline
+judge-diagnostics:
+	$(PYTHON) -m memstudy judge-diagnostics
 
 pilot-report:
 	$(PYTHON) -m memstudy pilot-report

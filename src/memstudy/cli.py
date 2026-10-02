@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
 import sys
 import uuid
 from dataclasses import dataclass
@@ -21,27 +20,24 @@ from memstudy.arms.base import Arm
 from memstudy.arms.full_context import FullContextArm
 from memstudy.arms.mem0_arm import Mem0Arm
 from memstudy.arms.rag import RagArm
-from memstudy.budget import Budget, ModelPrice, load_prices
-from memstudy.coding import DockerSandbox, SweContextBenchGrader, image_for_instance, run_coding
+from memstudy.arms.supermemory_arm import SupermemoryArm
+from memstudy.budget import Budget, ModelPrice, load_prices, load_supermemory_price
 from memstudy.config import DEFAULT_CONFIG, DEFAULT_PRICES, config_hash, load_config
 from memstudy.datacheck import verify as verify_data
 from memstudy.judge import Judge
 from memstudy.llm import ModelCaller
 from memstudy.loaders import load_bench
-from memstudy.loaders.swectx import load_swectx
 from memstudy.metering import CostSink, Meter
 from memstudy.phase0 import census
 from memstudy.pilot import (
-    baseline_check,
-    evaluate_judge_check,
-    export_judge_check,
+    containment_diagnostic,
     pilot_stats,
     project_full_cost,
     rerun_judge,
+    select_flip_sample,
     select_pilot,
-    stratified_sample,
 )
-from memstudy.preflight import load_openai_key, require_gates
+from memstudy.preflight import load_env_key, load_openai_key, require_gates
 from memstudy.reader import Reader
 from memstudy.runner import finalize_run, run_chat
 from memstudy.schema import Item
@@ -58,7 +54,7 @@ def results_root(stage: str) -> Path:
 def stage_gate(stage: str, bench: str) -> str:
     if stage == "pilot":
         return "stage_pilot"
-    return f"stage_chat_{bench}" if bench in {"locomo", "longmemeval"} else "stage_coding"
+    return f"stage_chat_{bench}"
 
 
 @dataclass
@@ -93,12 +89,28 @@ def build_arm(
         for item in items or []:
             counts[item.history_id] = counts.get(item.history_id, 0) + 1
         return FullContextArm(price.context_window, cfg["tokenizer"]["safety_margin"], counts)
-    require_gates("g1_extra_models")
     meter = Meter(rt.budget, rt.prices, stage, CostSink(), tag)
+    retrieval = cfg["retrieval"]
     if name == "C":
-        return RagArm(cfg["arms"]["C"], meter.wrap(openai.OpenAI(max_retries=0)), meter, Path(".cache/rag"))
+        require_gates("g2_supermemory")
+        load_env_key("SUPERMEMORY_API_KEY")
+        from supermemory import Supermemory
+
+        return SupermemoryArm(
+            cfg["arms"]["C"],
+            retrieval,
+            Supermemory(),
+            load_supermemory_price(DEFAULT_PRICES),
+            rt.budget,
+            stage,
+            tag,
+        )
+    require_gates("g1_extra_models")
+    if name == "D":
+        embedder = meter.wrap(openai.OpenAI(max_retries=0))
+        return RagArm(cfg["arms"]["D"], retrieval, embedder, meter, Path(".cache/rag"))
     if name == "B":
-        return Mem0Arm.create(cfg["arms"]["B"], meter, f".cache/mem0/{stage}")
+        return Mem0Arm.create(cfg["arms"]["B"], retrieval, meter, f".cache/mem0/{stage}")
     raise ValueError(f"unknown arm {name}")
 
 
@@ -216,40 +228,23 @@ def cmd_run(args: argparse.Namespace) -> None:
     print(json.dumps({k: run[k] for k in ("run_id", "completed", "errors", "accuracy", "cost_usd")}))
 
 
-def cmd_judge_export(args: argparse.Namespace) -> None:
-    cfg = load_config()
-    out = RESULTS / "pilot" / "judge_check"
-    info = export_judge_check(
-        ResultStore(results_root("pilot")), out, cfg["pilot"]["judge_check_per_arm"], cfg["seed"]
-    )
-    print(info, "label the human_verdict column of", out / "labeling.csv")
-
-
-def cmd_judge_rerun(args: argparse.Namespace) -> None:
+def cmd_judge_flip(args: argparse.Namespace) -> None:
+    """Rerun the judge on 100 answers (50 arm A, 50 arm B) and report its flip rate."""
     require_gates("stage_pilot")
     rt = build_runtime()
-    base = RESULTS / "pilot" / "judge_check"
-    report = rerun_judge(rt.judge, base / "answer_key.json", base / "rerun.json", "pilot")
-    print({k: report[k] for k in ("n", "flips", "flip_rate")})
+    store = ResultStore(results_root("pilot"))
+    sample = select_flip_sample(store, rt.cfg["pilot"]["judge_flip_per_arm"], rt.cfg["seed"])
+    report = rerun_judge(rt.judge, sample, RESULTS / "pilot" / "judge_flip.json", "pilot")
+    print({k: report[k] for k in ("n", "flips", "flip_rate", "flip_rate_by_arm")})
 
 
-def cmd_judge_eval(args: argparse.Namespace) -> None:
-    cfg = load_config()["pilot"]
-    result = evaluate_judge_check(
-        Path(args.labeled),
-        RESULTS / "pilot" / "judge_check" / "answer_key.json",
-        cfg["judge_pass_agreement"],
-        cfg["judge_pass_disagreement_gap"],
-    )
-    print(json.dumps(result, indent=2))
-
-
-def cmd_coding_baseline(args: argparse.Namespace) -> None:
-    cfg = load_config()["pilot"]
-    rows = ResultStore(results_root("pilot")).read_items("off", "swectx")
-    resolved = sum(1 for r in rows if r["resolved"])
-    low, high = cfg["coding_baseline_stop_low"], cfg["coding_baseline_stop_high"]
-    print(json.dumps(baseline_check(resolved, len(rows), low, high)))
+def cmd_judge_diagnostics(args: argparse.Namespace) -> None:
+    """Judge agreement with a deterministic containment test on short answers (free)."""
+    store = ResultStore(results_root(args.stage))
+    records = [
+        r for arm in ("A", "B", "C", "D") for b in ("locomo", "longmemeval") for r in store.read_items(arm, b)
+    ]
+    print(json.dumps(containment_diagnostic(records), indent=2))
 
 
 def cmd_pilot_report(args: argparse.Namespace) -> None:
@@ -263,7 +258,7 @@ def cmd_pilot_report(args: argparse.Namespace) -> None:
     for bench in ("locomo", "longmemeval"):
         histories = {h["history_id"]: h["tokens"] for h in full_census[bench]["histories"]}
         full = [(h["tokens"], h["queries"]) for h in full_census[bench]["histories"]]
-        for arm in ("A", "B", "C"):
+        for arm in ("A", "B", "C", "D"):
             if not store.read_items(arm, bench):
                 continue
             stats = pilot_stats(store, arm, bench, histories)
@@ -271,34 +266,6 @@ def cmd_pilot_report(args: argparse.Namespace) -> None:
             report[f"{arm}/{bench}"] = stats
     _write_new_json(RESULTS / "pilot" / "report" / "pilot_report.json", report)
     print(json.dumps({k: v["projected_reader_usd"] for k, v in report.items()}, indent=2))
-
-
-def cmd_coding_run(args: argparse.Namespace) -> None:
-    require_gates(stage_gate(args.stage, "swectx"))
-    rt = build_runtime()
-    histories, items = load_swectx(Path(args.data_dir), lite=args.lite)
-    if args.stage == "pilot":
-        items = stratified_sample(
-            items, rt.cfg["pilot"]["coding_tasks"], random.Random(rt.cfg["seed"])
-        )
-    run_id = f"{args.stage}-swectx-{args.arm}-{uuid.uuid4().hex[:8]}"
-    arm = None if args.arm == "off" else build_arm("B", rt, args.stage, {"arm": "B", "run": run_id})
-    counts = run_coding(
-        items=items,
-        histories=histories,
-        arm=arm,
-        arm_name=args.arm,
-        caller=rt.reader.caller,
-        grader=SweContextBenchGrader(
-            Path(args.bench_repo), args.cases_dir, results_root(args.stage) / "grading"
-        ),
-        make_sandbox=lambda item: DockerSandbox(image_for_instance(item.item_id)),
-        store=ResultStore(results_root(args.stage)),
-        stage=args.stage,
-        run_id=run_id,
-        cfg=rt.cfg,
-    )
-    print(json.dumps({"run_id": run_id, **counts}))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -317,23 +284,14 @@ def main(argv: list[str] | None = None) -> int:
     add("census", cmd_census, "(free) token census of every history")
     add("pilot-select", cmd_pilot_select, "(free) write the deterministic pilot sample")
     run = add("run", cmd_run, "(paid) run one arm on one chat benchmark")
-    run.add_argument("--arm", choices=["A", "B", "C"], required=True)
+    run.add_argument("--arm", choices=["A", "B", "C", "D"], required=True)
     run.add_argument("--bench", choices=["locomo", "longmemeval"], required=True)
     run.add_argument("--stage", choices=["pilot", "chat"], required=True)
     run.add_argument("--include-adversarial", action="store_true")
-    add("judge-export", cmd_judge_export, "(free) export the 100-answer hand-check")
-    add("judge-rerun", cmd_judge_rerun, "(paid, tiny) rerun nano on the hand-check items")
-    ev = add("judge-eval", cmd_judge_eval, "(free) score the hand-labeled CSV against nano")
-    ev.add_argument("labeled")
-    add("coding-baseline", cmd_coding_baseline, "(free) memory-off solve rate gate")
+    add("judge-flip", cmd_judge_flip, "(paid, tiny) rerun nano on 100 answers for its flip rate")
+    diag = add("judge-diagnostics", cmd_judge_diagnostics, "(free) judge vs containment test")
+    diag.add_argument("--stage", choices=["pilot", "chat"], default="pilot")
     add("pilot-report", cmd_pilot_report, "(free) per-arm tokens, cost, latency, projection")
-    code = add("coding-run", cmd_coding_run, "(paid) run the coding benchmark, memory off or Mem0")
-    code.add_argument("--arm", choices=["off", "B"], required=True)
-    code.add_argument("--stage", choices=["pilot", "coding"], required=True)
-    code.add_argument("--data-dir", default="data/swectx/data")
-    code.add_argument("--lite", action="store_true")
-    code.add_argument("--bench-repo", default="third_party/SWEContextBench", help="pinned benchmark clone")
-    code.add_argument("--cases-dir", default="cases/SWEContextBench Lite", help="relative to --bench-repo")
     args = parser.parse_args(argv)
     args.fn(args)
     return 0

@@ -1,15 +1,15 @@
-import csv
-import json
 import random
 
 import pytest
-from conftest import make_item
+from conftest import FakeClient, make_item, make_response
 
+from memstudy.judge import Judge
+from memstudy.llm import ModelCaller
 from memstudy.pilot import (
-    baseline_check,
-    evaluate_judge_check,
-    export_judge_check,
+    containment_diagnostic,
     project_full_cost,
+    rerun_judge,
+    select_flip_sample,
     select_pilot,
     stratified_sample,
 )
@@ -45,84 +45,72 @@ def test_pilot_selection_matches_the_pregistered_sizes(cfg):
     assert pilot == select_pilot(by_bench, cfg)
 
 
-def _record(arm, bench, n, verdict, category="cat1"):
+def _record(arm, bench, n, verdict, category="cat1", gold="alpha", answer=None):
     return {
-        "arm": arm, "bench": bench, "item_id": f"{bench}-{n:03d}", "category": category,
-        "question": f"q{n}", "gold": "alpha", "model_answer": f"{arm}-answer-{n}",
+        "arm": arm, "bench": bench, "item_id": f"{bench}-{n:03d}", "history_id": f"h{n % 3}",
+        "category": category, "question": f"q{n}", "gold": gold,
+        "model_answer": answer or f"{arm}-answer-{n}", "abstention": False,
         "judge": {"raw": "x"}, "correct": verdict,
     }
 
 
 @pytest.fixture
-def exported(tmp_path):
+def store(tmp_path):
     store = ResultStore(tmp_path / "res")
     for arm in ("A", "B"):
         for n in range(8):
             store.write_item(arm, "locomo", f"locomo-{n:03d}", _record(arm, "locomo", n, n % 2 == 0))
-    out = tmp_path / "check"
-    export_judge_check(store, out, n_per_arm=6, seed=0)
-    return out
+    return store
 
 
-def test_labeling_copy_hides_the_judge_verdict_and_the_arm(exported):
-    text = (exported / "labeling.csv").read_text()
-    rows = list(csv.DictReader(text.splitlines()))
-    assert len(rows) == 12
-    assert set(rows[0]) == {
-        "check_id", "bench", "category", "question", "gold", "model_answer", "human_verdict"
-    }
-    assert all(r["human_verdict"] == "" for r in rows)
-    assert "CORRECT" not in text and "nano_verdict" not in text
-    key = json.loads((exported / "answer_key.json").read_text())
-    assert {v["arm"] for v in key.values()} == {"A", "B"}
-    assert sum(v["arm"] == "A" for v in key.values()) == 6
+def test_flip_sample_takes_n_from_each_arm_deterministically(store):
+    sample = select_flip_sample(store, per_arm=6, seed=0)
+    assert [r["arm"] for r in sample].count("A") == 6 and [r["arm"] for r in sample].count("B") == 6
+    assert sample == select_flip_sample(store, per_arm=6, seed=0)
 
 
-def test_export_refuses_to_overwrite(exported, tmp_path):
-    store = ResultStore(tmp_path / "res")
-    with pytest.raises(FileExistsError):
-        export_judge_check(store, exported, n_per_arm=6, seed=0)
+def test_flip_sample_takes_everything_when_fewer_are_available(store):
+    assert len(select_flip_sample(store, per_arm=50, seed=0)) == 16
 
 
-def _label(exported, tmp_path, flip_arm=None, flip_n=0):
-    key = json.loads((exported / "answer_key.json").read_text())
-    rows = list(csv.DictReader((exported / "labeling.csv").open()))
-    flipped = 0
-    for r in rows:
-        verdict = key[r["check_id"]]["nano_verdict"]
-        if key[r["check_id"]]["arm"] == flip_arm and flipped < flip_n:
-            verdict = "INCORRECT" if verdict == "CORRECT" else "CORRECT"
+def _judge(prices, budget, cfg, verdicts):
+    queue = iter(verdicts)
+    client = FakeClient(
+        lambda kw: make_response(text=f'{{"verdict": "{next(queue)}"}}', model="gpt-5-nano", output=12)
+    )
+    return Judge(ModelCaller(client, prices["gpt-5-nano"], budget), cfg), client
+
+
+def test_rerun_reports_the_flip_rate_overall_and_per_arm(store, prices, budget, cfg, tmp_path):
+    records = select_flip_sample(store, per_arm=4, seed=0)
+    # first-run verdicts are in the records; flip exactly two of the arm A answers
+    verdicts, flipped = [], 0
+    for r in records:
+        again = "CORRECT" if r["correct"] else "INCORRECT"
+        if r["arm"] == "A" and flipped < 2:
+            again = "INCORRECT" if r["correct"] else "CORRECT"
             flipped += 1
-        r["human_verdict"] = verdict
-    path = tmp_path / "labeled.csv"
-    with path.open("w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
-        writer.writeheader()
-        writer.writerows(rows)
-    return path
+        verdicts.append(again)
+    judge, client = _judge(prices, budget, cfg, verdicts)
+    report = rerun_judge(judge, records, tmp_path / "flip.json", "pilot")
+    assert report["n"] == 8 and report["flips"] == 2 and report["flip_rate"] == 0.25
+    assert report["flip_rate_by_arm"] == {"A": 0.5, "B": 0.0}
+    assert len(client.responses.calls) == 8
+    with pytest.raises(FileExistsError):
+        rerun_judge(judge, records, tmp_path / "flip.json", "pilot")
 
 
-def test_judge_check_passes_with_full_agreement(exported, tmp_path):
-    result = evaluate_judge_check(_label(exported, tmp_path), exported / "answer_key.json", 0.95, 0.02)
-    assert result["pass"] and result["agreement"] == 1.0
-
-
-def test_judge_check_fails_below_95_percent(exported, tmp_path):
-    labeled = _label(exported, tmp_path, flip_arm="A", flip_n=2)
-    result = evaluate_judge_check(labeled, exported / "answer_key.json", 0.95, 0.02)
-    assert not result["pass"] and result["agreement"] < 0.95
-
-
-def test_judge_check_fails_when_arm_disagreement_gap_exceeds_two_points(exported, tmp_path):
-    labeled = _label(exported, tmp_path, flip_arm="A", flip_n=1)
-    result = evaluate_judge_check(labeled, exported / "answer_key.json", 0.80, 0.02)
-    assert result["disagreement_gap"] > 0.02 and not result["pass"]
-
-
-def test_baseline_gate_stops_at_extremes():
-    assert baseline_check(0, 5, 0.10, 0.90)["stop"]
-    assert baseline_check(5, 5, 0.10, 0.90)["stop"]
-    assert not baseline_check(2, 5, 0.10, 0.90)["stop"]
+def test_containment_diagnostic_covers_short_answers_only():
+    records = [
+        _record("A", "locomo", 0, True, gold="7 May 2023", answer="It was on 7 May, 2023."),
+        _record("A", "locomo", 1, False, gold="Paris", answer="Rome"),
+        _record("A", "locomo", 2, True, gold="Paris", answer="Rome"),  # judge and test disagree
+        _record("B", "locomo", 3, True, gold="one two three four five six", answer="one two"),
+        {**_record("B", "locomo", 4, True, gold="Not mentioned in the conversation."), "abstention": True},
+    ]
+    result = containment_diagnostic(records)
+    assert result["n"] == 3 and result["agreement"] == pytest.approx(2 / 3)
+    assert result["agreement_by_arm"] == {"A": pytest.approx(2 / 3)}
 
 
 def test_projection_has_an_ordered_range(prices):

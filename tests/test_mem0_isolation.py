@@ -8,12 +8,13 @@ would match every memory regardless of user.
 import os
 
 import pytest
-from conftest import make_history
+from conftest import make_history, make_item
 
 from memstudy.arms.mem0_arm import Mem0Arm, build_memory_config, session_messages
 from memstudy.budget import Budget
 from memstudy.metering import CostSink, Meter
 from memstudy.schema import Session, Turn
+from memstudy.tokens import count_tokens
 
 DIMS = 1536
 
@@ -40,7 +41,7 @@ def arm(tmp_path, cfg, prices, monkeypatch):
     memory = Memory(MemoryConfig(**config))
     memory.embedding_model = ConstantEmbedder()
     meter = Meter(Budget(tmp_path / "l.jsonl"), prices, "pilot", CostSink(), {})
-    return Mem0Arm(cfg["arms"]["B"], meter, memory, infer=False)
+    return Mem0Arm(cfg["arms"]["B"], cfg["retrieval"], meter, memory, infer=False)
 
 
 def test_search_under_one_user_returns_nothing_from_another(arm):
@@ -72,8 +73,6 @@ def test_same_history_id_in_another_bench_is_a_different_user(arm):
 
 
 def test_context_refuses_a_history_that_was_not_ingested(arm):
-    from conftest import make_item
-
     with pytest.raises(RuntimeError):
         arm.context(make_item("conv-1"), make_history("conv-1"))
 
@@ -96,9 +95,17 @@ def test_longmemeval_roles_are_kept():
 
 def test_config_keeps_mem0_defaults_and_writes_nothing_under_home(cfg):
     b = build_memory_config(cfg["arms"]["B"], ".cache/v", ".cache/h.db")
-    assert b["llm"]["config"]["model"] == "gpt-6-luna"
-    assert b["llm"]["config"]["reasoning_effort"] == "none"
-    assert b["llm"]["config"]["is_reasoning_model"] is True
+    assert b["llm"] == {"provider": "openai", "config": {"model": "gpt-5-mini"}}
     assert b["embedder"]["config"]["model"] == "text-embedding-3-small"
     assert b["history_db_path"] == ".cache/h.db"
     assert os.path.expanduser("~/.mem0") not in b["vector_store"]["config"]["path"]
+
+
+def test_mem0_context_is_filled_to_the_shared_token_budget(arm, cfg):
+    history = make_history("conv-1", "locomo", "alpha")
+    arm.prepare(history)
+    top = arm.search("dog", history.user_id)[0]["memory"]
+    arm.retrieval = {**cfg["retrieval"], "token_budget": count_tokens(top) + 3}
+    ctx = arm.context(make_item("conv-1"), history)
+    assert len(ctx.retrieved) == 1 and ctx.candidates > 1
+    assert ctx.text == f"- {top}"

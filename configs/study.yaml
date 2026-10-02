@@ -5,15 +5,16 @@ seed: 0
 
 reader:
   model: gpt-6-luna
-  reasoning_effort: none      # supported values: none, low, medium, high, xhigh, max
-  temperature: 0              # the first pilot call verifies the API accepts this; see PREREG.md
+  reasoning_effort: none      # verified live: effort none accepts temperature 0
+  temperature: 0
   max_output_tokens: 512
   cache_ttl: 30m
-  # Arm A uses one explicit cache breakpoint after the history. Arms B and C use explicit mode
-  # with no breakpoint, so they pay the plain input rate and never a cache-write surcharge.
+  # Arm A uses one explicit cache breakpoint after the history when a history is queried at
+  # least twice. Arms B, C and D use explicit mode with no breakpoint, so they pay the plain
+  # input rate and never a cache-write surcharge.
 
 judge:
-  model: gpt-5-nano
+  model: gpt-5-nano           # the sole grader; no second grader, no human grading
   reasoning_effort: minimal   # lowest effort the model accepts
   max_output_tokens: 256
 
@@ -21,31 +22,36 @@ tokenizer:
   encoding: o200k_base        # proxy; the API's usage.input_tokens is authoritative
   safety_margin: 0.05
 
+# Arms B, C and D place retrieved context in the prompt under one shared token budget.
+# 7,000 matches the mean tokens Mem0 reports per query (6,956 on LoCoMo, 6,787 on LongMemEval).
+retrieval:
+  token_budget: 7000
+  candidate_pool: 200         # candidates fetched per query, then filled to the budget in rank order
+
 arms:
   A: {name: full_context}
   B:
     name: mem0
     version: 2.2.1
-    top_k: 200                # mem0ai/memory-benchmarks default and Mem0's headline setting
     threshold: 0.1            # library default
     rerank: false             # library default
     turns_per_add: 10
-    extraction_model: gpt-6-luna         # owner decision: only Luna and nano are used for chat models
-    extraction_reasoning_effort: none    # drops temperature, so the request is accepted
-    embedding_model: text-embedding-3-small   # Luna and nano cannot embed; see gate G1
+    extraction_model: gpt-5-mini         # default of the pinned version, recorded
+    embedding_model: text-embedding-3-small   # default of the pinned version, recorded
   C:
+    name: supermemory
+    sdk_version: 3.62.0
+    task_type: memory         # full pipeline (facts, profile, graph)
+    search_mode: hybrid       # memories plus document chunks, the documented default
+    poll_seconds: 5
+    poll_timeout_seconds: 1800
+  D:
     name: rag
     chunk_tokens: 256
-    top_k: 28                 # about 7K tokens, matching Mem0's reported mean retrieved tokens
-    embedding_model: text-embedding-3-small
+    embedding_model: text-embedding-3-small   # same embedder as Mem0
 
 pilot:
   locomo_questions: 30
-  locomo_conversations: 3     # bounds Mem0 ingestion cost
+  locomo_conversations: 3     # bounds Mem0 and Supermemory ingestion cost
   longmemeval_questions: 20
-  coding_tasks: 5
-  judge_check_per_arm: 50
-  judge_pass_agreement: 0.95
-  judge_pass_disagreement_gap: 0.02
-  coding_baseline_stop_low: 0.10
-  coding_baseline_stop_high: 0.90
+  judge_flip_per_arm: 50      # 50 from arm A and 50 from arm B

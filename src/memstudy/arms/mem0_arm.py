@@ -12,7 +12,7 @@ import os
 import time
 from typing import Any
 
-from memstudy.arms.base import ArmContext, IngestStats
+from memstudy.arms.base import ArmContext, IngestStats, fill_to_budget
 from memstudy.metering import CostSink, Meter
 from memstudy.schema import History, Item, Session
 from memstudy.tokens import count_tokens
@@ -49,16 +49,7 @@ def session_messages(session: Session, speakers: dict[str, str]) -> list[dict[st
 def build_memory_config(cfg: dict[str, Any], vector_path: str, history_db: str) -> dict[str, Any]:
     return {
         "history_db_path": history_db,
-        "llm": {
-            "provider": "openai",
-            "config": {
-                "model": cfg["extraction_model"],
-                # Reasoning-model parameter set: Mem0 sends reasoning_effort and drops
-                # temperature and max_tokens, which GPT-6 Luna rejects unless effort is none.
-                "is_reasoning_model": True,
-                "reasoning_effort": cfg["extraction_reasoning_effort"],
-            },
-        },
+        "llm": {"provider": "openai", "config": {"model": cfg["extraction_model"]}},
         "embedder": {"provider": "openai", "config": {"model": cfg["embedding_model"]}},
         "vector_store": {
             "provider": "qdrant",
@@ -77,11 +68,13 @@ class Mem0Arm:
     def __init__(
         self,
         cfg: dict[str, Any],
+        retrieval: dict[str, Any],
         meter: Meter,
         memory: Any,
         infer: bool = True,
     ) -> None:
         self.cfg = cfg
+        self.retrieval = retrieval
         self.meter = meter
         self.memory = memory
         self.infer = infer
@@ -90,7 +83,9 @@ class Mem0Arm:
         self._ingested: set[str] = set()
 
     @classmethod
-    def create(cls, cfg: dict[str, Any], meter: Meter, store_dir: str) -> Mem0Arm:
+    def create(
+        cls, cfg: dict[str, Any], retrieval: dict[str, Any], meter: Meter, store_dir: str
+    ) -> Mem0Arm:
         # Mem0 reads these at import: no telemetry, and no files under the home directory.
         os.environ["MEM0_TELEMETRY"] = "False"
         os.environ["MEM0_DIR"] = store_dir
@@ -102,7 +97,7 @@ class Mem0Arm:
         memory = Memory(MemoryConfig(**config))
         meter.wrap(memory.llm.client)
         meter.wrap(memory.embedding_model.client)
-        return cls(cfg, meter, memory)
+        return cls(cfg, retrieval, meter, memory)
 
     def stored_count(self, user_id: str) -> int:
         found = self.memory.get_all(filters={"user_id": user_id}, top_k=100_000)
@@ -137,7 +132,7 @@ class Mem0Arm:
         found = self.memory.search(
             query,
             filters={"user_id": user_id},
-            top_k=int(self.cfg["top_k"]),
+            top_k=int(self.retrieval["candidate_pool"]),
             threshold=float(self.cfg["threshold"]),
             rerank=bool(self.cfg["rerank"]),
         )
@@ -151,12 +146,14 @@ class Mem0Arm:
         with self.meter.use_sink(self.query_sink):
             results = self.search(item.question, history.user_id)
         seconds = time.perf_counter() - start
-        text = "\n".join(f"- {r['memory']}" for r in results)
+        kept = fill_to_budget([r["memory"] for r in results], int(self.retrieval["token_budget"]))
+        text = "\n".join(f"- {m}" for m in kept)
         return ArmContext(
             text=text,
             context_tokens=count_tokens(text),
             cache_prefix=False,
-            retrieved=[str(r.get("id", "")) for r in results],
+            retrieved=[str(r.get("id", "")) for r in results[: len(kept)]],
+            candidates=len(results),
             retrieval_seconds=seconds,
             retrieval_cost=self.query_sink.since(before),
         )

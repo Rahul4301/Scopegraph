@@ -42,3 +42,23 @@ def test_missing_key_raises(monkeypatch, tmp_path):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(pf.NotApproved):
         pf.load_openai_key(tmp_path / "missing.env")
+
+
+def test_key_var_lets_a_differently_named_variable_supply_the_key(monkeypatch, tmp_path, capsys):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    env = tmp_path / ".env"
+    env.write_text("LLM_API_KEY=sk-other\nOPENAI_API_KEY=\n")
+    pf.load_openai_key(env, key_var="LLM_API_KEY")
+    import os
+
+    assert os.environ["OPENAI_API_KEY"] == "sk-other" and capsys.readouterr().out == ""
+
+
+def test_supermemory_key_is_loaded_into_its_own_variable(monkeypatch, tmp_path):
+    monkeypatch.delenv("SUPERMEMORY_API_KEY", raising=False)
+    env = tmp_path / ".env"
+    env.write_text("SUPERMEMORY_API_KEY=sm_secret\n")
+    pf.load_env_key("SUPERMEMORY_API_KEY", env)
+    import os
+
+    assert os.environ["SUPERMEMORY_API_KEY"] == "sm_secret"

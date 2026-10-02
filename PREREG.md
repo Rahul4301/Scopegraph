@@ -1,201 +1,163 @@
 # Pre-registration v1
 
-Study: does a model need an external memory layer when the whole history fits in context?
-Branch: `memstudy`. Written 2026-10-01, before any paid call. Config hash at writing:
-`51159301c46ea0e0` (`configs/study.yaml` plus the prompt texts in `src/memstudy/prompts.py`).
-Every value below is also in `configs/`; a change after tag `prereg-v1` needs a new tag.
+Study: **Memory Layer or Full Context?** A controlled evaluation of long-term conversational
+memory. Source: `Memstudy_Research_Proposal_Compact.docx` (the final proposal). Branch `memstudy`.
+Written 2026-10-01, before any benchmark run. The settings are in `configs/study.yaml` and the
+prompt texts in `src/memstudy/prompts.py`; their hash is written to every `run.json` as
+`config_hash`. A change after tag `prereg-v1` needs a new tag.
 
-## 1. Hypothesis and falsification
+## 1. Question, hypotheses, falsification
 
-H: full-history prompting with prompt caching matches or beats a memory layer whenever the
-history fits in the window, and a memory layer wins only past a token-cost or latency threshold.
+When the whole history fits in the model's context window, does a model still need an external
+memory layer? No custom benchmark is introduced; two published benchmarks are used as published.
 
-H is falsified if either holds:
+| ID | Hypothesis | Primary test | Falsified if |
+| --- | --- | --- | --- |
+| H1 | On LoCoMo (categories 1 to 4) and LongMemEval-S, the no-memory arm (A) is non-inferior to each memory system (Mem0 B, Supermemory C) | Paired non-inferiority, 3 point margin, bootstrap CIs | Lower 95% bound of (A minus memory system) falls below the margin, or a memory system is significantly better |
+| H2 | A cost crossover exists: beyond some queries per history a memory system is cheaper per question than cached full context | Cost model from measured token counts, with and without caching; crossover query count with bootstrap interval | No crossover in the tested range, or only beyond a realistic query count |
+| H3 | Plain RAG (D) is within the margin of each memory system | Paired non-inferiority, RAG versus each memory system | A memory system exceeds RAG by more than the margin |
 
-- F1. A memory layer (arm B) beats full context (arm A) at history lengths that fit in the
-  window: the 95% CI of (B minus A) accuracy excludes zero in favour of B on a primary benchmark.
-- F2. No cost crossover appears: for no measured history length and queries-per-history Q does a
-  memory arm cost less than arm A in total (ingestion plus queries).
+The headline claim is falsified if a memory layer beats full context at history lengths that fit
+in the window, or if no cost crossover appears. Either outcome is a reportable finding.
 
-Non-inferiority (supports H): arm A is non-inferior to arm B if the lower bound of the 95% CI of
-(A minus B) accuracy is above minus 3 percentage points. The margin is 3 points (proposed in the
-brief, adopted here).
+## 2. Task and data
 
-## 2. Fixed setup
+Long-term conversational question answering: a multi-session history plus a question, and a short
+free-text answer graded against a gold answer. Same definition for all arms.
+
+- LoCoMo (`data/locomo/locomo10.json`): 10 conversations, 1,986 questions. Categories 1 to 4
+  (1,540) are primary. The 446 adversarial questions are reported separately and graded for
+  abstention.
+- LongMemEval-S: 500 questions, each with its own haystack of about 104K tokens (measured), so
+  histories are not shared and caching cannot amortize. 30 are abstention questions.
+- Both used as published. Checksums in `configs/data_manifest.yaml`.
+- Token census (`results/phase0/token_census.json`, o200k_base proxy): LoCoMo 10 to 21K tokens per
+  history; LongMemEval-S 97K to 106K. Every history fits the 1.05M window with room to spare and
+  none crosses the 272K long-context price threshold. Nothing is truncated: an item that does not
+  fit is recorded as `does_not_fit`.
+
+## 3. Reader and judge
 
 | Role | Model | Settings |
 | --- | --- | --- |
-| Reader, all arms | `gpt-6-luna` | reasoning effort `none`, temperature 0, max output 512, same template |
-| Judge (LoCoMo, LongMemEval-S) | `gpt-5-nano` | reasoning effort `minimal`, max output 256, one fixed prompt |
-| Coding grader | the benchmark's own tests | no model |
+| Reader, all arms | `gpt-6-luna` (fallback GPT-5.6 Luna) | reasoning effort `none`, temperature 0, max output 512, one template |
+| Judge, sole grader | `gpt-5-nano` | reasoning effort `minimal`, max output 256, one fixed prompt |
 
-Phase 0 confirmed (all 2026-10-01, sources in `configs/prices.yaml`):
+- Verified live on 2026-10-01 (`memstudy api-check`, $0.0003): with effort `none` the API accepts
+  `temperature=0`; two identical calls returned the same answer; the cache breakpoint wrote and
+  then read 2,125 tokens; billed cost matched the price formula exactly. The model page lists only
+  the alias, so the served snapshot (`response.model` was `gpt-6-luna`) cannot be pinned further.
+- Prices (`configs/prices.yaml`, sources and dates there): Luna $0.10 input, $0.01 cached, $0.125
+  cache write, $0.50 output per 1M; above 272K input tokens 2x input and cache rates and 1.5x
+  output for the whole request. Nano $0.05, $0.005, $0.40. Caching rules: minimum prefix 1,024
+  tokens; write 1.25x; read 0.1x; lifetime at least 30 minutes, refreshed on reuse.
+- Judge protocol: one fixed prompt (text in `prompts.py`, hashed into the config hash) with
+  category guidance (default, temporal, knowledge update, preference, abstention) chosen by
+  question category only, never by arm. Unparseable output is recorded as ungraded, never correct.
+  Reasoning tokens are logged. No second grader and no human grading are used.
+- Stability check: the judge is rerun on 100 answers (50 from arm A, 50 from arm B) and its flip
+  rate is reported (`memstudy judge-flip`). On short-answer, non-abstention questions agreement
+  with a deterministic containment test is reported as a diagnostic only
+  (`memstudy judge-diagnostics`). Neither check gates the study.
 
-- GPT-6 Luna exists as `gpt-6-luna`. Context window 1,050,000, max output 128,000. Per 1M tokens:
-  input $0.10, cached input $0.01, cache write $0.125, output $0.50. Prompts above 272,000 input
-  tokens are priced at 2x input and cache rates and 1.5x output for the whole request. No
-  fallback to GPT-5.6 Luna is needed. Account access is not yet confirmed; the first pilot call
-  confirms it.
-- Pinning: the model page lists only the alias, no dated snapshot. The snapshot actually served is
-  recorded from `response.model` on every call and reported. This is a limitation of the pin.
-- Temperature 0: verified live on 2026-10-01 (`memstudy api-check`, two calls, $0.0003). With
-  reasoning effort `none` the API accepted `temperature=0`; two identical calls returned the same
-  answer; `response.model` was `gpt-6-luna`. The explicit cache breakpoint worked as designed:
-  the first call reported 2,125 `cache_write_tokens`, the second 2,125 `cached_tokens`, and the
-  billed cost matched the price formula to the last digit. Reported cached counts were not
-  rounded to a multiple of 128 in this case. With reasoning active, temperature is reportedly
-  rejected; the study never enables reasoning for the reader. If the API ever rejects the
-  parameter the code raises; it never drops it silently.
-- GPT-5 nano: $0.05 input, $0.005 cached, $0.40 output per 1M. Context 400,000. The dated
-  snapshot `gpt-5-nano-2025-08-07` is marked Deprecated on its model page, so the alias is used
-  and the served snapshot is logged. "Lowest reasoning effort" is `minimal`; the first pilot call
-  checks that `minimal` is accepted.
-- Caching rules (GPT-5.6 and later, including GPT-6): minimum cacheable prefix 1,024 tokens; cache
-  write 1.25x input; cached read 0.1x input; lifetime at least 30 minutes after the last write or
-  reuse, refreshed on reuse; `cached_tokens` is rounded down to a multiple of 128. Usage reports
-  `input_tokens_details.cached_tokens` and `cache_write_tokens`. Explicit mode with one
-  breakpoint writes only the marked prefix; with no breakpoint nothing is written.
+## 4. Arms
 
-Model rule and gate G1. Owner decision: only GPT-6 Luna (reader and Mem0 fact extraction) and
-GPT-5 nano (judge) are used as chat models. Mem0's own default extraction models (`gpt-5-mini`
-in the library, `gpt-4o-mini` in the benchmark harness) are therefore replaced by `gpt-6-luna`
-with reasoning effort `none`; this is a deliberate departure from Mem0's defaults. Neither model
-can produce embeddings, so arms B and C still need one embedding model, `text-embedding-3-small`
-(Mem0's default, reused for arm C so retrieval is the only difference). The code refuses to run
-arms B or C until the owner sets `g1_extra_models: true` in `configs/approvals.yaml`, which
-approves that embedding model.
+All arms share the reader, template and questions; only how the history reaches the reader differs.
+Arms B, C and D place retrieved items in the prompt under one shared token budget of 7,000 tokens
+(Mem0's reported mean per query), filled with whole items in rank order from a pool of 200
+candidates; nothing is cut mid-item.
 
-## 3. Arms
+- **A, no memory (baseline).** Full history first, question last. The prefix is byte-identical
+  across questions on one history. An explicit cache breakpoint follows the history when the run
+  asks at least two questions about it (LoCoMo, about 199 per history); for a single question
+  (LongMemEval-S) there is no breakpoint, because a cache write with no later read is a 25%
+  surcharge. Both modes are priced in the crossover analysis. LoCoMo questions are asked in
+  sequence per conversation so the cached prefix is reused.
+- **B, Mem0 (system under test).** `mem0ai==2.2.1` open source, one `user_id` per history
+  (`<bench>_<history_id>`), local Qdrant store. Default extraction model `gpt-5-mini` and default
+  embedder `text-embedding-3-small`, recorded here. `gpt-5-mini` is marked Deprecated on its
+  model page; if it is withdrawn the study stops and the owner decides. Library defaults
+  `threshold=0.1`, `rerank=false`. Ingestion: 10 turns per `add`, session date written into each
+  message (the OSS `timestamp` argument is Platform-only). spaCy `en_core_web_sm` is required
+  (without it Mem0 silently degrades to semantic-only retrieval, so the arm refuses to start).
+  Telemetry off. The open-source library is used, not the hosted Platform, so numbers are not
+  comparable to Mem0's published ones.
+- **C, Supermemory (system under test).** Hosted API, SDK `supermemory==3.62.0`. One container
+  tag per history (singular `container_tag`, never the deprecated plural), one document per
+  session with `task_type="memory"` (full pipeline) and the session date, ingested once and
+  polled until processing and follow-up processing are `done`. `search.memories` in `hybrid` mode
+  (memories plus chunks, the documented default). Its internal models cannot be pinned.
+- **D, plain RAG (control for H3).** Verbatim chunks of whole turns, 256 tokens,
+  `text-embedding-3-small` (the same embedder as Mem0), cosine ranking. Oversized turns are split,
+  never cut.
 
-- A, no memory: full rendered history first, question last. Explicit cache breakpoint after the
-  history when the run queries that history at least twice; no breakpoint for a single query,
-  because a write with no reuse is a pure 25% surcharge (LongMemEval-S has one question per
-  history). Both modes are priced in the Phase 4 crossover analysis.
-- B, Mem0: `mem0ai==2.2.1` open source (April 2026 algorithm: single-pass ADD-only extraction,
-  entity linking, multi-signal retrieval). `top_k=200`, `threshold=0.1`, `rerank=false`
-  (library defaults except `top_k`). `top_k=200` is the harness default and Mem0's headline
-  setting, chosen so the arm is not handicapped. Local Qdrant store. Ingestion: 10 turns per
-  `add` call, session date written into each message (the OSS `timestamp` argument is
-  Platform-only). `infer=True`. Telemetry off. spaCy `en_core_web_sm` must be installed; without
-  it Mem0 silently degrades to semantic-only retrieval, so the arm refuses to start.
-  Mem0 Platform (hosted) is not used: its models cannot be pinned and its proprietary
-  optimizations are not in the OSS library, so OSS numbers are not expected to match Mem0's
-  published ones.
-- C, plain RAG (control): verbatim chunks of whole turns, 256 tokens, same embedder as B,
-  cosine top 28 chunks (about 7K tokens, matching Mem0's reported mean retrieved tokens), ranked
-  by similarity. Oversized turns are split, never cut.
-- D, Supermemory: excluded. Its extraction and embedding models run server side and cannot be
-  pinned or priced, its pricing was not confirmed in Phase 0, and the brief requires a clean
-  setup. Gate: reconsider only if the owner supplies a confirmed price and a pin.
+Mem0's and Supermemory's self-reported scores are never used as baselines. The prior numbers
+in Pollertlam and Kornsuwannawit and Wolff and Bennati are reference points only.
 
-Mem0's self-reported scores are never used as a baseline. Every number comes from a run with a
-`run.json`.
+## 5. Scoping (fairness)
 
-## 4. Benchmarks
+- `user_id` and container tag are both `"<bench>_<history_id>"`: one per LoCoMo conversation and
+  per LongMemEval-S haystack, never shared across test cases. A tag outside Supermemory's allowed
+  pattern raises instead of being rewritten.
+- `tests/test_mem0_isolation.py` runs the real Mem0 class on a real local Qdrant store with an
+  embedder giving every text the same vector (worst case for leakage) and shows a search under
+  one id returns zero memories from another. `tests/test_supermemory.py` shows the same for
+  Supermemory against a fake service that isolates by container.
 
-- LoCoMo (`data/locomo/locomo10.json`): 10 conversations. Primary: categories 1 to 4,
-  1,540 questions (verified in the loader test). Reported separately: 446 category 5
-  adversarial questions, graded for abstention.
-- LongMemEval-S (`longmemeval_s_cleaned.json`): 500 questions, one haystack each, 30 abstention.
-- Coding benchmark rule result: VibeMemBench was not usable. Its code repository
-  (`AlibabaResearch/DAMO-ConvAI/tree/main/VibeMemBench`) contains only a README reading
-  "Coming", and no trajectories are published (checked 2026-10-01). Fallback: SWE Context Bench
-  (arXiv 2602.08316, Hugging Face `jiayuanz3/SWEContextBench`, MIT). Caveats: it also ships no
-  trajectories, so the memory history is each prior task's issue plus gold patch (a verified
-  experience, not an agent trajectory). Grading uses the benchmark's own evaluation system, not
-  the stock `swebench` package: the benchmark repository ships a fork of the SWE-bench harness
-  (`swebench_memory`, run through `combine_instances` then `run_evaluation`, as its
-  `evaluation.sh` does) with its own Docker images (`jiayuanz3/swecontextbench`). Stock
-  `swebench` 5.0.2 cannot grade these rows (it needs `image`, `eval_script`, `log_parser`
-  fields). A harness failure is recorded as an error, never as unresolved; only a model patch
-  that fails to apply counts as unresolved. Cloned 2026-10-01 at a pinned commit (SWEContextBench
-  `12ad6ab`, in `configs/data_manifest.yaml`). The grader was verified
-  on a pilot task: the gold patch grades resolved, a non-applying patch grades unresolved. Task
-  images are `jiayuanz3/swecontextbench:<id>` (amd64, emulated on Apple Silicon). Loaded counts:
-  Lite 300 experience and 99 related tasks; full 1,007 experience and 362 related tasks, of
-  which 346 are evaluable (1 is also an experience task, 15 have no experience pool in their
-  repository). The experience pool is not date-filtered, a stated limitation. The related-task count
-  differs between the paper (376) and the dataset README (362); the loaded file is authoritative.
-  Arms: memory off versus Mem0 memory on; RAG only if the pilot shows budget room.
-- Full sets, no slices, one seed (0).
+## 6. Statistics
 
-Token census (Phase 0, `results/phase0/token_census.json`, o200k_base proxy tokenizer):
+- Accuracy per arm, benchmark and category; LoCoMo primary and adversarial reported separately.
+- H1 and H3: paired non-inferiority on per-question outcomes, margin 3 percentage points (fixed
+  here, before data). Differences are reported as A minus the comparison arm.
+- Confidence intervals: 10,000 bootstrap resamples (seed 0). Both question-level and
+  history-clustered intervals are reported side by side, and each conclusion states which it
+  rests on. LoCoMo has only 10 histories, so its clustered intervals will be wide; for
+  LongMemEval-S a history is one question.
+- H2: cost per question from measured token counts and verified prices. Arm A pays one
+  cache-writing call then cached reads; memory arms pay one-time ingestion plus per-question
+  retrieval and reading. The crossover query count is where a memory arm's cumulative cost falls
+  below arm A's, computed with and without caching (`src/memstudy/costmodel.py`), with a bootstrap
+  interval.
+- Secondary: input, cached, output and reasoning tokens, cost per question, crossover, latency
+  (retrieval plus reader; ingestion time reported separately).
 
-| Benchmark | Histories | Tokens min / mean / max | Exceed window | Over 272K threshold |
-| --- | --- | --- | --- | --- |
-| LoCoMo | 10 | 10,965 / 17,968 / 21,173 | 0 | 0 |
-| LongMemEval-S | 500 | 97,338 / 103,791 / 106,056 | 0 | 0 |
+## 7. Cost, caps and one open decision
 
-Every history fits with room to spare and none crosses the long-context price threshold. The
-tokenizer for `gpt-6-luna` is not mapped in tiktoken 0.14.0, so counts are a proxy with a 5%
-safety margin; the API's own `usage.input_tokens` is authoritative for cost. Nothing is truncated:
-an item that does not fit is recorded as `does_not_fit` and reported.
+Hard cap $350; stage caps pilot $15 and chat benchmarks $90, enforced by `budget.py` (refuses any
+call whose worst case would exceed a cap). Every call is metered into `results/ledger.jsonl`;
+Supermemory spend is computed from its published rate card ($5 per 1M memory tokens, $5 per 1M
+queries, $100 per 1M operations) and is an estimate, labelled as such.
 
-## 5. Mem0 scoping (fairness)
+Projection from the token census (reader and judge from the cost model, ingestion estimated):
 
-- `user_id = "<bench>_<history_id>"`: one per LoCoMo conversation, one per LongMemEval-S haystack.
-  Never shared across test cases. `run_id` is unused (no benchmark defines per-session runs).
-- Every Mem0 `add` and `search` carries only that `user_id` in `filters`.
-- Test `tests/memstudy/test_mem0_isolation.py` runs the real Mem0 class on a real local Qdrant
-  store with an embedder that gives every text the same vector (worst case for leakage) and shows
-  that a search under one `user_id` returns zero memories from another.
-- Coding scope mapping: one history per repository, `user_id = "swectx_<owner>__<repo>"`. A
-  related task queries only its own repository's history. The history is the repository's
-  experience-task pool (issue plus gold patch), never the related task itself (the loader raises
-  if a task is in both sets). Memories from repo A are never retrievable in repo B.
-  `agent_id` is unused.
+| Item | LoCoMo | LongMemEval-S |
+| --- | --- | --- |
+| Arm A reader | about $0.4 cached | about $5.2 (no breakpoint) |
+| Arm B ingestion plus reads | about $2 | about $24 |
+| **Arm C ingestion plus reads** | **about $1** | **about $260** |
+| Arm D | about $1.4 | about $1.4 |
 
-## 6. Judge
+**Open decision D1.** Supermemory on LongMemEval-S is projected at about $260 (51.9M tokens at
+$5 per 1M), alone above the $90 chat cap and close to the whole $350 cap. The guard will stop the
+run. The owner chooses before that run: raise the caps, run arm C on a subset of LongMemEval-S
+(which breaks "full sets"), or run arm C on LoCoMo only and state it. Nothing is decided here.
 
-One fixed prompt for every arm, text in `src/memstudy/prompts.py` (hashed into the config hash).
-Instruction: grade the model answer against the gold answer and reply with JSON
-`{"verdict": "CORRECT"}` or `{"verdict": "INCORRECT"}`. Category guidance, chosen by question
-category only (never by arm): default (key information present, contradiction is incorrect);
-temporal (any date format, off-by-one on day, week, or month counts is correct); knowledge
-update (must give the most recent value as current); preference (uses the stated preferences
-described by the rubric); abstention (correct only if it says the information is not mentioned).
-Unparseable output is recorded and counted as ungraded, never as correct. Reasoning tokens are
-logged. The judge differs from each benchmark's default judge, which is a stated limitation.
+## 8. Stops and limits
 
-Hand-check (Phase 2, pre-registered pass criteria): 100 graded answers, 50 each from arms A and B,
-stratified across benchmark and category, shown to the owner without the judge verdict or the arm.
-Pass requires: judge agreement with the owner at least 95% overall, and the two arms'
-disagreement rates within 2 percentage points. Also reported: the judge's flip rate when rerun
-on the same 100 items. If the check fails, stop and report; the judge is not changed without
-approval.
+Stop and report if: the guard trips; `gpt-5-mini` or `temperature=0` is rejected; an API usage
+field the accounting needs is missing; ingestion of any history fails or times out.
 
-## 7. Statistics plan
+Stated limits: one reader, one seed, one grader whose error and family-level bias are not
+independently measured (the reader and judge are both OpenAI models), only ten LoCoMo histories,
+conversational benchmarks only, histories that fit in context by design, the open-source Mem0
+rather than the hosted one, proxy tokenizer for the fit check, Supermemory models and costs not
+directly observable, and results tied to the tested versions.
 
-- Accuracy per arm, benchmark, and category. LoCoMo primary and adversarial reported separately.
-- Paired comparison per question: McNemar exact test, A versus B and A versus C, per benchmark.
-  Four primary tests, Holm-adjusted. Category breakdowns are exploratory.
-- Confidence intervals: 10,000 bootstrap resamples (seed 0) that resample whole histories. For
-  LongMemEval-S a history is one question. For LoCoMo only 10 histories exist, so its interval
-  is wide; this is stated wherever LoCoMo is reported.
-- Non-inferiority: lower 95% bound of (A minus B) against minus 3 points, per benchmark.
-- Differences are reported as A minus B. Tokens, dollars, and latency per query from `run.json`.
-- Latency compares query-time latency only (retrieval plus reader). Ingestion time is reported
-  separately.
+## 9. Timeline
 
-## 8. Cost model and crossover
-
-`src/memstudy/costmodel.py`, with queries per history Q as an explicit variable:
-
-- A, cached: `H*write + (Q-1)*H*read + Q*(q*in + a*out)`. A, uncached: `Q*(H*in + q*in + a*out)`.
-- B and C: `ingest(H) + Q*((ctx+q)*in + a*out + retrieval)`.
-- Crossover Q where the memory arm becomes cheaper in total, per history length, with and
-  without caching, from measured token counts. Rates include the 272K long-context multipliers.
-
-## 9. Stages, stops, and caps
-
-Hard cap $350. Stage caps: pilot $15, chat benchmarks $90, coding $250 (`src/memstudy/budget.py`). The budget
-guard refuses any call whose worst case would exceed a cap. Pilot: 30 LoCoMo questions (from 3
-seeded conversations, to bound Mem0 ingestion), 20 LongMemEval-S questions, 5 coding tasks, all
-arms. Stop and report if: the judge check fails; the coding memory-off solve rate is at or below
-10% or at or above 90%; any usage field the cost accounting needs is missing from the API.
-
-## 10. Known limits stated up front
-
-Single seed. Single reader model and one vendor. Judge differs from each benchmark's default.
-Mem0 OSS rather than Platform. Arm D not run. Reader snapshot not pinnable beyond the alias.
-Proxy tokenizer for the fit check. Coding history is gold-patch experience, not trajectories.
+Per the proposal: implement the arms and pipeline (Oct 5 to 16); pilot on a small sample of each
+benchmark to confirm caching and judge stability (Oct 19 to 23; 30 LoCoMo questions from 3
+conversations, 20 LongMemEval-S questions); full LoCoMo (Oct 26 to Nov 6); full LongMemEval-S
+(Nov 9 to 20); analysis (Nov 23 to 27); write-up (Nov 30 to Dec 11). Each paid stage needs the
+owner's approval; the CLI refuses a paid command until tag `prereg-v1` exists and the matching
+gate in `configs/approvals.yaml` is true.

@@ -18,7 +18,7 @@ import yaml
 from memstudy.schema import Usage
 
 TOTAL_CAP_USD = 350.0
-STAGE_CAPS_USD = {"pilot": 15.0, "chat": 90.0, "coding": 250.0}
+STAGE_CAPS_USD = {"pilot": 15.0, "chat": 90.0}
 
 
 class BudgetExceeded(RuntimeError):
@@ -65,6 +65,33 @@ def load_prices(path: Path) -> dict[str, ModelPrice]:
             context_window=m.get("context_window"),
         )
     return prices
+
+
+@dataclass(frozen=True)
+class SupermemoryPrice:
+    """Published rate card of the hosted service (an estimate: usage is not metered by us)."""
+
+    usd_per_1m_memory_tokens: float
+    usd_per_1m_queries: float
+    usd_per_1m_operations: float
+
+    def cost(self, memory_tokens: int, queries: int, operations: int) -> float:
+        return (
+            memory_tokens * self.usd_per_1m_memory_tokens
+            + queries * self.usd_per_1m_queries
+            + operations * self.usd_per_1m_operations
+        ) / 1_000_000
+
+
+def load_supermemory_price(path: Path) -> SupermemoryPrice:
+    raw = yaml.safe_load(Path(path).read_text())["services"]["supermemory"]
+    if not raw["verified"]:
+        raise UnverifiedPrice("supermemory price is not verified in configs/prices.yaml")
+    return SupermemoryPrice(
+        usd_per_1m_memory_tokens=float(raw["usd_per_1m_memory_tokens"]),
+        usd_per_1m_queries=float(raw["usd_per_1m_queries"]),
+        usd_per_1m_operations=float(raw["usd_per_1m_operations"]),
+    )
 
 
 def cost_usd(price: ModelPrice, usage: Usage) -> float:

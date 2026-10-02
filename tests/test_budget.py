@@ -68,7 +68,7 @@ def test_guard_refuses_over_total_cap(tmp_path):
 
 def test_default_caps_match_the_preregistered_budget(tmp_path):
     b = Budget(tmp_path / "l.jsonl")
-    assert b.total_cap == 350 and b.stage_caps == {"pilot": 15, "chat": 90, "coding": 250}
+    assert b.total_cap == 350 and b.stage_caps == {"pilot": 15, "chat": 90}
 
 
 def test_ledger_resume_restores_spend(tmp_path):

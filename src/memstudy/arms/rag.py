@@ -1,4 +1,4 @@
-"""Arm C: plain RAG over verbatim chunks. The control arm: no extraction, no memory logic."""
+"""Arm D: plain RAG over verbatim chunks. The control arm: no extraction, no memory logic."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from memstudy.arms.base import ArmContext, IngestStats
+from memstudy.arms.base import ArmContext, IngestStats, fill_to_budget
 from memstudy.metering import CostSink, Meter
 from memstudy.schema import History, Item, Session, render_session
 from memstudy.tokens import count_tokens, encoding
@@ -59,17 +59,19 @@ def _normalize(vectors: np.ndarray) -> np.ndarray:
 
 
 class RagArm:
-    name = "C"
+    name = "D"
 
     def __init__(
         self,
         cfg: dict[str, Any],
+        retrieval: dict[str, Any],
         client: Any,
         meter: Meter,
         cache_dir: Path,
     ) -> None:
         self.chunk_tokens: int = cfg["chunk_tokens"]
-        self.top_k: int = cfg["top_k"]
+        self.pool: int = retrieval["candidate_pool"]
+        self.budget: int = retrieval["token_budget"]
         self.embed_model: str = cfg["embedding_model"]
         self.client = client
         self.meter = meter
@@ -119,14 +121,15 @@ class RagArm:
         with self.meter.use_sink(self.query_sink):
             query = self._embed([item.question])[0]
         scores = vectors @ query
-        k = min(self.top_k, len(chunks))
-        top = np.argsort(-scores)[:k]
-        text = "\n\n---\n\n".join(chunks[i] for i in top)
+        top = np.argsort(-scores)[: min(self.pool, len(chunks))]
+        kept = fill_to_budget([chunks[i] for i in top], self.budget)
+        text = "\n\n---\n\n".join(kept)
         return ArmContext(
             text=text,
             context_tokens=count_tokens(text),
             cache_prefix=False,
-            retrieved=[str(int(i)) for i in top],
+            retrieved=[str(int(i)) for i in top[: len(kept)]],
+            candidates=len(top),
             retrieval_seconds=time.perf_counter() - start,
             retrieval_cost=self.query_sink.since(before),
         )

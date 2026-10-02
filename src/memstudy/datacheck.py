@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -21,8 +20,7 @@ def sha256_file(path: Path) -> str:
 
 
 def verify(manifest_path: Path = MANIFEST, root: Path = Path(".")) -> list[dict[str, Any]]:
-    """One row per manifest file or pinned repository with status ok, missing, or mismatch.
-    Never modifies anything."""
+    """One row per manifest file with status ok, missing, or mismatch. Never modifies files."""
     entries = yaml.safe_load(manifest_path.read_text())["files"]
     rows: list[dict[str, Any]] = []
     for entry in entries:
@@ -34,14 +32,4 @@ def verify(manifest_path: Path = MANIFEST, root: Path = Path(".")) -> list[dict[
         else:
             status = "ok"
         rows.append({"path": entry["path"], "status": status})
-    for repo in yaml.safe_load(manifest_path.read_text()).get("repos", []):
-        path = root / repo["path"]
-        if not (path / ".git").exists():
-            status = "missing"
-        else:
-            head = subprocess.run(
-                ["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True
-            ).stdout.strip()
-            status = "ok" if head == repo["commit"] else "mismatch"
-        rows.append({"path": repo["path"], "status": status})
     return rows
