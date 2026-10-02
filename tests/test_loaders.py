@@ -149,6 +149,8 @@ def test_real_memoryagentbench_matches_the_census():
 
     histories, items = load_memoryagentbench(MAB)
     assert len(histories) == 146 and len(items) == 3671
+    primary = [i for i in items if i.primary]
+    assert len(primary) == 2500 and len({i.history_id for i in primary}) == 25
     by_comp: dict[str, int] = {}
     for i in items:
         by_comp[i.category] = by_comp.get(i.category, 0) + 1

@@ -9,16 +9,36 @@ prompt texts in `src/memstudy/prompts.py`; their hash is written to every `run.j
 ## 1. Question, hypotheses, falsification
 
 When the whole history fits in the model's context window, does a model still need an external
-memory layer? No custom benchmark is introduced; two published benchmarks are used as published.
+memory layer? No custom benchmark is introduced; three published benchmarks are used as published
+(LoCoMo, LongMemEval-S, MemoryAgentBench).
+
+**Headline claim.** When the whole history fits in the context window, full-context prompting with
+caching (arm A) is not less accurate than Mem0 (arm B) by more than 3 percentage points, so a
+memory layer is not needed for accuracy. This is H1. Whether a memory layer is needed for cost is
+a separate quantity, estimated in H2, and is not part of the falsification.
 
 | ID | Hypothesis | Primary test | Falsified if |
 | --- | --- | --- | --- |
-| H1 | On LoCoMo (categories 1 to 4) and LongMemEval-S, the no-memory arm (A) is non-inferior to the memory system (Mem0, B) | Paired non-inferiority, 3 point margin, bootstrap CIs | Lower 95% bound of (A minus Mem0) falls below the margin, or Mem0 is significantly better |
-| H2 | A cost crossover exists: beyond some queries per history a memory system is cheaper per question than cached full context | Cost model from measured token counts, with and without caching; crossover query count with bootstrap interval | No crossover in the tested range, or only beyond a realistic query count |
-| H3 | Plain RAG (C) is within the margin of Mem0 | Paired non-inferiority, RAG versus Mem0 | Mem0 exceeds RAG by more than the margin |
+| H1 | On LongMemEval-S, the no-memory arm (A) is non-inferior to the memory system (Mem0, B) | Paired non-inferiority, 3 point margin, history-clustered bootstrap interval | The lower limit of the 95% interval for (A minus B) is below -3 points. A significant Mem0 advantage smaller than the margin does not falsify H1 |
+| H2 | Estimand, not a test: the number of queries per history beyond which Mem0 is cheaper per question than cached full context | Cost model from measured token counts, with and without caching; crossover query count with bootstrap interval | Not falsifiable. "No crossover" is a finding (full context is also cheaper), reported as no crossover up to the tested range |
+| H3 | On LongMemEval-S, plain RAG (C) is non-inferior to Mem0 (B) | Paired non-inferiority, 3 point margin, same interval | The lower limit of the 95% interval for (C minus B) is below -3 points |
 
-The headline claim is falsified if a memory layer beats full context at history lengths that fit
-in the window, or if no cost crossover appears. Either outcome is a reportable finding.
+LoCoMo and MemoryAgentBench are pre-registered as descriptive replications of H1 and H3 (Section 6):
+they have too few independent histories for a confirmatory test. Their results can support or
+fail to support the direction found on LongMemEval-S but cannot establish non-inferiority.
+
+H2 is a price-model extrapolation from measured token counts, cache hits and ingestion cost. A
+crossover is measured directly only where one history gets many questions (LoCoMo, about 199;
+MemoryAgentBench, 100 per context). LongMemEval-S asks one question per haystack, so no crossover
+exists there and it is priced, not measured. The tested range is 1 to 1,000 queries per history;
+"realistic" means at most 200, the largest per-history count in LoCoMo.
+
+| H1 | H2 | Reading |
+| --- | --- | --- |
+| Holds | No crossover up to 200 queries per history | Full context is enough: no accuracy or cost reason for a memory layer in this regime |
+| Holds | Crossover at Q* of at most 200 | A memory layer is a cost optimization above Q* queries per history, not an accuracy gain |
+| Fails (Mem0 better by more than the margin) | Any | Headline falsified; report where and why |
+| Inconclusive (interval spans the margin, or underpowered) | Any | No accuracy claim; report the interval |
 
 ## 2. Task and data
 
@@ -30,7 +50,21 @@ free-text answer graded against a gold answer. Same definition for all arms.
   abstention.
 - LongMemEval-S: 500 questions, each with its own haystack of about 104K tokens (measured), so
   histories are not shared and caching cannot amortize. 30 are abstention questions.
-- Both used as published. Checksums in `configs/data_manifest.yaml`.
+- MemoryAgentBench (`ai-hyz/MemoryAgentBench`, pinned revision `7ea06698`, four parquet files in
+  `data/memoryagentbench/`): 146 rows, each one long context shared by many questions, 3,671
+  questions in all. Accurate retrieval and conflict resolution (selective forgetting) are the
+  confirmatory competencies (30 contexts, 2,800 questions before the exclusion below); test-time learning and long-range
+  understanding are exploratory. 145 of 146 contexts fit the window (token census in
+  `results/phase0/mab_token_census.json`); `recsys_redial_full` (1.48M tokens) is excluded and
+  reported. Five accurate-retrieval rows (`longmemeval_s*`, 300 questions) repeat LongMemEval-S
+  content and are excluded from the MemoryAgentBench confirmatory set to avoid double counting,
+  leaving 25 contexts and 2,500 questions; the excluded rows are reported separately. Contexts are single documents, not sessions: arm A sends the text
+  verbatim, arm B adds it in 4,096-token chunks, arm C indexes it in 256-token verbatim chunks.
+  Scoring: substring match against the accepted answers (the benchmark's own style of metric,
+  implemented in `scoring.py`, equivalence to the original code not yet checked) is primary;
+  the judge verdict is secondary. The benchmark's own task prompts are not reproduced: the same
+  reader template is used for every item and arm, which is a stated limitation.
+- Both LoCoMo and LongMemEval-S used as published. Checksums in `configs/data_manifest.yaml`.
 - Token census (`results/phase0/token_census.json`, o200k_base proxy): LoCoMo 10 to 21K tokens per
   history; LongMemEval-S 97K to 106K. Every history fits the 1.05M window with room to spare and
   none crosses the 272K long-context price threshold. Nothing is truncated: an item that does not
@@ -57,10 +91,17 @@ free-text answer graded against a gold answer. Same definition for all arms.
   says the information is not available, the answer must say so too. Where a question lists
   several accepted answers, any one suffices. Unparseable output is recorded as ungraded, never correct.
   Reasoning tokens are logged. No second grader and no human grading are used.
-- Stability check: the judge is rerun on 100 answers (50 from arm A, 50 from arm B) and its flip
-  rate is reported (`memstudy judge-flip`). On short-answer, non-abstention questions agreement
-  with a deterministic containment test is reported as a diagnostic only
-  (`memstudy judge-diagnostics`). Neither check gates the study.
+- Judge checks run in the pilot, before any full run, with thresholds fixed here:
+  - Unparseable output must be at most 1% of judged answers. Above that the study stops and the
+    owner decides, because those answers would be silently dropped.
+  - Flip rate: the judge is rerun on 100 answers (50 from arm A, 50 from arm B)
+    (`memstudy judge-flip`). It must be at most 5%. Above that, every answer in the study is
+    graded by the majority of three nano runs (about three times the small judge cost) and the
+    flip rate is reported with every accuracy figure.
+  - Agreement with a deterministic containment test on short-answer, non-abstention questions
+    (`memstudy judge-diagnostics`) must be at least 85%. Below that, containment accuracy is
+    reported beside every judge accuracy and a conclusion that differs between the two is labelled
+    judge-dependent.
 
 ## 4. Arms
 
@@ -78,7 +119,12 @@ candidates; nothing is cut mid-item.
 - **B, Mem0 (system under test).** `mem0ai==2.2.1` open source, one `user_id` per history
   (`<bench>_<history_id>`), local Qdrant store. Default extraction model `gpt-5-mini` and default
   embedder `text-embedding-3-small`, recorded here. `gpt-5-mini` is marked Deprecated on its
-  model page; if it is withdrawn the study stops and the owner decides. Library defaults
+  model page. Pre-registered fallback: if it is withdrawn or returns model-not-found, extraction
+  switches to `gpt-5-nano` (priced and verified in `configs/prices.yaml`, and the extraction model
+  used by Pollertlam and Kornsuwannawit), recorded as `extraction_model_fallback` in
+  `configs/study.yaml`. Arm B is then re-run in full for any benchmark that already used the
+  default; extraction models are never mixed within a benchmark. The fallback has not yet been
+  tested with Mem0 `2.2.1`. Library defaults
   `threshold=0.1`, `rerank=false`. Ingestion: 10 turns per `add`, session date written into each
   message (the OSS `timestamp` argument is Platform-only). spaCy `en_core_web_sm` is required
   (without it Mem0 silently degrades to semantic-only retrieval, so the arm refuses to start).
@@ -102,17 +148,32 @@ in Pollertlam and Kornsuwannawit and Wolff and Bennati are reference points only
 ## 6. Statistics
 
 - Accuracy per arm, benchmark and category; LoCoMo primary and adversarial reported separately.
-- H1 and H3: paired non-inferiority on per-question outcomes, margin 3 percentage points (fixed
-  here, before data). Differences are reported as A minus the comparison arm.
-- Confidence intervals: 10,000 bootstrap resamples (seed 0). Both question-level and
-  history-clustered intervals are reported side by side, and each conclusion states which it
-  rests on. LoCoMo has only 10 histories, so its clustered intervals will be wide; for
-  LongMemEval-S a history is one question.
+  Differences are reported as A minus the comparison arm (and C minus B for H3).
+- **Confirmatory tests: H1 and H3 on LongMemEval-S only.** Each of its 500 histories holds one
+  question, so histories are independent and the question-level and history-clustered intervals
+  coincide. The primary test is H1. Holm's procedure adjusts across the two tests.
+- **Interval:** paired per-question differences, 10,000 bootstrap resamples of histories (seed 0),
+  two-sided 95% interval. Non-inferiority is claimed only if its lower limit is above -3 points.
+  The history-clustered interval is the primary one for every benchmark; the question-level
+  interval is reported only as a sensitivity check.
+- **Descriptive, not confirmatory:** LoCoMo (10 histories) and MemoryAgentBench (25 confirmatory
+  contexts after the overlap exclusion). With so few clusters a percentile bootstrap undercovers,
+  so their intervals are reported but no non-inferiority claim rests on them; conclusions on
+  these are worded as consistent or not with the LongMemEval-S result.
+- **Margin:** 3 points was chosen before any data as the largest accuracy loss accepted in
+  exchange for dropping a memory layer. It is not derived from data. Whether each conclusion
+  also holds at 2 and at 5 points is reported as exploratory.
+- **Power:** from pilot discordance (the share of questions where exactly one of two arms is
+  right) the power at a true difference of zero is computed for n = 500. If it is below 80%, a
+  non-significant result is labelled inconclusive, never presented as evidence against
+  non-inferiority; a result that clears the margin stands either way.
+- All other comparisons (categories, exploratory MemoryAgentBench competencies, sensitivity
+  margins, judge-stability checks) are exploratory and reported descriptively without adjustment.
 - H2: cost per question from measured token counts and verified prices. Arm A pays one
   cache-writing call then cached reads; memory arms pay one-time ingestion plus per-question
   retrieval and reading. The crossover query count is where a memory arm's cumulative cost falls
   below arm A's, computed with and without caching (`src/memstudy/costmodel.py`), with a bootstrap
-  interval.
+  interval over histories.
 - Secondary: input, cached, output and reasoning tokens, cost per question, crossover, latency
   (retrieval plus reader; ingestion time reported separately).
 
@@ -129,22 +190,30 @@ Projection from the token census (reader and judge from the cost model, ingestio
 | Arm B ingestion plus reads | about $2 | about $24 |
 | Arm C (plain RAG) | about $1.4 | about $1.4 |
 
+MemoryAgentBench is not in this table. Its 145 fitting contexts hold about 26M tokens, and arm A
+re-reads each context once per question (about 0.7B input tokens in all), so caching is required
+and 23 contexts also cross the 272K price threshold. A dollar projection comes from the pilot; the
+guard stops the run at the cap either way.
+
 ## 8. Stops and limits
 
-Stop and report if: the guard trips; `gpt-5-mini` or `temperature=0` is rejected; an API usage
-field the accounting needs is missing; ingestion of any history fails or times out.
+Stop and report if: the guard trips; `temperature=0` is rejected; an API usage field the
+accounting needs is missing; ingestion of any history fails or times out; the judge's unparseable
+rate exceeds 1% in the pilot. A withdrawn `gpt-5-mini` is handled by the fallback in Section 4, not
+a stop.
 
 Stated limits: one reader, one seed, one grader whose error and family-level bias are not
 independently measured (the reader and judge are both OpenAI models), only ten LoCoMo histories,
 conversational benchmarks only, histories that fit in context by design, the open-source Mem0
-rather than the hosted one, proxy tokenizer for the fit check, and results tied to the tested
-versions.
+rather than the hosted one, proxy tokenizer for the fit check, results tied to the tested
+versions, MemoryAgentBench run with one generic reader template rather than its own task prompts,
+and public benchmarks that the reader model may have seen in training.
 
 ## 9. Timeline
 
 Per the proposal: implement the arms and pipeline (Oct 5 to 16); pilot on a small sample of each
 benchmark to confirm caching and judge stability (Oct 19 to 23; 30 LoCoMo questions from 3
 conversations, 20 LongMemEval-S questions); full LoCoMo (Oct 26 to Nov 6); full LongMemEval-S
-(Nov 9 to 20); analysis (Nov 23 to 27); write-up (Nov 30 to Dec 11). Each paid stage needs the
+(Nov 9 to 20); MemoryAgentBench, confirmatory competencies first (Nov 23 to 27); analysis (Nov 30 to Dec 4); write-up (Dec 7 to Dec 11). Each paid stage needs the
 owner's approval; the CLI refuses a paid command until tag `prereg-v1` exists and the matching
 gate in `configs/approvals.yaml` is true.

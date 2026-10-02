@@ -6,7 +6,8 @@ the context verbatim (History.document) and one Item per question. Nothing is cu
 Items carry every accepted answer in meta["answers"]; Item.gold is the first of them. Accurate
 retrieval and conflict resolution (selective forgetting) are the confirmatory competencies in the
 proposal and load as primary; test-time learning and long-range understanding are exploratory.
-Native-metric scoring is not part of the loader.
+Rows that repeat LongMemEval-S content (source longmemeval_s*) are flagged and not primary, so
+they are not double counted. Native-metric scoring is not part of the loader.
 """
 
 from __future__ import annotations
@@ -83,7 +84,7 @@ def load_memoryagentbench(data_dir: Path) -> tuple[dict[str, History], list[Item
                         question=str(question),
                         gold=accepted_list[0],
                         question_date=_at(meta.get("question_dates"), i),
-                        primary=competency in CONFIRMATORY,
+                        primary=competency in CONFIRMATORY and not item_meta["overlaps_longmemeval"],
                         meta=item_meta,
                     )
                 )

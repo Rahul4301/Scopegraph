@@ -37,6 +37,7 @@ arms:
     rerank: false             # library default
     turns_per_add: 10
     extraction_model: gpt-5-mini         # default of the pinned version, recorded
+    extraction_model_fallback: gpt-5-nano   # pre-registered switch if gpt-5-mini is withdrawn
     embedding_model: text-embedding-3-small   # default of the pinned version, recorded
     document_chunk_tokens: 4096   # MemoryAgentBench: one chunk per add call
   C:
