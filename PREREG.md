@@ -108,8 +108,8 @@ Mem0's self-reported scores are never used as a baseline. Every number comes fro
   `evaluation.sh` does) with its own Docker images (`jiayuanz3/swecontextbench`). Stock
   `swebench` 5.0.2 cannot grade these rows (it needs `image`, `eval_script`, `log_parser`
   fields). A harness failure is recorded as an error, never as unresolved; only a model patch
-  that fails to apply counts as unresolved. Cloned 2026-10-01 at pinned commits (SWEContextBench
-  `12ad6ab`, SWE-bench `02e7a74`, both in `configs/data_manifest.yaml`). The grader was verified
+  that fails to apply counts as unresolved. Cloned 2026-10-01 at a pinned commit (SWEContextBench
+  `12ad6ab`, in `configs/data_manifest.yaml`). The grader was verified
   on a pilot task: the gold patch grades resolved, a non-applying patch grades unresolved. Task
   images are `jiayuanz3/swecontextbench:<id>` (amd64, emulated on Apple Silicon). Loaded counts:
   Lite 300 experience and 99 related tasks; full 1,007 experience and 362 related tasks, of

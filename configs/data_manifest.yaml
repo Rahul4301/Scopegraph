@@ -34,6 +34,3 @@ repos:
 - path: third_party/SWEContextBench
   source_url: https://github.com/jiayuanz3/SWEContextBench
   commit: 12ad6ab14e18e9378e1e293c9edbc3f7ce43d27b
-- path: third_party/SWE-bench
-  source_url: https://github.com/SWE-bench/SWE-bench
-  commit: 02e7a74ffd0b707aab73d203fe87bdc7c76afc8e
