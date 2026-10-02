@@ -1,0 +1,51 @@
+# Pre-registered study configuration. Hashed into every run.json.
+# Changing a value here after prereg-v1 requires a new prereg tag.
+
+seed: 0
+
+reader:
+  model: gpt-6-luna
+  reasoning_effort: none      # supported values: none, low, medium, high, xhigh, max
+  temperature: 0              # the first pilot call verifies the API accepts this; see PREREG.md
+  max_output_tokens: 512
+  cache_ttl: 30m
+  # Arm A uses one explicit cache breakpoint after the history. Arms B and C use explicit mode
+  # with no breakpoint, so they pay the plain input rate and never a cache-write surcharge.
+
+judge:
+  model: gpt-5-nano
+  reasoning_effort: minimal   # lowest effort the model accepts
+  max_output_tokens: 256
+
+tokenizer:
+  encoding: o200k_base        # proxy; the API's usage.input_tokens is authoritative
+  safety_margin: 0.05
+
+arms:
+  A: {name: full_context}
+  B:
+    name: mem0
+    version: 2.2.1
+    top_k: 200                # mem0ai/memory-benchmarks default and Mem0's headline setting
+    threshold: 0.1            # library default
+    rerank: false             # library default
+    turns_per_add: 10
+    extraction_model: gpt-6-luna         # owner decision: only Luna and nano are used for chat models
+    extraction_reasoning_effort: none    # drops temperature, so the request is accepted
+    embedding_model: text-embedding-3-small   # Luna and nano cannot embed; see gate G1
+  C:
+    name: rag
+    chunk_tokens: 256
+    top_k: 28                 # about 7K tokens, matching Mem0's reported mean retrieved tokens
+    embedding_model: text-embedding-3-small
+
+pilot:
+  locomo_questions: 30
+  locomo_conversations: 3     # bounds Mem0 ingestion cost
+  longmemeval_questions: 20
+  coding_tasks: 5
+  judge_check_per_arm: 50
+  judge_pass_agreement: 0.95
+  judge_pass_disagreement_gap: 0.02
+  coding_baseline_stop_low: 0.10
+  coding_baseline_stop_high: 0.90

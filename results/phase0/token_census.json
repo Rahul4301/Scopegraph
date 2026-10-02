@@ -1,0 +1,3608 @@
+{
+  "locomo": {
+    "histories": [
+      {
+        "fits": true,
+        "history_id": "conv-26",
+        "over_long_context_threshold": false,
+        "queries": 199,
+        "tokens": 14160
+      },
+      {
+        "fits": true,
+        "history_id": "conv-30",
+        "over_long_context_threshold": false,
+        "queries": 105,
+        "tokens": 10965
+      },
+      {
+        "fits": true,
+        "history_id": "conv-41",
+        "over_long_context_threshold": false,
+        "queries": 193,
+        "tokens": 21173
+      },
+      {
+        "fits": true,
+        "history_id": "conv-42",
+        "over_long_context_threshold": false,
+        "queries": 260,
+        "tokens": 18350
+      },
+      {
+        "fits": true,
+        "history_id": "conv-43",
+        "over_long_context_threshold": false,
+        "queries": 242,
+        "tokens": 20558
+      },
+      {
+        "fits": true,
+        "history_id": "conv-44",
+        "over_long_context_threshold": false,
+        "queries": 158,
+        "tokens": 20232
+      },
+      {
+        "fits": true,
+        "history_id": "conv-47",
+        "over_long_context_threshold": false,
+        "queries": 190,
+        "tokens": 19754
+      },
+      {
+        "fits": true,
+        "history_id": "conv-48",
+        "over_long_context_threshold": false,
+        "queries": 239,
+        "tokens": 19016
+      },
+      {
+        "fits": true,
+        "history_id": "conv-49",
+        "over_long_context_threshold": false,
+        "queries": 196,
+        "tokens": 15700
+      },
+      {
+        "fits": true,
+        "history_id": "conv-50",
+        "over_long_context_threshold": false,
+        "queries": 204,
+        "tokens": 19771
+      }
+    ],
+    "long_context_threshold": 272000,
+    "n_exceed_window": 0,
+    "n_histories": 10,
+    "n_items": 1986,
+    "n_over_long_context_threshold": 0,
+    "safety_margin": 0.05,
+    "tokens": {
+      "max": 21173,
+      "mean": 17967.9,
+      "median": 19385.0,
+      "min": 10965,
+      "total": 179679
+    },
+    "window": 1050000
+  },
+  "longmemeval": {
+    "histories": [
+      {
+        "fits": true,
+        "history_id": "e47becba",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103517
+      },
+      {
+        "fits": true,
+        "history_id": "118b2229",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102667
+      },
+      {
+        "fits": true,
+        "history_id": "51a45a95",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104563
+      },
+      {
+        "fits": true,
+        "history_id": "58bf7951",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104699
+      },
+      {
+        "fits": true,
+        "history_id": "1e043500",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104566
+      },
+      {
+        "fits": true,
+        "history_id": "c5e8278d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104808
+      },
+      {
+        "fits": true,
+        "history_id": "6ade9755",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103083
+      },
+      {
+        "fits": true,
+        "history_id": "6f9b354f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105630
+      },
+      {
+        "fits": true,
+        "history_id": "58ef2f1c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102502
+      },
+      {
+        "fits": true,
+        "history_id": "f8c5f88b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103561
+      },
+      {
+        "fits": true,
+        "history_id": "5d3d2817",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104538
+      },
+      {
+        "fits": true,
+        "history_id": "7527f7e2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104187
+      },
+      {
+        "fits": true,
+        "history_id": "c960da58",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104458
+      },
+      {
+        "fits": true,
+        "history_id": "3b6f954b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102503
+      },
+      {
+        "fits": true,
+        "history_id": "726462e0",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103818
+      },
+      {
+        "fits": true,
+        "history_id": "94f70d80",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103526
+      },
+      {
+        "fits": true,
+        "history_id": "66f24dbb",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102474
+      },
+      {
+        "fits": true,
+        "history_id": "ad7109d1",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101342
+      },
+      {
+        "fits": true,
+        "history_id": "af8d2e46",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101915
+      },
+      {
+        "fits": true,
+        "history_id": "dccbc061",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102531
+      },
+      {
+        "fits": true,
+        "history_id": "c8c3f81d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105402
+      },
+      {
+        "fits": true,
+        "history_id": "8ebdbe50",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105590
+      },
+      {
+        "fits": true,
+        "history_id": "6b168ec8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105606
+      },
+      {
+        "fits": true,
+        "history_id": "75499fd8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104004
+      },
+      {
+        "fits": true,
+        "history_id": "21436231",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103161
+      },
+      {
+        "fits": true,
+        "history_id": "95bcc1c8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104435
+      },
+      {
+        "fits": true,
+        "history_id": "0862e8bf",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 100391
+      },
+      {
+        "fits": true,
+        "history_id": "853b0a1d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103265
+      },
+      {
+        "fits": true,
+        "history_id": "a06e4cfe",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105229
+      },
+      {
+        "fits": true,
+        "history_id": "37d43f65",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104154
+      },
+      {
+        "fits": true,
+        "history_id": "b86304ba",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101631
+      },
+      {
+        "fits": true,
+        "history_id": "d52b4f67",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104084
+      },
+      {
+        "fits": true,
+        "history_id": "25e5aa4f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104537
+      },
+      {
+        "fits": true,
+        "history_id": "caf9ead2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104186
+      },
+      {
+        "fits": true,
+        "history_id": "8550ddae",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104887
+      },
+      {
+        "fits": true,
+        "history_id": "60d45044",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104975
+      },
+      {
+        "fits": true,
+        "history_id": "3f1e9474",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103548
+      },
+      {
+        "fits": true,
+        "history_id": "86b68151",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102881
+      },
+      {
+        "fits": true,
+        "history_id": "577d4d32",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103927
+      },
+      {
+        "fits": true,
+        "history_id": "ec81a493",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105411
+      },
+      {
+        "fits": true,
+        "history_id": "15745da0",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105312
+      },
+      {
+        "fits": true,
+        "history_id": "e01b8e2f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104411
+      },
+      {
+        "fits": true,
+        "history_id": "bc8a6e93",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103042
+      },
+      {
+        "fits": true,
+        "history_id": "ccb36322",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103803
+      },
+      {
+        "fits": true,
+        "history_id": "001be529",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104340
+      },
+      {
+        "fits": true,
+        "history_id": "b320f3f8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104193
+      },
+      {
+        "fits": true,
+        "history_id": "19b5f2b3",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101974
+      },
+      {
+        "fits": true,
+        "history_id": "4fd1909e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104869
+      },
+      {
+        "fits": true,
+        "history_id": "545bd2b5",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102396
+      },
+      {
+        "fits": true,
+        "history_id": "8a137a7f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103133
+      },
+      {
+        "fits": true,
+        "history_id": "76d63226",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102938
+      },
+      {
+        "fits": true,
+        "history_id": "86f00804",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101209
+      },
+      {
+        "fits": true,
+        "history_id": "8e9d538c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104192
+      },
+      {
+        "fits": true,
+        "history_id": "311778f1",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105330
+      },
+      {
+        "fits": true,
+        "history_id": "c19f7a0b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103982
+      },
+      {
+        "fits": true,
+        "history_id": "4100d0a0",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103486
+      },
+      {
+        "fits": true,
+        "history_id": "29f2956b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101661
+      },
+      {
+        "fits": true,
+        "history_id": "1faac195",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105064
+      },
+      {
+        "fits": true,
+        "history_id": "faba32e5",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105151
+      },
+      {
+        "fits": true,
+        "history_id": "f4f1d8a4",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103508
+      },
+      {
+        "fits": true,
+        "history_id": "c14c00dd",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104144
+      },
+      {
+        "fits": true,
+        "history_id": "36580ce8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102310
+      },
+      {
+        "fits": true,
+        "history_id": "3d86fd0a",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104421
+      },
+      {
+        "fits": true,
+        "history_id": "a82c026e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105449
+      },
+      {
+        "fits": true,
+        "history_id": "0862e8bf_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103758
+      },
+      {
+        "fits": true,
+        "history_id": "15745da0_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102605
+      },
+      {
+        "fits": true,
+        "history_id": "bc8a6e93_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104686
+      },
+      {
+        "fits": true,
+        "history_id": "19b5f2b3_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103620
+      },
+      {
+        "fits": true,
+        "history_id": "29f2956b_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104858
+      },
+      {
+        "fits": true,
+        "history_id": "f4f1d8a4_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105119
+      },
+      {
+        "fits": true,
+        "history_id": "0a995998",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104929
+      },
+      {
+        "fits": true,
+        "history_id": "6d550036",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 98372
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_59c863d7",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104404
+      },
+      {
+        "fits": true,
+        "history_id": "b5ef892d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104027
+      },
+      {
+        "fits": true,
+        "history_id": "e831120c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103140
+      },
+      {
+        "fits": true,
+        "history_id": "3a704032",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105412
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_d84a3211",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103487
+      },
+      {
+        "fits": true,
+        "history_id": "aae3761f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102653
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_f2262a51",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102886
+      },
+      {
+        "fits": true,
+        "history_id": "dd2973ad",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104279
+      },
+      {
+        "fits": true,
+        "history_id": "c4a1ceb8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103788
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_a56e767c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103922
+      },
+      {
+        "fits": true,
+        "history_id": "6cb6f249",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102714
+      },
+      {
+        "fits": true,
+        "history_id": "46a3abf7",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104554
+      },
+      {
+        "fits": true,
+        "history_id": "36b9f61e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103853
+      },
+      {
+        "fits": true,
+        "history_id": "28dc39ac",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103582
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_2f8be40d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102706
+      },
+      {
+        "fits": true,
+        "history_id": "2e6d26dc",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102759
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_15e38248",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103699
+      },
+      {
+        "fits": true,
+        "history_id": "88432d0a",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104372
+      },
+      {
+        "fits": true,
+        "history_id": "80ec1f4f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103502
+      },
+      {
+        "fits": true,
+        "history_id": "d23cf73b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103602
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_7fce9456",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104272
+      },
+      {
+        "fits": true,
+        "history_id": "d682f1a2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103555
+      },
+      {
+        "fits": true,
+        "history_id": "7024f17c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103505
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_5501fe77",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104784
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_2ba83207",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105144
+      },
+      {
+        "fits": true,
+        "history_id": "2318644b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101055
+      },
+      {
+        "fits": true,
+        "history_id": "2ce6a0f2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105022
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_d12ceb0e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101530
+      },
+      {
+        "fits": true,
+        "history_id": "00ca467f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104348
+      },
+      {
+        "fits": true,
+        "history_id": "b3c15d39",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 100522
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_31ff4165",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102300
+      },
+      {
+        "fits": true,
+        "history_id": "eeda8a6d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105325
+      },
+      {
+        "fits": true,
+        "history_id": "2788b940",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102325
+      },
+      {
+        "fits": true,
+        "history_id": "60bf93ed",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103801
+      },
+      {
+        "fits": true,
+        "history_id": "9d25d4e0",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105013
+      },
+      {
+        "fits": true,
+        "history_id": "129d1232",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102625
+      },
+      {
+        "fits": true,
+        "history_id": "60472f9c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 97338
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_194be4b3",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103109
+      },
+      {
+        "fits": true,
+        "history_id": "a9f6b44c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104059
+      },
+      {
+        "fits": true,
+        "history_id": "d851d5ba",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103462
+      },
+      {
+        "fits": true,
+        "history_id": "5a7937c8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102349
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_ab202e7f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104407
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_e05b82a6",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104676
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_731e37d7",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104367
+      },
+      {
+        "fits": true,
+        "history_id": "edced276",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103660
+      },
+      {
+        "fits": true,
+        "history_id": "10d9b85a",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104681
+      },
+      {
+        "fits": true,
+        "history_id": "e3038f8c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103079
+      },
+      {
+        "fits": true,
+        "history_id": "2b8f3739",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 106029
+      },
+      {
+        "fits": true,
+        "history_id": "1a8a66a6",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104136
+      },
+      {
+        "fits": true,
+        "history_id": "c2ac3c61",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104613
+      },
+      {
+        "fits": true,
+        "history_id": "bf659f65",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101955
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_372c3eed",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104390
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_2f91af09",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104810
+      },
+      {
+        "fits": true,
+        "history_id": "81507db6",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105443
+      },
+      {
+        "fits": true,
+        "history_id": "88432d0a_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104572
+      },
+      {
+        "fits": true,
+        "history_id": "80ec1f4f_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102873
+      },
+      {
+        "fits": true,
+        "history_id": "eeda8a6d_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103173
+      },
+      {
+        "fits": true,
+        "history_id": "60bf93ed_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103177
+      },
+      {
+        "fits": true,
+        "history_id": "edced276_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103200
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_372c3eed_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104448
+      },
+      {
+        "fits": true,
+        "history_id": "8a2466db",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104751
+      },
+      {
+        "fits": true,
+        "history_id": "06878be2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104361
+      },
+      {
+        "fits": true,
+        "history_id": "75832dbd",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102368
+      },
+      {
+        "fits": true,
+        "history_id": "0edc2aef",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105398
+      },
+      {
+        "fits": true,
+        "history_id": "35a27287",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101251
+      },
+      {
+        "fits": true,
+        "history_id": "32260d93",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102791
+      },
+      {
+        "fits": true,
+        "history_id": "195a1a1b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103886
+      },
+      {
+        "fits": true,
+        "history_id": "afdc33df",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105822
+      },
+      {
+        "fits": true,
+        "history_id": "caf03d32",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104604
+      },
+      {
+        "fits": true,
+        "history_id": "54026fce",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105742
+      },
+      {
+        "fits": true,
+        "history_id": "06f04340",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103080
+      },
+      {
+        "fits": true,
+        "history_id": "6b7dfb22",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105173
+      },
+      {
+        "fits": true,
+        "history_id": "1a1907b4",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105413
+      },
+      {
+        "fits": true,
+        "history_id": "09d032c9",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103061
+      },
+      {
+        "fits": true,
+        "history_id": "38146c39",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104639
+      },
+      {
+        "fits": true,
+        "history_id": "d24813b1",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103645
+      },
+      {
+        "fits": true,
+        "history_id": "57f827a0",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104685
+      },
+      {
+        "fits": true,
+        "history_id": "95228167",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103799
+      },
+      {
+        "fits": true,
+        "history_id": "505af2f5",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104459
+      },
+      {
+        "fits": true,
+        "history_id": "75f70248",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104585
+      },
+      {
+        "fits": true,
+        "history_id": "d6233ab6",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104386
+      },
+      {
+        "fits": true,
+        "history_id": "1da05512",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105386
+      },
+      {
+        "fits": true,
+        "history_id": "fca70973",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102984
+      },
+      {
+        "fits": true,
+        "history_id": "b6025781",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105595
+      },
+      {
+        "fits": true,
+        "history_id": "a89d7624",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103890
+      },
+      {
+        "fits": true,
+        "history_id": "b0479f84",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103229
+      },
+      {
+        "fits": true,
+        "history_id": "1d4e3b97",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104094
+      },
+      {
+        "fits": true,
+        "history_id": "07b6f563",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104047
+      },
+      {
+        "fits": true,
+        "history_id": "1c0ddc50",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104848
+      },
+      {
+        "fits": true,
+        "history_id": "0a34ad58",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103924
+      },
+      {
+        "fits": true,
+        "history_id": "d3ab962e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103148
+      },
+      {
+        "fits": true,
+        "history_id": "2311e44b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103829
+      },
+      {
+        "fits": true,
+        "history_id": "cc06de0d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104603
+      },
+      {
+        "fits": true,
+        "history_id": "a11281a2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 106036
+      },
+      {
+        "fits": true,
+        "history_id": "4f54b7c9",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 98295
+      },
+      {
+        "fits": true,
+        "history_id": "85fa3a3f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104456
+      },
+      {
+        "fits": true,
+        "history_id": "9aaed6a3",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103851
+      },
+      {
+        "fits": true,
+        "history_id": "1f2b8d4f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103072
+      },
+      {
+        "fits": true,
+        "history_id": "e6041065",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103198
+      },
+      {
+        "fits": true,
+        "history_id": "51c32626",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104363
+      },
+      {
+        "fits": true,
+        "history_id": "d905b33f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104506
+      },
+      {
+        "fits": true,
+        "history_id": "7405e8b1",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105125
+      },
+      {
+        "fits": true,
+        "history_id": "f35224e0",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105154
+      },
+      {
+        "fits": true,
+        "history_id": "6456829e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104241
+      },
+      {
+        "fits": true,
+        "history_id": "a4996e51",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105244
+      },
+      {
+        "fits": true,
+        "history_id": "3c1045c8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 100013
+      },
+      {
+        "fits": true,
+        "history_id": "60036106",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102686
+      },
+      {
+        "fits": true,
+        "history_id": "681a1674",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104962
+      },
+      {
+        "fits": true,
+        "history_id": "e25c3b8d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104674
+      },
+      {
+        "fits": true,
+        "history_id": "4adc0475",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105558
+      },
+      {
+        "fits": true,
+        "history_id": "4bc144e2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104017
+      },
+      {
+        "fits": true,
+        "history_id": "ef66a6e5",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102799
+      },
+      {
+        "fits": true,
+        "history_id": "5025383b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101851
+      },
+      {
+        "fits": true,
+        "history_id": "a1cc6108",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102966
+      },
+      {
+        "fits": true,
+        "history_id": "9ee3ecd6",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103597
+      },
+      {
+        "fits": true,
+        "history_id": "3fdac837",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101919
+      },
+      {
+        "fits": true,
+        "history_id": "91b15a6e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104003
+      },
+      {
+        "fits": true,
+        "history_id": "27016adc",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105355
+      },
+      {
+        "fits": true,
+        "history_id": "720133ac",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105933
+      },
+      {
+        "fits": true,
+        "history_id": "77eafa52",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104388
+      },
+      {
+        "fits": true,
+        "history_id": "8979f9ec",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104572
+      },
+      {
+        "fits": true,
+        "history_id": "0100672e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105475
+      },
+      {
+        "fits": true,
+        "history_id": "a96c20ee",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102856
+      },
+      {
+        "fits": true,
+        "history_id": "92a0aa75",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103715
+      },
+      {
+        "fits": true,
+        "history_id": "3fe836c9",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105091
+      },
+      {
+        "fits": true,
+        "history_id": "1c549ce4",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103795
+      },
+      {
+        "fits": true,
+        "history_id": "6c49646a",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104982
+      },
+      {
+        "fits": true,
+        "history_id": "1192316e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104128
+      },
+      {
+        "fits": true,
+        "history_id": "0ea62687",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102981
+      },
+      {
+        "fits": true,
+        "history_id": "67e0d0f2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104576
+      },
+      {
+        "fits": true,
+        "history_id": "bb7c3b45",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102502
+      },
+      {
+        "fits": true,
+        "history_id": "ba358f49",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103758
+      },
+      {
+        "fits": true,
+        "history_id": "61f8c8f8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105413
+      },
+      {
+        "fits": true,
+        "history_id": "60159905",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105170
+      },
+      {
+        "fits": true,
+        "history_id": "ef9cf60a",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105324
+      },
+      {
+        "fits": true,
+        "history_id": "73d42213",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102798
+      },
+      {
+        "fits": true,
+        "history_id": "bc149d6b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101838
+      },
+      {
+        "fits": true,
+        "history_id": "099778bb",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 106056
+      },
+      {
+        "fits": true,
+        "history_id": "09ba9854",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101730
+      },
+      {
+        "fits": true,
+        "history_id": "d6062bb9",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104131
+      },
+      {
+        "fits": true,
+        "history_id": "157a136e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104473
+      },
+      {
+        "fits": true,
+        "history_id": "c18a7dc8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103933
+      },
+      {
+        "fits": true,
+        "history_id": "a3332713",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103012
+      },
+      {
+        "fits": true,
+        "history_id": "55241a1f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104850
+      },
+      {
+        "fits": true,
+        "history_id": "a08a253f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 100870
+      },
+      {
+        "fits": true,
+        "history_id": "f0e564bc",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101703
+      },
+      {
+        "fits": true,
+        "history_id": "078150f1",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102846
+      },
+      {
+        "fits": true,
+        "history_id": "8cf4d046",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103374
+      },
+      {
+        "fits": true,
+        "history_id": "a346bb18",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105367
+      },
+      {
+        "fits": true,
+        "history_id": "37f165cf",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103599
+      },
+      {
+        "fits": true,
+        "history_id": "8e91e7d9",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104383
+      },
+      {
+        "fits": true,
+        "history_id": "87f22b4a",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104108
+      },
+      {
+        "fits": true,
+        "history_id": "e56a43b9",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104429
+      },
+      {
+        "fits": true,
+        "history_id": "efc3f7c2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105011
+      },
+      {
+        "fits": true,
+        "history_id": "21d02d0d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104926
+      },
+      {
+        "fits": true,
+        "history_id": "2311e44b_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104599
+      },
+      {
+        "fits": true,
+        "history_id": "6456829e_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102742
+      },
+      {
+        "fits": true,
+        "history_id": "e5ba910e_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101706
+      },
+      {
+        "fits": true,
+        "history_id": "a96c20ee_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105252
+      },
+      {
+        "fits": true,
+        "history_id": "ba358f49_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103606
+      },
+      {
+        "fits": true,
+        "history_id": "09ba9854_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104058
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_59149c77",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102699
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_f49edff3",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103129
+      },
+      {
+        "fits": true,
+        "history_id": "71017276",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102562
+      },
+      {
+        "fits": true,
+        "history_id": "b46e15ed",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105338
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_fa19884c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101558
+      },
+      {
+        "fits": true,
+        "history_id": "0bc8ad92",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102965
+      },
+      {
+        "fits": true,
+        "history_id": "af082822",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104696
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_4929293a",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104969
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_b5700ca9",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102614
+      },
+      {
+        "fits": true,
+        "history_id": "9a707b81",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104555
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_1d4ab0c9",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103521
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_e072b769",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104886
+      },
+      {
+        "fits": true,
+        "history_id": "0db4c65d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102135
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_1d80365e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104579
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_7f6b06db",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102757
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_6dc9b45b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101793
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_8279ba02",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102344
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_18c2b244",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105439
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_a1b77f9c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105239
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_1916e0ea",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105179
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_7a0daae1",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104438
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_468eb063",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103785
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_7abb270c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 100542
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_1e4a8aeb",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105454
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_4fc4f797",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104472
+      },
+      {
+        "fits": true,
+        "history_id": "4dfccbf7",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104230
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_61e13b3c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104291
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_45189cb4",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102062
+      },
+      {
+        "fits": true,
+        "history_id": "2ebe6c90",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102033
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_e061b84f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102423
+      },
+      {
+        "fits": true,
+        "history_id": "370a8ff4",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102211
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_d6585ce8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101972
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_4ef30696",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104385
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_ec93e27f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104533
+      },
+      {
+        "fits": true,
+        "history_id": "6e984301",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105145
+      },
+      {
+        "fits": true,
+        "history_id": "8077ef71",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103190
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_f420262c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103771
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_8e165409",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102718
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_74aed68e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104543
+      },
+      {
+        "fits": true,
+        "history_id": "bcbe585f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103483
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_21adecb5",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104993
+      },
+      {
+        "fits": true,
+        "history_id": "5e1b23de",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103209
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_98f46fc6",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104254
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_af6db32f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105693
+      },
+      {
+        "fits": true,
+        "history_id": "eac54adc",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105498
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_7ddcf75f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103213
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_a2d1d1f6",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105240
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_85da3956",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102511
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_b0863698",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105048
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_68e94287",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103662
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_e414231e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104828
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_7ca326fa",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102703
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_7bc6cf22",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104424
+      },
+      {
+        "fits": true,
+        "history_id": "2ebe6c92",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103757
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_e061b84g",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103192
+      },
+      {
+        "fits": true,
+        "history_id": "71017277",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104879
+      },
+      {
+        "fits": true,
+        "history_id": "b46e15ee",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103150
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_d6585ce9",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102361
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_1e4a8aec",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104189
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_f420262d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104709
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_59149c78",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104506
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_e414231f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105036
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_4929293b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105061
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_468eb064",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102604
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_fa19884d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104138
+      },
+      {
+        "fits": true,
+        "history_id": "9a707b82",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104432
+      },
+      {
+        "fits": true,
+        "history_id": "eac54add",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102444
+      },
+      {
+        "fits": true,
+        "history_id": "4dfccbf8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104061
+      },
+      {
+        "fits": true,
+        "history_id": "0bc8ad93",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103914
+      },
+      {
+        "fits": true,
+        "history_id": "6e984302",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102680
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_8279ba03",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104411
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_b5700ca0",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103897
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_68e94288",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103619
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_2655b836",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104562
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_2487a7cb",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104616
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_76048e76",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103168
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_2312f94c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103017
+      },
+      {
+        "fits": true,
+        "history_id": "0bb5a684",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104927
+      },
+      {
+        "fits": true,
+        "history_id": "08f4fc43",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104519
+      },
+      {
+        "fits": true,
+        "history_id": "2c63a862",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104895
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_385a5000",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102782
+      },
+      {
+        "fits": true,
+        "history_id": "2a1811e2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105009
+      },
+      {
+        "fits": true,
+        "history_id": "bbf86515",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103261
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_5dcc0aab",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103537
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_0b2f1d21",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103418
+      },
+      {
+        "fits": true,
+        "history_id": "f0853d11",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102656
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_6ed717ea",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102733
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_70e84552",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103789
+      },
+      {
+        "fits": true,
+        "history_id": "a3838d2b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102578
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_93159ced",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102473
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_2d58bcd6",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102854
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_65aabe59",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101949
+      },
+      {
+        "fits": true,
+        "history_id": "982b5123",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105428
+      },
+      {
+        "fits": true,
+        "history_id": "b9cfe692",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104984
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_4edbafa2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103804
+      },
+      {
+        "fits": true,
+        "history_id": "c8090214",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 100426
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_483dd43c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105389
+      },
+      {
+        "fits": true,
+        "history_id": "e4e14d04",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104646
+      },
+      {
+        "fits": true,
+        "history_id": "c9f37c46",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103721
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_2c50253f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104454
+      },
+      {
+        "fits": true,
+        "history_id": "dcfa8644",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101947
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_b4a80587",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104806
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_9a159967",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105010
+      },
+      {
+        "fits": true,
+        "history_id": "cc6d1ec1",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103012
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_8c8961ae",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102345
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_d9af6064",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102983
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_7de946e7",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103851
+      },
+      {
+        "fits": true,
+        "history_id": "d01c6aa8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104176
+      },
+      {
+        "fits": true,
+        "history_id": "993da5e2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102955
+      },
+      {
+        "fits": true,
+        "history_id": "a3045048",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103563
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_d31cdae3",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 100603
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_cd90e484",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103754
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_88806d6e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105744
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_4cd9eba1",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105344
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_93f6379c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103429
+      },
+      {
+        "fits": true,
+        "history_id": "b29f3365",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104916
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_2f56ae70",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102866
+      },
+      {
+        "fits": true,
+        "history_id": "6613b389",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104856
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_78cf46a3",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103612
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_0a05b494",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103354
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_1a1dc16d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105679
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_2f584639",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102088
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_213fd887",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102216
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_5438fa52",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102495
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_c27434e8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104914
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_fe651585",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102326
+      },
+      {
+        "fits": true,
+        "history_id": "8c18457d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103577
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_70e84552_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104890
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_93159ced_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 100734
+      },
+      {
+        "fits": true,
+        "history_id": "982b5123_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105194
+      },
+      {
+        "fits": true,
+        "history_id": "c8090214_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103445
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_c27434e8_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104729
+      },
+      {
+        "fits": true,
+        "history_id": "gpt4_fe651585_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103473
+      },
+      {
+        "fits": true,
+        "history_id": "6a1eabeb",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103044
+      },
+      {
+        "fits": true,
+        "history_id": "6aeb4375",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101632
+      },
+      {
+        "fits": true,
+        "history_id": "830ce83f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102823
+      },
+      {
+        "fits": true,
+        "history_id": "852ce960",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103386
+      },
+      {
+        "fits": true,
+        "history_id": "945e3d21",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105256
+      },
+      {
+        "fits": true,
+        "history_id": "d7c942c3",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104961
+      },
+      {
+        "fits": true,
+        "history_id": "71315a70",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104699
+      },
+      {
+        "fits": true,
+        "history_id": "89941a93",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104724
+      },
+      {
+        "fits": true,
+        "history_id": "ce6d2d27",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104056
+      },
+      {
+        "fits": true,
+        "history_id": "9ea5eabc",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103157
+      },
+      {
+        "fits": true,
+        "history_id": "07741c44",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104233
+      },
+      {
+        "fits": true,
+        "history_id": "a1eacc2a",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103806
+      },
+      {
+        "fits": true,
+        "history_id": "184da446",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102565
+      },
+      {
+        "fits": true,
+        "history_id": "031748ae",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105152
+      },
+      {
+        "fits": true,
+        "history_id": "4d6b87c8",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101861
+      },
+      {
+        "fits": true,
+        "history_id": "0f05491a",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102638
+      },
+      {
+        "fits": true,
+        "history_id": "08e075c7",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104056
+      },
+      {
+        "fits": true,
+        "history_id": "f9e8c073",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104842
+      },
+      {
+        "fits": true,
+        "history_id": "41698283",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103421
+      },
+      {
+        "fits": true,
+        "history_id": "2698e78f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105677
+      },
+      {
+        "fits": true,
+        "history_id": "b6019101",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104939
+      },
+      {
+        "fits": true,
+        "history_id": "45dc21b6",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103216
+      },
+      {
+        "fits": true,
+        "history_id": "5a4f22c0",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105169
+      },
+      {
+        "fits": true,
+        "history_id": "6071bd76",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103557
+      },
+      {
+        "fits": true,
+        "history_id": "e493bb7c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105667
+      },
+      {
+        "fits": true,
+        "history_id": "618f13b2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104768
+      },
+      {
+        "fits": true,
+        "history_id": "72e3ee87",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103464
+      },
+      {
+        "fits": true,
+        "history_id": "c4ea545c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103670
+      },
+      {
+        "fits": true,
+        "history_id": "01493427",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103316
+      },
+      {
+        "fits": true,
+        "history_id": "6a27ffc2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102691
+      },
+      {
+        "fits": true,
+        "history_id": "2133c1b5",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104511
+      },
+      {
+        "fits": true,
+        "history_id": "18bc8abd",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101545
+      },
+      {
+        "fits": true,
+        "history_id": "db467c8c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103370
+      },
+      {
+        "fits": true,
+        "history_id": "7a87bd0c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104542
+      },
+      {
+        "fits": true,
+        "history_id": "e61a7584",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104142
+      },
+      {
+        "fits": true,
+        "history_id": "1cea1afa",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105030
+      },
+      {
+        "fits": true,
+        "history_id": "ed4ddc30",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103579
+      },
+      {
+        "fits": true,
+        "history_id": "8fb83627",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102710
+      },
+      {
+        "fits": true,
+        "history_id": "b01defab",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105371
+      },
+      {
+        "fits": true,
+        "history_id": "22d2cb42",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103018
+      },
+      {
+        "fits": true,
+        "history_id": "0e4e4c46",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104041
+      },
+      {
+        "fits": true,
+        "history_id": "4b24c848",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104196
+      },
+      {
+        "fits": true,
+        "history_id": "7e974930",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102324
+      },
+      {
+        "fits": true,
+        "history_id": "603deb26",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105734
+      },
+      {
+        "fits": true,
+        "history_id": "59524333",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103096
+      },
+      {
+        "fits": true,
+        "history_id": "5831f84d",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102838
+      },
+      {
+        "fits": true,
+        "history_id": "eace081b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105617
+      },
+      {
+        "fits": true,
+        "history_id": "affe2881",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103757
+      },
+      {
+        "fits": true,
+        "history_id": "50635ada",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105047
+      },
+      {
+        "fits": true,
+        "history_id": "e66b632c",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104339
+      },
+      {
+        "fits": true,
+        "history_id": "0ddfec37",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102122
+      },
+      {
+        "fits": true,
+        "history_id": "f685340e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102547
+      },
+      {
+        "fits": true,
+        "history_id": "cc5ded98",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103287
+      },
+      {
+        "fits": true,
+        "history_id": "dfde3500",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103722
+      },
+      {
+        "fits": true,
+        "history_id": "69fee5aa",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103807
+      },
+      {
+        "fits": true,
+        "history_id": "7401057b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102061
+      },
+      {
+        "fits": true,
+        "history_id": "cf22b7bf",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103282
+      },
+      {
+        "fits": true,
+        "history_id": "a2f3aa27",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103657
+      },
+      {
+        "fits": true,
+        "history_id": "c7dc5443",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104670
+      },
+      {
+        "fits": true,
+        "history_id": "06db6396",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104605
+      },
+      {
+        "fits": true,
+        "history_id": "3ba21379",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102767
+      },
+      {
+        "fits": true,
+        "history_id": "9bbe84a2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103222
+      },
+      {
+        "fits": true,
+        "history_id": "10e09553",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102879
+      },
+      {
+        "fits": true,
+        "history_id": "dad224aa",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104154
+      },
+      {
+        "fits": true,
+        "history_id": "ba61f0b9",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105045
+      },
+      {
+        "fits": true,
+        "history_id": "42ec0761",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102973
+      },
+      {
+        "fits": true,
+        "history_id": "5c40ec5b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102780
+      },
+      {
+        "fits": true,
+        "history_id": "c6853660",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104360
+      },
+      {
+        "fits": true,
+        "history_id": "26bdc477",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104892
+      },
+      {
+        "fits": true,
+        "history_id": "0977f2af",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103842
+      },
+      {
+        "fits": true,
+        "history_id": "6aeb4375_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103633
+      },
+      {
+        "fits": true,
+        "history_id": "031748ae_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105856
+      },
+      {
+        "fits": true,
+        "history_id": "2698e78f_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105284
+      },
+      {
+        "fits": true,
+        "history_id": "2133c1b5_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101565
+      },
+      {
+        "fits": true,
+        "history_id": "0ddfec37_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103707
+      },
+      {
+        "fits": true,
+        "history_id": "f685340e_abs",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104975
+      },
+      {
+        "fits": true,
+        "history_id": "89941a94",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103997
+      },
+      {
+        "fits": true,
+        "history_id": "07741c45",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101599
+      },
+      {
+        "fits": true,
+        "history_id": "7161e7e2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103289
+      },
+      {
+        "fits": true,
+        "history_id": "c4f10528",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104660
+      },
+      {
+        "fits": true,
+        "history_id": "89527b6b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105042
+      },
+      {
+        "fits": true,
+        "history_id": "e9327a54",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103180
+      },
+      {
+        "fits": true,
+        "history_id": "4c36ccef",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104753
+      },
+      {
+        "fits": true,
+        "history_id": "6ae235be",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103705
+      },
+      {
+        "fits": true,
+        "history_id": "7e00a6cb",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103435
+      },
+      {
+        "fits": true,
+        "history_id": "1903aded",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103251
+      },
+      {
+        "fits": true,
+        "history_id": "ceb54acb",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103899
+      },
+      {
+        "fits": true,
+        "history_id": "f523d9fe",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105577
+      },
+      {
+        "fits": true,
+        "history_id": "0e5e2d1a",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104686
+      },
+      {
+        "fits": true,
+        "history_id": "fea54f57",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103209
+      },
+      {
+        "fits": true,
+        "history_id": "cc539528",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103410
+      },
+      {
+        "fits": true,
+        "history_id": "dc439ea3",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104164
+      },
+      {
+        "fits": true,
+        "history_id": "18dcd5a5",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104988
+      },
+      {
+        "fits": true,
+        "history_id": "488d3006",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104998
+      },
+      {
+        "fits": true,
+        "history_id": "58470ed2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104639
+      },
+      {
+        "fits": true,
+        "history_id": "8cf51dda",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104568
+      },
+      {
+        "fits": true,
+        "history_id": "1d4da289",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105423
+      },
+      {
+        "fits": true,
+        "history_id": "8464fc84",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103654
+      },
+      {
+        "fits": true,
+        "history_id": "8aef76bc",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104578
+      },
+      {
+        "fits": true,
+        "history_id": "71a3fd6b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103760
+      },
+      {
+        "fits": true,
+        "history_id": "2bf43736",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102578
+      },
+      {
+        "fits": true,
+        "history_id": "70b3e69b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104847
+      },
+      {
+        "fits": true,
+        "history_id": "8752c811",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103073
+      },
+      {
+        "fits": true,
+        "history_id": "3249768e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104842
+      },
+      {
+        "fits": true,
+        "history_id": "1b9b7252",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103079
+      },
+      {
+        "fits": true,
+        "history_id": "1568498a",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102637
+      },
+      {
+        "fits": true,
+        "history_id": "6222b6eb",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105532
+      },
+      {
+        "fits": true,
+        "history_id": "e8a79c70",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105252
+      },
+      {
+        "fits": true,
+        "history_id": "d596882b",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104328
+      },
+      {
+        "fits": true,
+        "history_id": "e3fc4d6e",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103418
+      },
+      {
+        "fits": true,
+        "history_id": "51b23612",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102080
+      },
+      {
+        "fits": true,
+        "history_id": "3e321797",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105512
+      },
+      {
+        "fits": true,
+        "history_id": "e982271f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104706
+      },
+      {
+        "fits": true,
+        "history_id": "352ab8bd",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104598
+      },
+      {
+        "fits": true,
+        "history_id": "fca762bc",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104194
+      },
+      {
+        "fits": true,
+        "history_id": "7a8d0b71",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104217
+      },
+      {
+        "fits": true,
+        "history_id": "a40e080f",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104575
+      },
+      {
+        "fits": true,
+        "history_id": "8b9d4367",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103808
+      },
+      {
+        "fits": true,
+        "history_id": "5809eb10",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103344
+      },
+      {
+        "fits": true,
+        "history_id": "41275add",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104799
+      },
+      {
+        "fits": true,
+        "history_id": "4388e9dd",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103227
+      },
+      {
+        "fits": true,
+        "history_id": "4baee567",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 101761
+      },
+      {
+        "fits": true,
+        "history_id": "561fabcd",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104242
+      },
+      {
+        "fits": true,
+        "history_id": "b759caee",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104418
+      },
+      {
+        "fits": true,
+        "history_id": "ac031881",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102190
+      },
+      {
+        "fits": true,
+        "history_id": "28bcfaac",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 105194
+      },
+      {
+        "fits": true,
+        "history_id": "16c90bf4",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102656
+      },
+      {
+        "fits": true,
+        "history_id": "c8f1aeed",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102282
+      },
+      {
+        "fits": true,
+        "history_id": "eaca4986",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103056
+      },
+      {
+        "fits": true,
+        "history_id": "c7cf7dfd",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 102199
+      },
+      {
+        "fits": true,
+        "history_id": "e48988bc",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104511
+      },
+      {
+        "fits": true,
+        "history_id": "1de5cff2",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 104380
+      },
+      {
+        "fits": true,
+        "history_id": "65240037",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 103841
+      },
+      {
+        "fits": true,
+        "history_id": "778164c6",
+        "over_long_context_threshold": false,
+        "queries": 1,
+        "tokens": 100934
+      }
+    ],
+    "long_context_threshold": 272000,
+    "n_exceed_window": 0,
+    "n_histories": 500,
+    "n_items": 500,
+    "n_over_long_context_threshold": 0,
+    "safety_margin": 0.05,
+    "tokens": {
+      "max": 106056,
+      "mean": 103791.124,
+      "median": 103898.0,
+      "min": 97338,
+      "total": 51895562
+    },
+    "window": 1050000
+  }
+}

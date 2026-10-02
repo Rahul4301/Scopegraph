@@ -1,0 +1,13 @@
+# Checksums of the benchmark files in data/ (git-ignored). Verified by `memstudy verify-data`.
+# SHA-256 computed locally on 2026-10-01 from the files the loaders read.
+# The SWE Context Bench entries are filled in when that data is downloaded after approval.
+
+files:
+  - path: data/locomo/locomo10.json
+    source_url: https://github.com/snap-research/locomo
+    bytes: 2805274
+    sha256: 79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4
+  - path: data/longmemeval/longmemeval_s_cleaned.json
+    source_url: https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned
+    bytes: 277383467
+    sha256: d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442

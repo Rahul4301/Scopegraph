@@ -5,32 +5,27 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-htmlcov/
-.coverage
+*.egg-info/
 dist/
 build/
+
+# benchmark data is downloaded locally, never committed
 data/
-*.egg-info/
+
+# local caches and stores (embeddings, Mem0 vector stores); never results
+.cache/
+
+# leftovers from the previous project (untracked, kept locally)
 .scopegraph/
 .scopegraph-*.log
-results/raw/*.jsonl
-results/raw/*.json
-results/processed/*
-results/figures/*
-results/tables/*
-results/smoke/*
-results/latest/*
-results/exploratory_*/
-results/live_*/
 results/audit-report/
-results/neo4j-live-report/
 results/batches/
-web/node_modules/
-web/dist/
-web/*.tsbuildinfo
+results/neo4j-live-report/
+results/reports/
+results/smoke/
+results/raw/*.json
+results/raw/*.jsonl
 
 # macOS
 .DS_Store
 **/.DS_Store
-__MACOSX/
-results/reports/
