@@ -161,9 +161,13 @@ candidates; nothing is cut mid-item.
   `server-v0.0.8`; the repository `github.com/supermemoryai/supermemory` is MIT licensed but, as
   checked 2026-10-02, holds no server or extraction source: `apps/` has docs, mcp, web and
   playgrounds, `packages/` has SDKs and tools, so the extraction prompt cannot be audited), one container per history (`container_tag` = the same
-  `<bench>_<history_id>` scope as arm B), `task_type` memory, `search_mode` memories (extracted
-  facts only, as in Mem0; the default hybrid mode would add raw document chunks, which is arm C's
-  job), rerank and query rewriting off. The server is configured with the same extraction model
+  `<bench>_<history_id>` scope as arm B), `task_type` memory, `search_mode` hybrid (the server's
+  documented default: extracted memories plus raw document chunks in one ranked list, so arm D
+  is not a pure extraction system and partly overlaps with arm C; this is stated wherever its
+  results appear). Chosen after one development case (`conv-26`): memories-only mode returned
+  about 1,700 context tokens and 63.2% judge accuracy, hybrid about 2,700 tokens and 68.4%, a
+  difference inside the noise of 152 questions, so the choice rests on hybrid being the
+  product's own default, not on that result. Rerank and query rewriting are off. The server is configured with the same extraction model
   as arm B (`OPENAI_MODEL`) and the same embedder (provider `openai`, `text-embedding-3-small`,
   1,536 dimensions). Ingestion is asynchronous on the server, so the arm polls until every
   document is done before any query. It is reported as "Supermemory (self-hosted, shared
@@ -173,8 +177,13 @@ candidates; nothing is cut mid-item.
   the stored memories, and covered by the single-session-assistant sensitivity analysis); the server's own model calls are
   made with its own key and are not metered, so arm D spend is estimated from our token counts at
   the shared models' verified prices (input tokens only, a lower bound) and marked estimated in
-  the ledger; the server's search `threshold` defaults to 0.6, which is registered as the arm D value
-  (Mem0's library default is 0.1 and the scales differ, so the two are not tuned to each other).
+  the ledger; the server's search `threshold` defaults to 0.6, which is tuned to its local embedder: with
+  `text-embedding-3-small` the best similarity on a smoke question was 0.55 and the server
+  returned nothing. Arm D therefore uses 0.1, Mem0's library default, so neither arm is tuned
+  against the other (the smoke result at 0.6 is a development finding, not a result).
+  The server rejects search limits above 100, so arm D's candidate pool is 100 where arms B and C
+  use 200; the shared 7,000-token budget is unchanged and extracted facts are short, so the pool,
+  not the budget, is the binding limit for D (reported, not tuned).
   Gold-in-store for arm D comes from the server's memory-list endpoint (`POST /v4/memories/list`,
   latest and not-forgotten versions), the same verbatim test as arm B.
 

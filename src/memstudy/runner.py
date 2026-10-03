@@ -19,7 +19,7 @@ from typing import Any, Protocol
 
 import openai
 
-from memstudy.arms.base import Arm, ArmContext, IngestStats
+from memstudy.arms.base import Arm, ArmContext, ArmError, IngestStats
 from memstudy.budget import BudgetExceeded
 from memstudy.judge import Judge
 from memstudy.llm import CallResult, IncompleteResponse
@@ -30,7 +30,7 @@ from memstudy.scoring import answer_metrics, gold_in_store
 from memstudy.store import ResultStore
 from memstudy.tokens import DoesNotFit
 
-HANDLED = (IncompleteResponse, openai.APIError)
+HANDLED = (IncompleteResponse, openai.APIError, ArmError)
 
 
 class Progress(Protocol):

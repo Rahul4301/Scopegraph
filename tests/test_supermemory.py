@@ -93,7 +93,7 @@ def test_every_write_is_one_session_with_the_memory_task_type_and_date(cfg, pric
     assert len(client.calls) == 2
 
 
-def test_search_uses_the_registered_mode_with_rerank_and_rewrite_off(cfg, prices, tmp_path):
+def test_search_uses_the_registered_hybrid_mode_with_rerank_and_rewrite_off(cfg, prices, tmp_path):
     client = FakeSupermemory()
     arm = make_arm(cfg, prices, tmp_path, client)
     h = make_history("conv-1")
@@ -101,11 +101,11 @@ def test_search_uses_the_registered_mode_with_rerank_and_rewrite_off(cfg, prices
     arm.context(make_item("conv-1"), h)
     assert client.searches == [
         {
-            "mode": "memories",
-            "threshold": 0.6,
+            "mode": "hybrid",
+            "threshold": 0.1,
             "rerank": False,
             "rewrite": False,
-            "limit": cfg["retrieval"]["candidate_pool"],
+            "limit": 100,  # the server rejects search limits above 100; the shared pool is 200
         }
     ]
 
@@ -219,3 +219,70 @@ def test_an_injected_lister_replaces_the_endpoint(cfg, prices, tmp_path):
 )
 def test_session_dates_are_parsed_or_left_out(stamp, iso):
     assert parse_session_date(stamp) == iso
+
+
+def test_the_servers_key_file_wins_over_a_stale_environment_key(cfg, tmp_path, monkeypatch):
+    from memstudy.cli import supermemory_key
+
+    (tmp_path / "api-key").write_text("sm_from_file\n")
+    monkeypatch.setenv("SUPERMEMORY_API_KEY", "sm_stale")
+    assert supermemory_key({**cfg["arms"]["D"], "data_dir": str(tmp_path)}) == "sm_from_file"
+    monkeypatch.setenv("SUPERMEMORY_API_KEY", "sm_env")
+    assert supermemory_key({**cfg["arms"]["D"], "data_dir": str(tmp_path / "missing")}) == "sm_env"
+
+
+class FlakyServerError(Exception):
+    status_code = 500
+
+
+def test_a_transient_server_error_on_search_is_retried(cfg, prices, tmp_path):
+    client = FakeSupermemory()
+    arm = make_arm(cfg, prices, tmp_path, client)
+    h = make_history("conv-1")
+    arm.prepare(h)
+    real, calls = client.search.memories, []
+
+    def flaky(**kw):
+        calls.append(1)
+        if len(calls) < 3:
+            raise FlakyServerError("The operation timed out")
+        return real(**kw)
+
+    client.search = NS(memories=flaky)
+    assert "alpha" in arm.context(make_item("conv-1"), h).text and len(calls) == 3
+
+
+def test_a_search_that_keeps_failing_becomes_a_per_question_error_not_a_crash(cfg, prices, tmp_path):
+    from memstudy.arms.base import ArmError
+
+    client = FakeSupermemory()
+    arm = make_arm(cfg, prices, tmp_path, client)
+    h = make_history("conv-1")
+    arm.prepare(h)
+
+    def down(**kw):
+        raise FlakyServerError("down")
+
+    client.search = NS(memories=down)
+    with pytest.raises(ArmError, match="4 attempts"):
+        arm.context(make_item("conv-1"), h)
+
+
+def test_a_client_error_on_search_is_raised_immediately(cfg, prices, tmp_path):
+    class Bad(Exception):
+        status_code = 400
+
+    client = FakeSupermemory()
+    arm = make_arm(cfg, prices, tmp_path, client)
+    h = make_history("conv-1")
+    arm.prepare(h)
+    calls = []
+
+    def bad(**kw):
+        calls.append(1)
+        raise Bad("limit must be between 1 and 100")
+
+    client.search = NS(memories=bad)
+    with pytest.raises(Bad):
+        arm.context(make_item("conv-1"), h)
+    assert len(calls) == 1

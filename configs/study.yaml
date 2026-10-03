@@ -51,14 +51,18 @@ arms:
     server_version: 0.0.8     # release server-v0.0.8 (2026-08-17); repo is MIT but has no server source; 0.0.7+ locks the embedding plan
     sdk_version: 3.62.0
     base_url: http://localhost:6767
+    data_dir: .cache/supermemory          # SUPERMEMORY_DATA_DIR of the server; its api-key file is read from here
     extraction_model: gpt-6-luna          # shared with arm B; set on the server as OPENAI_MODEL
     embedding_model: text-embedding-3-small   # shared with arms B and C; server embedding provider openai
     embedding_dimensions: 1536
     task_type: memory         # full pipeline (facts, profile, graph)
-    search_mode: memories     # extracted facts only, like Mem0; hybrid would add raw chunks (arm C's job)
-    threshold: 0.6            # the server's own default (Mem0's library default is 0.1; scales differ)
+    search_mode: hybrid       # the server's documented default: extracted memories plus raw chunks (PREREG.md Section 4)
+    candidate_pool: 100       # the server caps search limit at 100 (the shared pool for B and C is 200)
+    threshold: 0.1            # Mem0's library default. The server's own default, 0.6, returned no results with
+                              # text-embedding-3-small (top similarity 0.55): it is tuned to the local embedder
     rerank: false
     rewrite_query: false
+    search_attempts: 4        # transient server errors (it embeds the question remotely) are retried
     poll_seconds: 5
     poll_timeout_seconds: 1800
 

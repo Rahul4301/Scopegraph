@@ -10,6 +10,11 @@ from memstudy.schema import History, Item
 from memstudy.tokens import count_tokens
 
 
+class ArmError(RuntimeError):
+    """A failure inside an arm's own service (for example a memory server error) after its
+    retries. The runner records it against the one question and carries on."""
+
+
 @dataclass
 class IngestStats:
     """Cost and time of turning one history into the arm's store (zero for arm A)."""

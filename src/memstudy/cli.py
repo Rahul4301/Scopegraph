@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import uuid
 from dataclasses import dataclass
@@ -129,13 +130,12 @@ def build_arm(
     if name == "D":
         arm_cfg = cfg["arms"]["D"]
         require_gates("g2_supermemory_self_hosted")
-        load_env_key("SUPERMEMORY_API_KEY")  # the key the local server printed on first boot
         from supermemory import Supermemory
 
         return SupermemoryArm(
             arm_cfg,
             retrieval,
-            Supermemory(base_url=arm_cfg["base_url"], max_retries=0),
+            Supermemory(api_key=supermemory_key(arm_cfg), base_url=arm_cfg["base_url"], max_retries=2),
             rt.prices[arm_cfg["extraction_model"]],
             rt.prices[arm_cfg["embedding_model"]],
             rt.budget,
@@ -143,6 +143,17 @@ def build_arm(
             tag,
         )
     raise ValueError(f"unknown arm {name}")
+
+
+def supermemory_key(arm_cfg: dict[str, Any]) -> str:
+    """The local server's own key. The file the server keeps in its data directory is the source
+    of truth (it is regenerated whenever the directory is), so it wins over SUPERMEMORY_API_KEY,
+    which can be stale in a long-lived shell. Never printed."""
+    key_file = Path(arm_cfg["data_dir"]) / "api-key"
+    if key_file.exists():
+        return key_file.read_text().strip()
+    load_env_key("SUPERMEMORY_API_KEY")
+    return os.environ["SUPERMEMORY_API_KEY"]
 
 
 def _write_new_json(path: Path, payload: Any) -> None:

@@ -1,9 +1,10 @@
 """Arm D: Supermemory, self-hosted server binary, one container per history.
 
-Reported as "Supermemory (self-hosted, shared extraction model)", never as the hosted product:
-the hosted platform runs proprietary extraction models, while the self-hosted server runs on the
-model it is pointed at. The server is configured by its environment, not by this code, so the
-extraction model and embedder match arm B:
+Reported as "Supermemory (self-hosted, shared extraction model, hybrid search)", never as the
+hosted product: the hosted platform runs proprietary extraction models, while the self-hosted
+server runs on the model it is pointed at. Search is hybrid (extracted memories plus raw chunks).
+The server is configured by its environment, not by this code, so the extraction model and
+embedder match arm B:
 
     OPENAI_API_KEY=...  OPENAI_MODEL=<arms.B.extraction_model>
     SUPERMEMORY_EMBEDDING_PROVIDER=openai
@@ -34,7 +35,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from memstudy.arms.base import ArmContext, IngestStats, fill_to_budget
+from memstudy.arms.base import ArmContext, ArmError, IngestStats, fill_to_budget
 from memstudy.budget import Budget, ModelPrice
 from memstudy.metering import CostSink
 from memstudy.schema import History, Item, Usage, render_session
@@ -191,16 +192,29 @@ class SupermemoryArm:
         return IngestStats(seconds=seconds, cost=sink, stored_units=len(done))
 
     def _search(self, query: str, container: str) -> list[Any]:
-        found = self.client.search.memories(
-            q=query,
-            container_tag=container,
-            search_mode=self.cfg["search_mode"],
-            limit=int(self.retrieval["candidate_pool"]),
-            threshold=float(self.cfg["threshold"]),
-            rerank=bool(self.cfg.get("rerank", False)),
-            rewrite_query=bool(self.cfg.get("rewrite_query", False)),
-        )
-        return [r for r in found.results if (r.memory or r.chunk)]
+        """One search. The server embeds the question with a remote model, so a transient 5xx or
+        timeout is retried a few times; a client error (4xx) is a bug and is raised at once."""
+        attempts = int(self.cfg.get("search_attempts", 4))
+        for attempt in range(1, attempts + 1):
+            try:
+                found = self.client.search.memories(
+                    q=query,
+                    container_tag=container,
+                    search_mode=self.cfg["search_mode"],
+                    limit=min(int(self.retrieval["candidate_pool"]), int(self.cfg.get("candidate_pool", 100))),
+                    threshold=float(self.cfg["threshold"]),
+                    rerank=bool(self.cfg.get("rerank", False)),
+                    rewrite_query=bool(self.cfg.get("rewrite_query", False)),
+                )
+                return [r for r in found.results if (r.memory or r.chunk)]
+            except Exception as err:
+                status = getattr(err, "status_code", None)
+                if status is not None and status < 500:
+                    raise
+                if attempt == attempts:
+                    raise ArmError(f"memory search failed after {attempts} attempts: {err}") from err
+                self._sleep(2.0 * attempt)
+        raise AssertionError("unreachable")
 
     def context(self, item: Item, history: History) -> ArmContext:
         if history.history_id not in self._ingested:
