@@ -88,3 +88,9 @@ def test_census_flags_items_that_do_not_fit_or_cross_the_threshold(prices):
     tiny_window = luna.__class__(**{**luna.__dict__, "context_window": 10, "long_context_threshold": 5})
     flagged = census({"small": small}, [make_item("small")], tiny_window, 0.05, overhead_tokens=0)
     assert flagged["n_exceed_window"] == 1 and flagged["n_over_long_context_threshold"] == 1
+
+
+def test_document_chunks_that_are_only_blank_lines_are_never_sent_to_be_embedded():
+    from memstudy.schema import History
+    doc = History(history_id="d", bench="memoryagentbench", document="a b c d\n\na b c d")
+    assert chunk_history(doc, 5) == ["a b c d", "a b c d"]

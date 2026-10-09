@@ -192,6 +192,19 @@ def run_chat(
             summary.does_not_fit.append(history_id)
             summary.errors += len(pending)
             return
+        except HANDLED as err:  # storing the history failed: record it for every question, keep going
+            for item in pending:
+                error = {
+                    "item_id": item.item_id,
+                    "history_id": history_id,
+                    "error": f"ingest_failed: {type(err).__name__}",
+                    "message": str(err),
+                }
+                store.write_error(arm.name, bench, item.item_id, error)
+                if progress:
+                    progress.failed(item, error)
+            summary.errors += len(pending)
+            return
         if ingest is not None and progress:
             progress.ingested(history_id, ingest)
         if ingest is not None and not store.has_ingest(arm.name, bench, history_id):

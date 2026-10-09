@@ -45,7 +45,8 @@ def chunk_session(session: Session, chunk_tokens: int) -> list[str]:
 
 def chunk_history(history: History, chunk_tokens: int) -> list[str]:
     if history.document is not None:
-        return chunk_document(history.document, chunk_tokens)
+        # A chunk of blank lines carries no text, and the embeddings API rejects an empty input.
+        return [c for c in chunk_document(history.document, chunk_tokens) if c.strip()]
     return [c for s in history.sessions for c in chunk_session(s, chunk_tokens)]
 
 

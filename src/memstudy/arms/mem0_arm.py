@@ -144,7 +144,8 @@ class Mem0Arm:
             if history.document is not None and user_id not in self._documents_done:
                 # A verbatim document (MemoryAgentBench): one fixed-size chunk per add call.
                 size = int(self.cfg["document_chunk_tokens"])
-                for n, chunk in enumerate(chunk_document(history.document, size)):
+                chunks = [c for c in chunk_document(history.document, size) if c.strip()]  # no blank chunks
+                for n, chunk in enumerate(chunks):
                     self.memory.add(
                         [{"role": "user", "content": chunk}],
                         user_id=user_id,

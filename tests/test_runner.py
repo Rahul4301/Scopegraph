@@ -171,3 +171,23 @@ def test_cache_key_stays_within_openai_limit_and_unique():
     assert len(a) <= CACHE_KEY_MAX and len(b) <= CACHE_KEY_MAX
     assert a != b
     assert a == cache_key("A", "memoryagentbench_long_range_understanding-infbench_sum_eng_shots2-r87")
+
+
+def test_a_history_that_fails_to_store_is_recorded_and_the_run_continues(prices, budget, cfg, tmp_path):
+    import openai
+
+    class FailingArm(FullContextArm):
+        def prepare(self, history):
+            if history.history_id == "h1":
+                raise openai.APIError("embedding rejected", request=None, body=None)
+            return super().prepare(history)
+
+    _, reader, judge = build(prices, budget, cfg)
+    store = ResultStore(tmp_path)
+    summary = run_chat(
+        arm=FailingArm(100_000, 0.05), items=[make_item("h1", 0), make_item("h2", 0)],
+        histories={"h1": make_history("h1"), "h2": make_history("h2")},
+        reader=reader, judge=judge, store=store, stage="pilot", run_id="r",
+    )
+    assert summary.errors == 1 and summary.completed == 1
+    assert store.read_errors("A", "locomo")[0]["error"] == "ingest_failed: APIError"
