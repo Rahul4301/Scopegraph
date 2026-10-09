@@ -6,8 +6,8 @@
 g1_extra_models: true
 
 stage_smoke: true     # run with --num_cases: a few cases to check the plumbing
-stage_pilot: false
+stage_pilot: true
 g2_supermemory_self_hosted: true
-stage_chat_locomo: false
-stage_chat_longmemeval: false
-stage_chat_memoryagentbench: false
+stage_chat_locomo: true
+stage_chat_longmemeval: true
+stage_chat_memoryagentbench: true
