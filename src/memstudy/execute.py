@@ -97,8 +97,10 @@ def ensure_new(path: Path) -> None:
         )
 
 
-# MemoryAgentBench sources never run, for any arm (PREREG amendment A3).
-EXCLUDED_SOURCES = ("infbench_sum",)
+# MemoryAgentBench sources never run, for any arm: InfBench Sum (PREREG amendment A3) and the
+# 1.48M-token recsys context, which does not fit the window (PREREG Section 2). Arm A would record
+# recsys as does_not_fit; arms that never send the whole document would otherwise answer it.
+EXCLUDED_SOURCES = ("infbench_sum", "recsys_redial")
 
 
 def _excluded(item: Item) -> bool:
