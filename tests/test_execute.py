@@ -254,3 +254,20 @@ def test_task_prompts_wrap_only_templated_sources_and_sources_filter():
     assert a[1].meta["raw_question"] == icl.question
     assert a[2] == qa
     assert "Question:" + icl.question in apply_task_prompts([icl], "C")[0].question  # RAG template
+
+
+def test_infbench_summaries_are_never_selected_or_retried(tmp_path):
+    from memstudy.execute import retry_cases
+    from memstudy.schema import Item
+
+    def mab(source, n):
+        return Item(item_id=f"{source}-q{n}", bench="memoryagentbench", history_id=source,
+                    category="Long_Range_Understanding", question="q", gold="g", primary=False,
+                    meta={"source": source})
+    items = [mab("infbench_sum_eng_shots2", 0), mab("detective_qa", 1)]
+    assert [i.item_id for i in select_cases(items, None, True)] == ["detective_qa-q1"]
+    failed = {"run": {"memory_system": "no_memory", "eval": "memoryagentbench"},
+              "cases": [{"item_id": i.item_id, "status": "not_run"} for i in items]}
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps(failed))
+    assert [i.item_id for i in retry_cases(items, path, "no_memory", "memoryagentbench")] == ["detective_qa-q1"]

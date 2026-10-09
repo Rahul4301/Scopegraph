@@ -97,11 +97,19 @@ def ensure_new(path: Path) -> None:
         )
 
 
+# MemoryAgentBench sources never run, for any arm (PREREG amendment A3).
+EXCLUDED_SOURCES = ("infbench_sum",)
+
+
+def _excluded(item: Item) -> bool:
+    return str(item.meta.get("source", "")).startswith(EXCLUDED_SOURCES)
+
+
 def select_cases(items: list[Item], num_cases: int | None, include_secondary: bool) -> list[Item]:
     """Primary items in loader order, limited to the first num_cases histories (all when None),
     with every selected question of each of those histories. Secondary items (LoCoMo adversarial,
-    MemoryAgentBench exploratory competencies) join only on request."""
-    chosen = [i for i in items if i.primary or include_secondary]
+    MemoryAgentBench exploratory competencies) join only on request. Excluded sources never join."""
+    chosen = [i for i in items if (i.primary or include_secondary) and not _excluded(i)]
     if num_cases is not None:
         if num_cases < 1:
             raise ValueError("num_cases must be at least 1")
@@ -125,7 +133,7 @@ def retry_cases(items: list[Item], result_file: Path, system: str, eval_name: st
         for c in result["cases"]
         if c["status"] != "ok" and c.get("error", {}).get("error") != "does_not_fit"
     }
-    return [i for i in items if i.item_id in failed]
+    return [i for i in items if i.item_id in failed and not _excluded(i)]
 
 
 def filter_sources(items: list[Item], prefixes: list[str]) -> list[Item]:

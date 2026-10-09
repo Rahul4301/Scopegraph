@@ -36,6 +36,25 @@ order, stopwords, simple plurals and text after ";", and separates digits from l
 further against that data. The threshold and its consequence are unchanged. All reported runs use
 prompts v7.
 
+**Amendment A3 (2026-10-09).** The 100 InfBench Sum questions (MemoryAgentBench source
+`infbench_sum_eng_shots2`, Long-Range Understanding) are excluded for every arm; the code never
+selects or retries them (`execute.EXCLUDED_SOURCES`). Reason: they answer no registered question.
+H1 and H3 are tested on LongMemEval-S only; each book has one question, so H2 can only price it,
+not measure a crossover; RQ3 uses the composite histories; and RQ4 needs a short gold string,
+which a summary does not have. Their cost is large: about 17M context tokens, three long grading
+calls per book, and for Mem0 about 4,200 extraction rounds (an estimated $20 and 60 hours). The
+decision was made after one book had been graded under v7 (summary f1 0.39, arm A) and four had
+failed on the grader's output limit; no other InfBench result under v7 had been seen. Long-Range
+Understanding is reported from DetectiveQA alone (71 questions), and the exclusion is reported as a
+limitation, since the MemoryAgentBench paper and later work report InfBench Sum. The benchmark's
+summary grader stays in the code, unused. MemoryAgentBench now has 3,571 questions, 3,371 of them
+in contexts that fit the window.
+
+Correction to A1 and A2: only LongMemEval-S is confirmatory (Section 1); LoCoMo and
+MemoryAgentBench are descriptive replications. So A1's switch to LongMemEval's own judge prompts is
+the change to a confirmatory measurement (made before any LongMemEval-S run), and A2's list rule,
+which is not used on LongMemEval-S, changes descriptive measurements only.
+
 ## 1. Question, hypotheses, falsification
 
 When the whole history fits in the model's context window, does a model still need an external
@@ -109,8 +128,7 @@ free-text answer graded against a gold answer. Same definition for all arms.
   `scoring.py`): eventqa, ruler_qa and factconsolidation pass when an accepted answer appears in
   the answer; icl passes when the parsed label equals the gold label (a substring test would let
   gold `1` match `label: 17`); detective_qa passes on the same option letter. InfBench Sum is
-  scored with the benchmark's own summary grader (fluency, keypoint recall and sentence precision,
-  prompts copied verbatim into `official_prompts.py`). The judge verdict is secondary. The same
+  excluded for every arm (amendment A3). The judge verdict is secondary. The same
   reader template is used for every item and arm, plus one answer-format line per source adapted
   from the benchmark's own query templates (`prompts.TASK_INSTRUCTIONS`), identical for every arm.
 - All three benchmarks are used as published. Checksums in `configs/data_manifest.yaml`.
@@ -141,7 +159,7 @@ free-text answer graded against a gold answer. Same definition for all arms.
   one tolerated; knowledge-update: an answer that also gives the old value is correct; preference:
   the gold is a rubric; unanswerable questions: their own prompt), sent as one user message and
   read with the official rule (correct when the reply contains "yes"). InfBench summaries are
-  scored, not judged (Section 2). Every other question gets one fixed prompt with one rule: the answer is correct if it has the core components of
+  excluded (amendment A3). Every other question gets one fixed prompt with one rule: the answer is correct if it has the core components of
   the gold answer and means the same thing. Dates and numbers match in any format. Where the gold
   says the information is not available, the answer must say so too. Where a question lists
   several accepted answers, any one suffices. A gold that lists several items needs all of them only
