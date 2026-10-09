@@ -7,6 +7,7 @@ never truncated.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.metadata
 import platform
 import statistics
@@ -29,6 +30,19 @@ from memstudy.schema import History, Item
 from memstudy.scoring import answer_metrics, gold_in_store
 from memstudy.store import ResultStore
 from memstudy.tokens import DoesNotFit
+
+CACHE_KEY_MAX = 64  # OpenAI rejects a longer prompt_cache_key
+
+
+def cache_key(arm: str, store_key: str) -> str:
+    """The history's prompt_cache_key, within OpenAI's length limit. A key that is too long keeps
+    a readable prefix and ends in a hash of the full key, so two histories never share one."""
+    key = f"{arm}-{store_key}"
+    if len(key) <= CACHE_KEY_MAX:
+        return key
+    digest = hashlib.sha256(key.encode()).hexdigest()[:16]
+    return f"{key[: CACHE_KEY_MAX - len(digest) - 1]}-{digest}"
+
 
 HANDLED = (IncompleteResponse, openai.APIError, ArmError)
 
@@ -198,7 +212,7 @@ def run_chat(
                     question=item.question,
                     question_date=item.question_date,
                     cache_prefix=ctx.cache_prefix,
-                    cache_key=f"{arm.name}-{history.store_key}",
+                    cache_key=cache_key(arm.name, history.store_key),
                 )
                 judged = None
                 if judge is not None:

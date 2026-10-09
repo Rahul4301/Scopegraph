@@ -25,6 +25,7 @@ from typing import Any
 
 from memstudy.arms.base import Arm, IngestStats
 from memstudy.judge import Judge
+from memstudy.prompts import TASK_PROMPTS
 from memstudy.reader import Reader
 from memstudy.runner import RunSummary, _dist, run_chat, summarize_records, versions
 from memstudy.schema import History, Item
@@ -95,6 +96,46 @@ def select_cases(items: list[Item], num_cases: int | None, include_secondary: bo
         keep = list(dict.fromkeys(i.history_id for i in chosen))[:num_cases]
         chosen = [i for i in chosen if i.history_id in keep]
     return chosen
+
+
+def retry_cases(items: list[Item], result_file: Path, system: str, eval_name: str) -> list[Item]:
+    """Items an earlier result file has no answer for (errored or not run), in loader order.
+    Histories that did not fit the window are left out: a retry cannot change that."""
+    result = json.loads(result_file.read_text())
+    run = result["run"]
+    if (run["memory_system"], run["eval"]) != (system, eval_name):
+        raise SystemExit(
+            f"{result_file} is a {run['memory_system']} run on {run['eval']}, "
+            f"not {system} on {eval_name}"
+        )
+    failed = {
+        c["item_id"]
+        for c in result["cases"]
+        if c["status"] != "ok" and c.get("error", {}).get("error") != "does_not_fit"
+    }
+    return [i for i in items if i.item_id in failed]
+
+
+def filter_sources(items: list[Item], prefixes: list[str]) -> list[Item]:
+    """MemoryAgentBench items whose source sub-dataset starts with one of the prefixes."""
+    return [i for i in items if str(i.meta.get("source", "")).startswith(tuple(prefixes))]
+
+
+def apply_task_prompts(items: list[Item], letter: str) -> list[Item]:
+    """Wrap each question whose source has a benchmark task template (TASK_PROMPTS) in that
+    template; other items are unchanged. Arm A gets the long-context template, the rest RAG."""
+    agent = "long_context_agent" if letter == "A" else "rag_agent"
+    out = []
+    for item in items:
+        source = str(item.meta.get("source", ""))
+        prefix = next((p for p in TASK_PROMPTS if source.startswith(p)), None)
+        if prefix is None:
+            out.append(item)
+            continue
+        question = TASK_PROMPTS[prefix][agent].format(question=item.question)
+        meta = {**item.meta, "task_prompt": prefix, "raw_question": item.question}
+        out.append(item.model_copy(update={"question": question, "meta": meta}))
+    return out
 
 
 def _verdict(correct: bool | None, judged: bool) -> str:

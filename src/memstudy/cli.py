@@ -30,12 +30,15 @@ from memstudy.execute import (
     EVALS,
     SYSTEMS,
     LivePrinter,
+    apply_task_prompts,
     ensure_new,
     execute_run,
+    filter_sources,
     format_summary,
     resolve_system,
     result_name,
     result_path,
+    retry_cases,
     select_cases,
 )
 from memstudy.judge import Judge
@@ -52,6 +55,7 @@ from memstudy.pilot import (
     select_pilot,
 )
 from memstudy.preflight import load_env_key, load_openai_key, require_gates
+from memstudy.prompts import TASK_PROMPTS
 from memstudy.reader import Reader
 from memstudy.runner import finalize_run, run_chat
 from memstudy.schema import Item, render_transcript
@@ -326,15 +330,30 @@ def cmd_run(args: argparse.Namespace) -> None:
         raise SystemExit("--asof applies to locomo only")
     if args.write_granularity and letter != "B":
         raise SystemExit("--write_granularity applies to the Mem0 arm (--memory_system mem0) only")
+    if args.retry_failed and (args.num_cases is not None or args.asof):
+        raise SystemExit("--retry_failed cannot be combined with --num_cases or --asof")
+    if (args.sources or args.task_prompts) and args.eval != "memoryagentbench":
+        raise SystemExit("--sources and --task_prompts apply to memoryagentbench only")
     label = args.eval + ("_asof" if args.asof else "")
     if args.write_granularity and args.write_granularity != "ten":
         label += f"_{args.write_granularity}"
+    if args.task_prompts:
+        label += "_taskprompts"
+    if args.retry_failed:
+        label += "_retry"
     name = result_name(system, label)
     ensure_new(result_path(RESULTS, name))
     if not args.dry_run:
         require_gates(stage_gate(stage, args.eval))
     histories, items = load_bench(args.eval)
-    cases = select_cases(items, args.num_cases, args.include_secondary)
+    if args.retry_failed:
+        cases = retry_cases(items, Path(args.retry_failed), system, args.eval)
+    else:
+        cases = select_cases(items, args.num_cases, args.include_secondary)
+    if args.sources:
+        cases = filter_sources(cases, args.sources.split(","))
+    if args.task_prompts:
+        cases = apply_task_prompts(cases, letter)
     if not cases:
         raise SystemExit(f"no cases selected from {args.eval}")
     if args.asof:
@@ -345,6 +364,10 @@ def cmd_run(args: argparse.Namespace) -> None:
     rt = build_runtime(args.key_var)
     if args.write_granularity:
         rt.cfg["arms"]["B"]["write_granularity"] = args.write_granularity  # part of the config hash
+    if args.task_prompts:
+        rt.cfg["reader"]["task_prompts"] = TASK_PROMPTS  # part of the config hash
+    if args.sources:
+        rt.cfg["sources"] = args.sources
     # A smoke run counts against the pilot budget cap; the pre-registered caps are unchanged.
     budget_stage = "pilot" if stage == "smoke" else stage
     arm = build_arm(letter, rt, budget_stage, {"arm": letter, "run": name}, cases, store_name=name)
@@ -485,6 +508,24 @@ def main(argv: list[str] | None = None) -> int:
         "--write_granularity",
         choices=["turn", "ten", "session"],
         help="mem0 only: messages per ingestion call; the registered default is ten",
+    )
+    run.add_argument(
+        "--retry_failed",
+        metavar="RESULT_FILE",
+        help="run only the questions that errored or were not run in this earlier result file "
+        "(same system and eval); writes a new <system>_<eval>_retry_<timestamp>.json",
+    )
+    run.add_argument(
+        "--sources",
+        metavar="PREFIXES",
+        help="memoryagentbench only: run just the sub-datasets whose source starts with one of "
+        "these comma-separated prefixes, e.g. factconsolidation_sh,icl_",
+    )
+    run.add_argument(
+        "--task_prompts",
+        action="store_true",
+        help="memoryagentbench only (exploratory, not registered): wrap fact-consolidation and "
+        "label-classification questions in the benchmark's own task templates",
     )
     run.add_argument("--dry_run", action="store_true", help="(free) preview cases and worst-case cost")
     run.add_argument("--key_var", default="OPENAI_API_KEY", help="name of the variable holding the OpenAI key")

@@ -18,10 +18,13 @@ from memstudy.config import config_hash
 from memstudy.execute import (
     LivePrinter,
     ResultExists,
+    apply_task_prompts,
     execute_run,
+    filter_sources,
     format_summary,
     resolve_system,
     result_name,
+    retry_cases,
     select_cases,
 )
 from memstudy.judge import Judge
@@ -217,3 +220,36 @@ def test_a_budget_stop_in_a_parallel_run_still_writes_the_file(prices, cfg, tmp_
         run(prices, spent, cfg, tmp_path, n_items=6, workers=4)
     report = json.loads((tmp_path / "no_memory_locomo_t.json").read_text())
     assert report["run"]["status"].startswith("incomplete: BudgetExceeded")
+
+
+def test_retry_cases_selects_only_unanswered_items_that_can_fit(tmp_path):
+    items = [make_item("h1", 0), make_item("h1", 1), make_item("h2", 0), make_item("h3", 0)]
+    ids = [i.item_id for i in items]
+    result = {
+        "run": {"memory_system": "no_memory", "eval": "locomo"},
+        "cases": [
+            {"item_id": ids[0], "status": "ok"},
+            {"item_id": ids[1], "status": "error", "error": {"error": "BadRequestError"}},
+            {"item_id": ids[2], "status": "not_run"},
+            {"item_id": ids[3], "status": "error", "error": {"error": "does_not_fit"}},
+        ],
+    }
+    path = tmp_path / "run.json"
+    path.write_text(json.dumps(result))
+    assert [i.item_id for i in retry_cases(items, path, "no_memory", "locomo")] == ids[1:3]
+    with pytest.raises(SystemExit):
+        retry_cases(items, path, "mem0", "locomo")
+
+
+def test_task_prompts_wrap_only_templated_sources_and_sources_filter():
+    fc = make_item("h1", 0).model_copy(update={"meta": {"source": "factconsolidation_sh_6k"}})
+    icl = make_item("h2", 0).model_copy(update={"meta": {"source": "icl_trec_coarse_6600shot_balance"}})
+    qa = make_item("h3", 0).model_copy(update={"meta": {"source": "ruler_qa1_197K"}})
+    assert filter_sources([fc, icl, qa], ["factconsolidation_sh", "icl_"]) == [fc, icl]
+    a = apply_task_prompts([fc, icl, qa], "A")
+    assert a[0].question.startswith("Pretend you are a knowledge management system")
+    assert a[0].question.endswith(f"Based on the provided Knowledge Pool, {fc.question} \nAnswer:")
+    assert a[1].question.startswith("Use the provided mapping") and "label: {label}" in a[1].question
+    assert a[1].meta["raw_question"] == icl.question
+    assert a[2] == qa
+    assert "Question:" + icl.question in apply_task_prompts([icl], "C")[0].question  # RAG template

@@ -11,7 +11,7 @@ from memstudy.judge import Judge
 from memstudy.llm import ModelCaller
 from memstudy.metering import CostSink
 from memstudy.reader import Reader
-from memstudy.runner import finalize_run, run_chat
+from memstudy.runner import CACHE_KEY_MAX, cache_key, finalize_run, run_chat
 from memstudy.store import ResultStore
 
 
@@ -160,3 +160,13 @@ def test_ingestion_is_recorded_once_per_history_and_not_repeated_on_resume(price
     assert len(ingest) == 1 and ingest[0]["cost"]["usd"] == 0.5 and ingest[0]["stored_units"] == 7
     run_chat(run_id="r2", **kwargs)
     assert arm.prepared == 1  # every item was done, so the history is not re-ingested
+
+
+def test_cache_key_stays_within_openai_limit_and_unique():
+    short = cache_key("A", "locomo_conv-26")
+    assert short == "A-locomo_conv-26"  # short keys are unchanged, so existing caches still hit
+    a = cache_key("A", "memoryagentbench_long_range_understanding-infbench_sum_eng_shots2-r87")
+    b = cache_key("A", "memoryagentbench_long_range_understanding-infbench_sum_eng_shots2-r88")
+    assert len(a) <= CACHE_KEY_MAX and len(b) <= CACHE_KEY_MAX
+    assert a != b
+    assert a == cache_key("A", "memoryagentbench_long_range_understanding-infbench_sum_eng_shots2-r87")

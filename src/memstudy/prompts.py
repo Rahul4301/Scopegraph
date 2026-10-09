@@ -73,3 +73,50 @@ def judge_prompt(item: Item, model_answer: str) -> str:
         f"{gold_line}\n"
         f"Model answer: {model_answer}"
     )
+
+
+# Exploratory, not registered: MemoryAgentBench's own query templates for the two splits where
+# the generic reader prompt does not state the task (fact consolidation, label classification).
+# Copied verbatim from the benchmark's utils/templates.py (str.format with {question}); arm A
+# gets the long-context template, arms B, C and D the RAG template. Opt-in with
+# `run --task_prompts`, which enters the config hash.
+TASK_PROMPTS: dict[str, dict[str, str]] = {
+    'factconsolidation_': {
+        'long_context_agent': (
+            'Pretend you are a knowledge management system. Each fact in the knowledge pool is '
+            'provided with a serial number at the beginning, and the newer fact has larger serial '
+            'number. \n You need to solve the conflicts of facts in the knowledge pool by finding '
+            'the newest fact with larger serial number. You need to answer a question based on '
+            'this rule. You should give a very concise answer without saying other words for '
+            'the question **only** from the knowledge pool you have memorized rather than the '
+            'real facts in real world. \n\nFor example:\n\n [Knowledge Pool] \n\n Question: Based on '
+            'the provided Knowledge Pool, what is the name of the current president of Russia? '
+            '\nAnswer: Donald Trump \n\n Now Answer the Question: Based on the provided Knowledge '
+            'Pool, {question} \nAnswer:'
+        ),
+        'rag_agent': (
+            'Pretend you are a knowledge management system. Each fact in the knowledge pool is '
+            'provided with a serial number at the beginning, and the newer fact has larger serial '
+            'number. \n You need to solve the conflicts of facts in the knowledge pool by finding '
+            'the newest fact with larger serial number. You need to answer a question based on '
+            'this rule. You should give a very concise answer without saying other words for '
+            'the question **only** from the knowledge pool you have memorized rather than the '
+            'real facts in real world. \n\nFor example:\n\n [Knowledge Pool] \n\n Question: Based on '
+            'the provided Knowledge Pool, what is the name of the current president of Russia? '
+            '\nAnswer: Donald Trump \n\n Now Answer the Question: Based on the provided Knowledge '
+            'Pool, {question} \nAnswer:'
+        ),
+    },
+    'icl_': {
+        'long_context_agent': (
+            'Use the provided mapping from the context to numerical label to assign a numerical '
+            'label to the context. Only output "label: {{label}}" and nothing else. \n\n{question} '
+            '\n\n label:'
+        ),
+        'rag_agent': (
+            'Use the provided mapping from the context to numerical label to assign a numerical '
+            'label to the context. Only output "label: {{label}}" and nothing else. \n\nQuestion:{question} '
+            '\n\n label:'
+        ),
+    },
+}
