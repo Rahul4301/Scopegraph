@@ -125,7 +125,7 @@ free-text answer graded against a gold answer. Same definition for all arms.
 | Role | Model | Settings |
 | --- | --- | --- |
 | Reader, all arms | `gpt-6-luna` (fallback GPT-5.6 Luna) | reasoning effort `none`, temperature 0, max output 512, one template |
-| Judge, sole grader | `gpt-5-nano` | reasoning effort `medium`, max output 2,048 (8,192 for the summary grader), graders per benchmark (below) |
+| Judge, sole grader | `gpt-5-nano` | reasoning effort `medium`, max output 2,048 (32,768 for the summary grader; 8,192 ran out on the first v7 run), graders per benchmark (below) |
 
 - Verified live on 2026-10-01 (`memstudy api-check`, $0.0003): with effort `none` the API accepts
   `temperature=0`; two identical calls returned the same answer; the cache breakpoint wrote and

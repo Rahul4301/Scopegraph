@@ -156,6 +156,14 @@ def _verdict(correct: bool | None, judged: bool) -> str:
     return {True: "CORRECT", False: "INCORRECT", None: "UNPARSEABLE"}[correct]
 
 
+def _judge_text(record: dict[str, Any], judged: bool) -> str:
+    """The verdict, or for a summary (scored, not judged) its summary f1."""
+    if judged and record["judge"].get("scheme") == "summary":
+        scores = record.get("summary_scores")
+        return f"summary f1 {scores['f1']:.3f}" if scores else "summary UNSCORED"
+    return _verdict(record.get("correct"), judged)
+
+
 def _f1_text(metrics: dict[str, Any] | None) -> str:
     return f"{metrics['token_f1']:.3f}" if metrics else "n/a"
 
@@ -209,7 +217,7 @@ class LivePrinter:
                     _wrapped("question:", item.question),
                     _wrapped("actual answer:", " | ".join(record["gold_answers"])),
                     _wrapped("given answer:", record["model_answer"]),
-                    f"judge: {_verdict(record.get('correct'), judged)}   "
+                    f"judge: {_judge_text(record, judged)}   "
                     f"f1: {_f1_text(record['metrics'])}   time: {_seconds(record):.1f}s   "
                     f"running: {running}",
                     self.rule,

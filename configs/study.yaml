@@ -19,7 +19,8 @@ judge:
   model: gpt-5-nano           # the sole grader; no second grader, no human grading
   reasoning_effort: medium    # was minimal; at minimal nano contradicted its own grading rules
   max_output_tokens: 2048     # reasoning tokens count against this, so it needs room
-  summary_max_output_tokens: 8192   # InfBench summary grader: step-by-step over 25 key points and every sentence
+  summary_max_output_tokens: 32768  # InfBench summary grader: step-by-step over 25 key points and every sentence;
+                                    # 8,192 ran out (status incomplete) on the first v7 run
 
 tokenizer:
   encoding: o200k_base        # proxy; the API's usage.input_tokens is authoritative
