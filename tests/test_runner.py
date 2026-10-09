@@ -191,3 +191,25 @@ def test_a_history_that_fails_to_store_is_recorded_and_the_run_continues(prices,
     )
     assert summary.errors == 1 and summary.completed == 1
     assert store.read_errors("A", "locomo")[0]["error"] == "ingest_failed: APIError"
+
+
+def test_embedding_and_mem0_calls_retry_a_dropped_connection(prices, budget):
+    from types import SimpleNamespace as NS
+
+    import openai
+
+    from memstudy.metering import Meter
+    from memstudy.schema import Usage
+
+    meter = Meter(budget, prices, "pilot", CostSink(), {})
+    meter._sleep = lambda s: None
+    attempts = []
+
+    def flaky():
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise openai.APIConnectionError(request=None)
+        return NS(usage=NS(prompt_tokens=10))
+
+    meter._run("text-embedding-3-small", 10, 0, flaky, lambda u: Usage(input_tokens=u.prompt_tokens), "embed")
+    assert len(attempts) == 2 and meter.sink.calls == 1

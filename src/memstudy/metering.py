@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from memstudy.budget import Budget, ModelPrice, cost_usd, worst_case_usd
+from memstudy.llm import MAX_ATTEMPTS, TRANSIENT
 from memstudy.schema import Usage
 from memstudy.tokens import count_tokens
 
@@ -88,6 +89,7 @@ class Meter:
         self.stage = stage
         self.sink = sink
         self.tag = tag
+        self._sleep = time.sleep
 
     def _price(self, model: str) -> ModelPrice:
         if model not in self.prices:
@@ -98,9 +100,18 @@ class Meter:
         self, model: str, est_in: int, est_out: int, fn: Any, usage_fn: Any, purpose: str
     ) -> Any:
         price = self._price(model)
-        self.budget.guard(self.stage, worst_case_usd(price, est_in, est_out))
-        start = time.perf_counter()
-        resp = fn()
+        # Transient API errors (rate limit, dropped connection, server error) are retried with
+        # backoff, the same policy as the reader and judge (llm.ModelCaller).
+        for attempt in range(MAX_ATTEMPTS):
+            self.budget.guard(self.stage, worst_case_usd(price, est_in, est_out))
+            start = time.perf_counter()
+            try:
+                resp = fn()
+                break
+            except TRANSIENT:
+                if attempt == MAX_ATTEMPTS - 1:
+                    raise
+                self._sleep(2.0**attempt)
         seconds = time.perf_counter() - start
         usage = usage_fn(resp.usage)
         usd = cost_usd(price, usage)
