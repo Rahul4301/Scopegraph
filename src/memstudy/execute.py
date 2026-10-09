@@ -473,6 +473,97 @@ def format_summary(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _rate_of(values: list[Any]) -> float | None:
+    flags = [bool(v) for v in values if v is not None]
+    return sum(flags) / len(flags) if flags else None
+
+
+def _merged_summary(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    ok = [c for c in cases if c["status"] == "ok"]
+    graded = [c for c in ok if c.get("correct") is not None]
+    f1 = [c["token_f1"] for c in ok if c.get("token_f1") is not None]
+    return {
+        "n": len(cases),
+        "answered": len(ok),
+        "accuracy_judge": _rate_of([c["correct"] for c in graded]),
+        "judge_correct": sum(1 for c in graded if c["correct"]),
+        "judge_graded": len(graded),
+        "token_f1": sum(f1) / len(f1) if f1 else None,
+        "exact_match": _rate_of([c.get("exact_match") for c in ok]),
+        "substring_match": _rate_of([c.get("substring_match") for c in ok]),
+        "native_match": _rate_of([c.get("native_match") for c in ok]),
+        "accuracy_mem0_judge": _rate_of([c.get("correct_mem0") for c in ok]),
+    }
+
+
+def merge_reports(paths: list[Path]) -> dict[str, Any]:
+    """One result from a run and its retries. The first file lists every question in loader order;
+    each question keeps the first answered ('ok') version found, in file order, and otherwise the
+    entry from the last file that has it. Cases are renumbered and tagged with the file they came
+    from. Excluded sources are dropped. Inputs must share memory system and eval."""
+    reports = [json.loads(Path(p).read_text()) for p in paths]
+    first = reports[0]["run"]
+    for p, r in zip(paths, reports, strict=True):
+        if (r["run"]["memory_system"], r["run"]["eval"]) != (first["memory_system"], first["eval"]):
+            raise SystemExit(f"{p} is {r['run']['memory_system']} on {r['run']['eval']}, not "
+                             f"{first['memory_system']} on {first['eval']}")
+    order: list[str] = []
+    chosen: dict[str, tuple[dict[str, Any], str]] = {}
+    for p, r in zip(paths, reports, strict=True):
+        for c in r["cases"]:
+            if any(src in c["history_id"] for src in EXCLUDED_SOURCES):
+                continue
+            item = c["item_id"]
+            if item not in chosen:
+                order.append(item)
+            if item not in chosen or chosen[item][0]["status"] != "ok":
+                chosen[item] = (c, Path(p).name)
+    cases = [
+        {**chosen[i][0], "case": n, "from_file": chosen[i][1]} for n, i in enumerate(order, start=1)
+    ]
+    by_category: dict[str, list[dict[str, Any]]] = {}
+    for c in cases:
+        by_category.setdefault(c["category"], []).append(c)
+    errors: dict[str, int] = {}
+    for c in cases:
+        if c["status"] != "ok":
+            kind = c["status"] if c["status"] == "not_run" else str((c.get("error") or {}).get("error"))
+            errors[kind] = errors.get(kind, 0) + 1
+    merged: dict[str, Any] = _tidy({
+        "run": {
+            "name": f"{Path(paths[0]).stem}_merged",
+            "memory_system": first["memory_system"],
+            "arm": first["arm"],
+            "eval": first["eval"],
+            "merged_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "merged_from": [
+                {
+                    "file": Path(p).name,
+                    "status": r["run"]["status"],
+                    "stage": r["run"]["stage"],
+                    "config_hash": r["run"]["config_hash"],
+                    "git_commit": r["run"]["versions"]["git_commit"],
+                    "started_at": r["run"]["started_at"],
+                    "finished_at": r["run"]["finished_at"],
+                    "answered_kept": sum(1 for c in cases if c["from_file"] == Path(p).name and c["status"] == "ok"),
+                }
+                for p, r in zip(paths, reports, strict=True)
+            ],
+        },
+        "summary": {
+            **_merged_summary(cases),
+            "not_answered": errors,
+            "by_category": {k: _merged_summary(v) for k, v in sorted(by_category.items())},
+            # Every dollar the input runs spent, failed attempts and ingestion included.
+            "cost_usd_spent": sum(r["summary"]["cost_usd"]["total"] for r in reports),
+            "wall_seconds": sum(r["summary"]["time"]["total_wall_s"] for r in reports),
+        },
+        "cases": cases,
+        "metric_notes": reports[0]["metric_notes"],
+    })
+    return merged
+
+
 def write_report(path: Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("x") as fh:  # raises FileExistsError instead of overwriting

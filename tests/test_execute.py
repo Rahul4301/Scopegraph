@@ -271,3 +271,39 @@ def test_infbench_summaries_are_never_selected_or_retried(tmp_path):
     path = tmp_path / "r.json"
     path.write_text(json.dumps(failed))
     assert [i.item_id for i in retry_cases(items, path, "no_memory", "memoryagentbench")] == ["detective_qa-q1"]
+
+
+def _report(tmp_path, name, cases, system="rag", total=1.0):
+    run = {"memory_system": system, "arm": "C", "eval": "longmemeval", "status": "complete", "stage": "chat",
+           "config_hash": name, "versions": {"git_commit": "abc"}, "started_at": "s", "finished_at": "f"}
+    path = tmp_path / f"{name}.json"
+    path.write_text(json.dumps({"run": run, "summary": {"cost_usd": {"total": total}, "time": {"total_wall_s": 10.0}},
+                                "cases": cases, "metric_notes": {}}))
+    return path
+
+
+def _case(item, status, correct=None):
+    return {"item_id": item, "history_id": item, "category": "multi-session", "status": status, "correct": correct,
+            "case": 0, "token_f1": 1.0 if correct else 0.0}
+
+
+def test_merge_keeps_each_answer_once_in_original_order_and_records_its_source(tmp_path):
+    from memstudy.execute import merge_reports
+
+    original = _report(tmp_path, "orig", [_case("q1", "ok", True), _case("q2", "not_run"), _case("q3", "error")])
+    retry = _report(tmp_path, "retry", [_case("q3", "ok", False), _case("q2", "ok", True)], total=0.5)
+    merged = merge_reports([original, retry])
+    assert [(c["item_id"], c["case"], c["from_file"]) for c in merged["cases"]] == [
+        ("q1", 1, "orig.json"), ("q2", 2, "retry.json"), ("q3", 3, "retry.json")]
+    s = merged["summary"]
+    assert s["answered"] == 3 and s["judge_correct"] == 2 and s["not_answered"] == {}
+    assert s["cost_usd_spent"] == 1.5 and [r["answered_kept"] for r in merged["run"]["merged_from"]] == [1, 2]
+
+
+def test_merge_refuses_files_from_different_systems(tmp_path):
+    from memstudy.execute import merge_reports
+
+    a = _report(tmp_path, "a", [_case("q1", "ok", True)])
+    b = _report(tmp_path, "b", [_case("q1", "ok", True)], system="mem0")
+    with pytest.raises(SystemExit):
+        merge_reports([a, b])

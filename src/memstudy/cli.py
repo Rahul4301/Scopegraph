@@ -35,11 +35,13 @@ from memstudy.execute import (
     execute_run,
     filter_sources,
     format_summary,
+    merge_reports,
     resolve_system,
     result_name,
     result_path,
     retry_cases,
     select_cases,
+    write_report,
 )
 from memstudy.judge import Judge
 from memstudy.llm import ModelCaller
@@ -396,6 +398,19 @@ def cmd_run(args: argparse.Namespace) -> None:
     print(f"\nresults: {path}")
 
 
+def cmd_merge(args: argparse.Namespace) -> None:
+    """(free) Combine a run and its --retry_failed runs into one result file."""
+    paths = [Path(p) for p in args.files]
+    out = RESULTS / f"{paths[0].stem}_merged.json"
+    ensure_new(out)
+    report = merge_reports(paths)
+    write_report(out, report)
+    s = report["summary"]
+    print(f"{s['answered']}/{s['n']} answered | judge {s['accuracy_judge']} | native {s['native_match']} "
+          f"| not answered {s['not_answered']}")
+    print(f"results: {out}")
+
+
 def cmd_judge_flip(args: argparse.Namespace) -> None:
     """Rerun the judge on 100 answers (50 arm A, 50 arm B) and report its flip rate."""
     require_gates("stage_pilot")
@@ -533,6 +548,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--dry_run", action="store_true", help="(free) preview cases and worst-case cost")
     run.add_argument("--key_var", default="OPENAI_API_KEY", help="name of the variable holding the OpenAI key")
     run.add_argument("--stage", choices=["smoke", "pilot", "chat"], help=argparse.SUPPRESS)
+    merge = add("merge", cmd_merge, "(free) combine a run and its retries into one result file")
+    merge.add_argument("files", nargs="+", help="the original result file first, then its retry files")
     add("judge-flip", cmd_judge_flip, "(paid, tiny) rerun nano on 100 answers for its flip rate")
     diag = add("judge-diagnostics", cmd_judge_diagnostics, "(free) judge vs containment test")
     diag.add_argument("--file", help="a run result file to check instead of the stored records")
