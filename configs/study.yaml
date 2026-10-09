@@ -8,6 +8,8 @@ reader:
   reasoning_effort: none      # verified live: effort none accepts temperature 0
   temperature: 0
   max_output_tokens: 512
+  max_output_tokens_by_task:  # MemoryAgentBench sources whose answer is long (prompts.TASK_INSTRUCTIONS)
+    infbench_sum: 2048        # a 1,000-1,200-word summary is about 1,500 tokens
   cache_ttl: 30m
   # Arm A uses one explicit cache breakpoint after the history when a history is queried at
   # least twice. Arms B and C use explicit mode with no breakpoint, so they pay the plain
@@ -17,6 +19,7 @@ judge:
   model: gpt-5-nano           # the sole grader; no second grader, no human grading
   reasoning_effort: medium    # was minimal; at minimal nano contradicted its own grading rules
   max_output_tokens: 2048     # reasoning tokens count against this, so it needs room
+  summary_max_output_tokens: 8192   # InfBench summary grader: step-by-step over 25 key points and every sentence
 
 tokenizer:
   encoding: o200k_base        # proxy; the API's usage.input_tokens is authoritative

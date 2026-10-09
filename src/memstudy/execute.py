@@ -39,6 +39,18 @@ METRIC_NOTES = {
     "accuracy.exact_match": "Normalized answer equals a normalized accepted answer.",
     "accuracy.substring_match": "A normalized accepted answer appears inside the normalized answer.",
     "accuracy.token_f1": "Mean best token-overlap F1 against the accepted answers.",
+    "grading": "The grader depends on the item, not the arm. LongMemEval questions use LongMemEval's "
+    "own per-type prompts (temporal: off-by-one allowed; knowledge-update: old plus new value is "
+    "fine; preference: the gold is a rubric; unanswerable: must say so). InfBench summaries are "
+    "scored, not judged (secondary.summary_*). Everything else uses the study's single judge rule.",
+    "secondary.accuracy_mem0_judge": "LoCoMo categories 1-4 only: Mem0's own judge prompt (lenient: "
+    "correct when it touches the gold's topic), graded by the same nano judge. For comparison with "
+    "published Mem0 and Zep numbers only; never the primary metric.",
+    "secondary.native_match": "MemoryAgentBench only: the benchmark's own pass test per source "
+    "(icl: parsed label equals the gold; detective_qa: same option letter; others: accepted answer "
+    "appears in the answer).",
+    "secondary.summary_f1": "InfBench Sum only: MemoryAgentBench's summary grade, fluency x harmonic "
+    "mean of keypoint recall and sentence precision.",
     "accuracy.gold_in_context": "Share of cases where an accepted answer appears verbatim in the "
     "context the reader saw (retrieval proxy; short answers can match by chance).",
     "stage_attribution": "Memory arms only. not_stored: no accepted answer appears verbatim in the "
@@ -228,12 +240,15 @@ def _case_view(n: int, item: Item, record: dict[str, Any] | None, error: dict[st
         return {**base, "status": "error", "error": error}
     reader, judge = record["reader"], record.get("judge")
     metrics = record["metrics"] or {}
-    judge_usd = judge["cost_usd"] if judge else 0.0
+    judge_usd = (judge["cost_usd"] if judge else 0.0) + record.get("judge_mem0", {}).get("cost_usd", 0.0)
     return {
         **base,
         "status": "ok",
         "answer": record["model_answer"],
         "correct": record.get("correct"),
+        "correct_mem0": record.get("correct_mem0"),
+        "native_match": metrics.get("native_match"),
+        "summary_scores": record.get("summary_scores"),
         "token_f1": metrics.get("token_f1"),
         "exact_match": metrics.get("exact_match"),
         "substring_match": metrics.get("substring_match"),
@@ -344,6 +359,8 @@ def build_report(
                 "not_run": sum(1 for v in views if v["status"] == "not_run"),
                 "does_not_fit": summary.does_not_fit,
                 "judge_unparseable": flat["n_judge_unparseable"],
+                "mem0_judge_unparseable": flat["n_mem0_judge_unparseable"],
+                "summary_unparseable": flat["n_summary_unparseable"],
                 "incorrect_cases": [v["case"] for v in views if v.get("correct") is False],
                 "errored_cases": [v["case"] for v in views if v["status"] == "error"],
             },
@@ -357,6 +374,7 @@ def build_report(
                 "gold_in_context": flat["answer_metrics"]["gold_in_context"],
                 "scored_cases": flat["answer_metrics"]["n_scored"],
             },
+            "secondary": flat["secondary"],
             "by_category": flat["by_category"],
             "time": _time_summary(records, ingests, finished_at - started_at),
             "tokens": {
@@ -404,6 +422,15 @@ def format_summary(report: dict[str, Any]) -> str:
         f"exact match      {pct(a['exact_match'])}",
         f"substring match  {pct(a['substring_match'])}",
         f"gold in context  {pct(a['gold_in_context'])}",
+    ]
+    sec = s["secondary"]
+    if sec["n_mem0_graded"]:
+        lines.append(f"mem0 judge       {pct(sec['accuracy_mem0_judge'])}  (secondary, {sec['n_mem0_graded']} graded)")
+    if sec["n_native"]:
+        lines.append(f"native match     {pct(sec['native_match'])}  ({sec['n_native']} scored)")
+    if sec["n_summaries_scored"]:
+        lines.append(f"summary f1       {num(sec['summary_f1'])}  ({sec['n_summaries_scored']} scored)")
+    lines += [
         "",
         "by category      n     judge     f1",
     ]

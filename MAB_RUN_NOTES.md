@@ -1,5 +1,10 @@
 # MemoryAgentBench run notes (arm A, no memory), 2026-10-08
 
+> **Superseded by PREREG amendment A1 (prompts v6, 2026-10-09).** Every source now gets its own
+> answer-format line, infbench_sum gets 2,048 output tokens and the benchmark's summary grader, and
+> `native_match` is the per-source pass test, so rule 2 below no longer needs to skip infbench_sum.
+> The runs described here were moved to `data/old_runs/`.
+
 ## What happened
 
 | # | Issue | Cause | Fix |

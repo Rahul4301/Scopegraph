@@ -8,6 +8,34 @@ run. The settings are in `configs/study.yaml` and the prompt texts in `src/memst
 their hash is written to every `run.json` as `config_hash`. A change after tag `prereg-v1` needs a
 new tag.
 
+**Amendment A1 (2026-10-09, prompts v6).** Grading follows each benchmark's own rules: LongMemEval's
+per-type judge prompts, MemoryAgentBench's per-source answer formats and pass tests, its summary
+grader for InfBench, and Mem0's LoCoMo judge as a secondary score (Sections 2 and 3). Made after
+full stage-chat runs of arm A on LoCoMo and on MemoryAgentBench (prompts v5, `MAB_RUN_NOTES.md`)
+had been seen, and before any LongMemEval-S run. The MemoryAgentBench change is therefore informed
+by those results (low conflict-resolution and classification scores, truncated summaries) and is
+labelled so; MemoryAgentBench was already descriptive only, with no confirmatory claim. The LoCoMo
+reader prompt and primary judge are unchanged, so no confirmatory LoCoMo rule moved. The opt-in
+`--task_prompts` sensitivity run is kept; when it wraps a question in the benchmark's verbatim
+template, the per-source answer line is not added. The v5 runs and every earlier smoke file were
+moved out of `results/` (`data/old_runs/`, `data/old_smoke/`) and are not study results; all
+reported runs are rerun under v6. This text also corrects two stale entries: the judge runs at effort `medium` with
+2,048 output tokens (the table said `minimal` and 256).
+
+**Amendment A2 (2026-10-09, prompts v7).** Two grading fixes, made after the v5 arm A LoCoMo run had
+been seen (they come from reading its disagreements) and before any LongMemEval-S run or any v6 run.
+(1) The judge's list rule: a gold that lists several items needs all of them only when the question
+asks for all of them (a plural question); when the question asks for one thing or an example and
+the gold lists several acceptable ones, one of them suffices. The old rule marked a correct answer
+to "What is a stress reliever for Evan?" wrong unless it named all five listed examples. This
+changes the primary LoCoMo judge, so it is a change to a confirmatory measurement and is labelled
+so. (2) The containment diagnostic (Section 3) now splits a listed gold into items, ignores word
+order, stopwords, simple plurals and text after ";", and separates digits from letters
+(`pilot.gold_contained`). On the v5 LoCoMo run, agreement with the judge rose from 70% to 84.5%
+(1,059 short-answer questions), still below the 85% threshold; the diagnostic was not tuned
+further against that data. The threshold and its consequence are unchanged. All reported runs use
+prompts v7.
+
 ## 1. Question, hypotheses, falsification
 
 When the whole history fits in the model's context window, does a model still need an external
@@ -77,10 +105,14 @@ free-text answer graded against a gold answer. Same definition for all arms.
   leaving 25 contexts and 2,500 questions; the excluded rows are reported separately. Contexts
   are single documents, not sessions: arm A sends the text
   verbatim, arm B adds it in 4,096-token chunks, arm C indexes it in 256-token verbatim chunks.
-  Scoring: substring match against the accepted answers (the benchmark's own style of metric,
-  implemented in `scoring.py`, equivalence to the original code not yet checked) is primary;
-  the judge verdict is secondary. The benchmark's own task prompts are not reproduced: the same
-  reader template is used for every item and arm, which is a stated limitation.
+  Scoring (amendment A1): the benchmark's own pass test per source is primary (`native_match` in
+  `scoring.py`): eventqa, ruler_qa and factconsolidation pass when an accepted answer appears in
+  the answer; icl passes when the parsed label equals the gold label (a substring test would let
+  gold `1` match `label: 17`); detective_qa passes on the same option letter. InfBench Sum is
+  scored with the benchmark's own summary grader (fluency, keypoint recall and sentence precision,
+  prompts copied verbatim into `official_prompts.py`). The judge verdict is secondary. The same
+  reader template is used for every item and arm, plus one answer-format line per source adapted
+  from the benchmark's own query templates (`prompts.TASK_INSTRUCTIONS`), identical for every arm.
 - All three benchmarks are used as published. Checksums in `configs/data_manifest.yaml`.
 - Composite long histories (Section 10) are built from LongMemEval-S sessions and are exploratory.
 - Token census (`results/phase0/token_census.json`, o200k_base proxy): LoCoMo 10 to 21K tokens per
@@ -93,7 +125,7 @@ free-text answer graded against a gold answer. Same definition for all arms.
 | Role | Model | Settings |
 | --- | --- | --- |
 | Reader, all arms | `gpt-6-luna` (fallback GPT-5.6 Luna) | reasoning effort `none`, temperature 0, max output 512, one template |
-| Judge, sole grader | `gpt-5-nano` | reasoning effort `minimal`, max output 256, one fixed prompt |
+| Judge, sole grader | `gpt-5-nano` | reasoning effort `medium`, max output 2,048 (8,192 for the summary grader), graders per benchmark (below) |
 
 - Verified live on 2026-10-01 (`memstudy api-check`, $0.0003): with effort `none` the API accepts
   `temperature=0`; two identical calls returned the same answer; the cache breakpoint wrote and
@@ -103,12 +135,22 @@ free-text answer graded against a gold answer. Same definition for all arms.
   cache write, $0.50 output per 1M; above 272K input tokens 2x input and cache rates and 1.5x
   output for the whole request. Nano $0.05, $0.005, $0.40. Caching rules: minimum prefix 1,024
   tokens; write 1.25x; read 0.1x; lifetime at least 30 minutes, refreshed on reuse.
-- Judge protocol: one fixed prompt (text in `prompts.py`, version v2, hashed into the config
-  hash) with one rule for every question: the answer is correct if it has the core components of
+- Judge protocol (amendment A1, `prompts.py` version v6, hashed into the config hash). The grader
+  depends on the item, never on the arm. LongMemEval-S and composite questions are graded with
+  LongMemEval's own per-type prompts, copied verbatim from its `evaluate_qa.py` (temporal: off-by-
+  one tolerated; knowledge-update: an answer that also gives the old value is correct; preference:
+  the gold is a rubric; unanswerable questions: their own prompt), sent as one user message and
+  read with the official rule (correct when the reply contains "yes"). InfBench summaries are
+  scored, not judged (Section 2). Every other question gets one fixed prompt with one rule: the answer is correct if it has the core components of
   the gold answer and means the same thing. Dates and numbers match in any format. Where the gold
   says the information is not available, the answer must say so too. Where a question lists
-  several accepted answers, any one suffices. Unparseable output is recorded as ungraded, never correct.
+  several accepted answers, any one suffices. A gold that lists several items needs all of them only
+  when the question asks for all of them; otherwise one of them suffices (amendment A2). Unparseable output is recorded as ungraded, never correct.
   Reasoning tokens are logged. No second grader and no human grading are used.
+- Secondary LoCoMo grade (amendment A1): categories 1 to 4 are also graded with Mem0's own judge
+  prompt (copied verbatim from Mem0's evaluation code, also used by Zep), by the same nano judge.
+  It is lenient ("touches on the same topic") and is reported beside the primary accuracy only to
+  place results next to published Mem0 and Zep numbers; it never enters a hypothesis test.
 - Judge checks run in the pilot, before any full run, with thresholds fixed here:
   - Unparseable output must be at most 1% of judged answers. Above that the study stops and the
     owner decides, because those answers would be silently dropped.
@@ -117,7 +159,7 @@ free-text answer graded against a gold answer. Same definition for all arms.
     graded by the majority of three nano runs (about three times the small judge cost) and the
     flip rate is reported with every accuracy figure.
   - Agreement with a deterministic containment test on short-answer, non-abstention questions
-    (`memstudy judge-diagnostics`) must be at least 85%. Below that, containment accuracy is
+    (`memstudy judge-diagnostics`; the test is `pilot.gold_contained`, amendment A2) must be at least 85%. Below that, containment accuracy is
     reported beside every judge accuracy and a conclusion that differs between the two is labelled
     judge-dependent.
 
@@ -263,7 +305,7 @@ in Pollertlam and Kornsuwannawit and Wolff and Bennati are reference points only
   LongMemEval-S questions, leaving 480). The judge prompt and effort were changed during
   development (`prompts.py` version v2, effort `medium`), which is why these items are not clean.
   The composite histories exclude the 20 LongMemEval-S development questions by construction.
-  Existing smoke result files under `results/` are kept unchanged and are not study results.
+  Earlier smoke result files are kept unchanged in `data/old_smoke/` and are not study results.
 - All other comparisons (categories, exploratory MemoryAgentBench competencies, sensitivity
   analyses, judge-stability checks, arm D, and everything in Section 10) are exploratory and
   reported descriptively without adjustment.
@@ -313,7 +355,8 @@ Stated limits: one reader, one seed, one grader whose error and family-level bia
 independently measured (the reader and judge are both OpenAI models), only ten LoCoMo histories,
 conversational benchmarks only, histories that fit in context by design, the open-source Mem0
 rather than the hosted one, proxy tokenizer for the fit check, results tied to the tested
-versions, MemoryAgentBench run with one generic reader template rather than its own task prompts,
+versions, MemoryAgentBench run with one generic reader template and a one-line answer format per source
+rather than its own task prompts,
 Supermemory run self-hosted with a shared extraction model so it does not describe the hosted
 product, composite histories that are synthetic, and public benchmarks that the reader model may
 have seen in training.

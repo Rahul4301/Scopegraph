@@ -55,7 +55,7 @@ from memstudy.pilot import (
     select_pilot,
 )
 from memstudy.preflight import load_env_key, load_openai_key, require_gates
-from memstudy.prompts import TASK_PROMPTS
+from memstudy.prompts import TASK_PROMPTS, task_key
 from memstudy.reader import Reader
 from memstudy.runner import finalize_run, run_chat
 from memstudy.schema import Item, render_transcript
@@ -274,7 +274,10 @@ def _dry_run(
             },
         )
         row["questions"] += 1
-        row["reader_worst_case_usd"] += worst_case_usd(price, prompt, cfg["reader"]["max_output_tokens"])
+        max_output = cfg["reader"].get("max_output_tokens_by_task", {}).get(
+            task_key(item), cfg["reader"]["max_output_tokens"]
+        )
+        row["reader_worst_case_usd"] += worst_case_usd(price, prompt, max_output)
     gates = [stage_gate(stage, args.eval)]
     if letter in ("B", "C", "D"):
         gates.append("g1_extra_models")

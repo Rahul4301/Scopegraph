@@ -7,6 +7,7 @@ from memstudy.judge import Judge
 from memstudy.llm import ModelCaller
 from memstudy.pilot import (
     containment_diagnostic,
+    gold_contained,
     project_full_cost,
     rerun_judge,
     select_flip_sample,
@@ -111,6 +112,23 @@ def test_containment_diagnostic_covers_short_answers_only():
     result = containment_diagnostic(records)
     assert result["n"] == 3 and result["agreement"] == pytest.approx(2 / 3)
     assert result["agreement_by_arm"] == {"A": pytest.approx(2 / 3)}
+
+
+@pytest.mark.parametrize(
+    ("gold", "answer", "expected"),
+    [
+        ("Kickboxing, Taekwondo", "Kickboxing and taekwondo.", True),
+        ("Oliver, Luna, Bailey", "Oliver and Luna.", False),  # a listed item is missing
+        ("In France", "Paris, France.", True),
+        ("The week before 14September, 2022", "The week before September 14, 2022.", True),
+        ("May, 2023", "May 27, 2023.", True),
+        ("No; she's in the process of adopting", "No.", True),  # text after ';' is an explanation
+        ("1,300", "About 1,300 followers.", True),  # a number with a comma is one item
+        ("Paris", "Rome", False),
+    ],
+)
+def test_gold_contained_ignores_list_format_word_order_and_date_spacing(gold, answer, expected):
+    assert gold_contained(gold, answer) is expected
 
 
 def test_projection_has_an_ordered_range(prices):

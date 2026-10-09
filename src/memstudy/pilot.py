@@ -129,9 +129,40 @@ def _normalize(text: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9 ]+", " ", text.lower()).split())
 
 
+_STOPWORDS = {"a", "an", "the", "in", "on", "at", "of", "for", "to", "by", "with", "and", "or"}
+_LIST_SEPARATOR = re.compile(r",\s+|\s+and\s+|\s*&\s*")
+_DIGIT_LETTER = re.compile(r"(?<=\d)(?=[a-z])|(?<=[a-z])(?=\d)")
+
+
+def _stem(word: str) -> str:
+    if word.endswith("ies") and len(word) > 4:
+        return word[:-3] + "y"
+    if word.endswith("es") and len(word) > 4 and word[-3] in "sxzh":
+        return word[:-2]
+    if word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+        return word[:-1]
+    return word
+
+
+def _content_words(text: str) -> set[str]:
+    words = _normalize(_DIGIT_LETTER.sub(" ", text.lower())).split()
+    return {_stem(w) for w in words if len(w) > 1 and w not in _STOPWORDS}
+
+
+def gold_contained(gold: str, answer: str) -> bool:
+    """Deterministic containment: every item of the gold has all its content words somewhere in
+    the answer, in any order. The gold is split into items at ", ", " and " and "&"; text after a
+    ";" is an explanation and is ignored (LoCoMo's own convention). So "Kickboxing, Taekwondo"
+    matches "kickboxing and taekwondo", "In France" matches "Paris, France", and "14September, 2022"
+    matches "September 14, 2022"."""
+    items = [i for i in _LIST_SEPARATOR.split(gold.split(";")[0]) if _content_words(i)]
+    have = _content_words(answer)
+    return bool(items) and all(_content_words(i) <= have for i in items)
+
+
 def containment_diagnostic(records: list[dict[str, Any]]) -> dict[str, Any]:
-    """Agreement between the judge and a deterministic containment test, on short-answer,
-    non-abstention questions. Diagnostic only: containment is not a grader."""
+    """Agreement between the judge and a deterministic containment test (gold_contained), on
+    short-answer, non-abstention questions. Diagnostic only: containment is not a grader."""
     agree: dict[str, list[bool]] = defaultdict(list)
     for r in records:
         gold = _normalize(r["gold"])
@@ -139,7 +170,7 @@ def containment_diagnostic(records: list[dict[str, Any]]) -> dict[str, Any]:
             continue
         if len(gold.split()) > SHORT_ANSWER_WORDS:
             continue
-        contained = gold in _normalize(r["model_answer"])
+        contained = gold_contained(r["gold"], r["model_answer"])
         agree[r["arm"]].append(contained == r["correct"])
     n = sum(len(v) for v in agree.values())
     return {

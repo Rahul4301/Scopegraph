@@ -22,9 +22,9 @@ import openai
 
 from memstudy.arms.base import Arm, ArmContext, ArmError, IngestStats
 from memstudy.budget import BudgetExceeded
-from memstudy.judge import Judge
+from memstudy.judge import Judge, JudgeResult
 from memstudy.llm import CallResult, IncompleteResponse
-from memstudy.prompts import accepted_answers
+from memstudy.prompts import accepted_answers, reader_task_key, task_key, uses_mem0_judge
 from memstudy.reader import Reader
 from memstudy.schema import History, Item
 from memstudy.scoring import answer_metrics, gold_in_store
@@ -75,7 +75,8 @@ def build_record(
     item: Item,
     ctx: ArmContext,
     read: CallResult,
-    judged: tuple[bool | None, CallResult] | None,
+    judged: JudgeResult | None,
+    judged_mem0: JudgeResult | None = None,
 ) -> dict[str, Any]:
     u = read.usage
     record: dict[str, Any] = {
@@ -94,7 +95,7 @@ def build_record(
         # Abstention items have no answer string to match, so only the judge scores them.
         "metrics": None
         if item.meta.get("abstention")
-        else answer_metrics(read.text, ctx.text, accepted_answers(item)),
+        else answer_metrics(read.text, ctx.text, accepted_answers(item), task_key(item)),
         # Stage attribution (arms B and D): was the gold fact stored? None when the arm has no
         # store, or for abstention items, which have no answer string to look for.
         "gold_in_store": None
@@ -124,17 +125,27 @@ def build_record(
         "ts": time.time(),
     }
     if judged is not None:
-        correct, call = judged
-        record["judge"] = {
-            "model_returned": call.model_returned,
-            "raw": call.text,
-            "usage": call.usage.model_dump(),
-            "reasoning_tokens": call.usage.reasoning_tokens,
-            "cost_usd": call.cost_usd,
-            "latency_s": call.latency_s,
-        }
-        record["correct"] = correct
+        record["judge"] = _judge_block(judged)
+        record["correct"] = judged.correct
+        if judged.scheme == "summary":
+            record["summary_scores"] = judged.scores
+    if judged_mem0 is not None:
+        record["judge_mem0"] = _judge_block(judged_mem0)
+        record["correct_mem0"] = judged_mem0.correct
     return record
+
+
+def _judge_block(result: JudgeResult) -> dict[str, Any]:
+    call = result.call
+    return {
+        "scheme": result.scheme,
+        "model_returned": call.model_returned,
+        "raw": call.text,
+        "usage": call.usage.model_dump(),
+        "reasoning_tokens": call.usage.reasoning_tokens,
+        "cost_usd": call.cost_usd,
+        "latency_s": call.latency_s,
+    }
 
 
 def run_chat(
@@ -213,18 +224,17 @@ def run_chat(
                     question_date=item.question_date,
                     cache_prefix=ctx.cache_prefix,
                     cache_key=cache_key(arm.name, history.store_key),
+                    task_key=reader_task_key(item),
                 )
-                judged = None
+                judged = judged_mem0 = None
                 if judge is not None:
-                    result = judge.grade(
-                        stage=stage,
-                        tag={"arm": arm.name, "item": item.item_id},
-                        item=item,
-                        model_answer=read.text,
-                    )
-                    judged = (result.correct, result.call)
+                    tag = {"arm": arm.name, "item": item.item_id}
+                    judged = judge.grade(stage=stage, tag=tag, item=item, model_answer=read.text)
+                    if uses_mem0_judge(item):
+                        judged_mem0 = judge.grade_mem0(stage=stage, tag=tag, item=item, model_answer=read.text)
                 record = build_record(
-                    run_id=run_id, arm=arm, item=item, ctx=ctx, read=read, judged=judged
+                    run_id=run_id, arm=arm, item=item, ctx=ctx, read=read, judged=judged,
+                    judged_mem0=judged_mem0,
                 )
                 store.write_item(arm.name, bench, item.item_id, record)
                 with lock:
@@ -303,10 +313,43 @@ def _rate(flags: list[bool]) -> float | None:
     return (sum(flags) / len(flags)) if flags else None
 
 
+def _mean(values: list[float]) -> float | None:
+    return statistics.fmean(values) if values else None
+
+
+def secondary_scores(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Scores reported beside the primary judge: Mem0's LoCoMo grade, MemoryAgentBench's own pass
+    test per source, and the InfBench summary f1. Each is None where it does not apply."""
+    mem0 = [bool(r["correct_mem0"]) for r in records if r.get("correct_mem0") is not None]
+    native = [
+        bool(r["metrics"]["native_match"])
+        for r in records
+        if r.get("metrics") and r["metrics"].get("native_match") is not None
+    ]
+    summaries = [r["summary_scores"] for r in records if r.get("summary_scores")]
+    return {
+        "accuracy_mem0_judge": _rate(mem0),
+        "n_mem0_graded": len(mem0),
+        "native_match": _rate(native),
+        "n_native": len(native),
+        "summary_f1": _mean([s["f1"] for s in summaries]),
+        "summary_recall": _mean([s["recall"] for s in summaries]),
+        "summary_precision": _mean([s["precision"] for s in summaries]),
+        "summary_fluency": _mean([s["fluency"] for s in summaries]),
+        "n_summaries_scored": len(summaries),
+    }
+
+
+def _graded_by_verdict(r: dict[str, Any]) -> bool:
+    """Summary items have scores, not a verdict, so a missing verdict there is not a failure."""
+    return "judge" in r and r["judge"].get("scheme") != "summary"
+
+
 def _group_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     graded = [r for r in records if r.get("correct") is not None]
     scored = [r["metrics"] for r in records if r.get("metrics")]
     return {
+        **secondary_scores(records),
         "n": len(records),
         "accuracy_judge": _rate([bool(r["correct"]) for r in graded]),
         "exact_match": _rate([m["exact_match"] for m in scored]),
@@ -359,14 +402,16 @@ def summarize_records(
         retrieval_usd += r["retrieval"]["cost"]["usd"]
         latencies.append(r["latency_s"]["query_total"])
         models.add(r["reader"]["model_returned"])
-        if "judge" in r:
-            ju = r["judge"]["usage"]
+        for key in ("judge", "judge_mem0"):
+            if key not in r:
+                continue
+            ju = r[key]["usage"]
             judge_tot["input"] += ju["input_tokens"]
             judge_tot["output"] += ju["output_tokens"]
             judge_tot["reasoning"] += ju["reasoning_tokens"]
-            judge_usd += r["judge"]["cost_usd"]
-            if not r["judge"]["model_returned"].startswith("rule:"):
-                models.add(r["judge"]["model_returned"])
+            judge_usd += r[key]["cost_usd"]
+            if not r[key]["model_returned"].startswith("rule:"):
+                models.add(r[key]["model_returned"])
     n = len(records)
     graded = [r for r in records if r.get("correct") is not None]
     ordered = sorted(latencies)
@@ -380,8 +425,15 @@ def summarize_records(
         "stage_attribution": stage_attribution(records),
         "n_items": n,
         "n_graded": len(graded),
-        "n_judge_unparseable": sum(1 for r in records if "judge" in r and r.get("correct") is None),
+        "n_judge_unparseable": sum(1 for r in records if _graded_by_verdict(r) and r.get("correct") is None),
+        "n_mem0_judge_unparseable": sum(
+            1 for r in records if "judge_mem0" in r and r.get("correct_mem0") is None
+        ),
+        "n_summary_unparseable": sum(
+            1 for r in records if r.get("judge", {}).get("scheme") == "summary" and not r.get("summary_scores")
+        ),
         "accuracy": (sum(1 for r in graded if r["correct"]) / len(graded)) if graded else None,
+        "secondary": secondary_scores(records),
         "answer_metrics": {
             "exact_match": _rate([m["exact_match"] for m in scored]),
             "substring_match": _rate([m["substring_match"] for m in scored]),

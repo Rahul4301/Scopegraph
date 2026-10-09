@@ -63,7 +63,8 @@ def test_full_run_writes_raw_records_and_run_json(prices, budget, cfg, tmp_path)
     assert on_disk["reader_tokens"] == {
         "input": 8000, "cached": 4096, "cache_write": 3000, "output": 10, "reasoning": 0
     }
-    assert on_disk["judge_tokens"]["reasoning"] == 60
+    assert "judge_mem0" in record and record["judge_mem0"]["scheme"] == "mem0"
+    assert on_disk["judge_tokens"]["reasoning"] == 120  # primary and Mem0 judge for two questions
     assert on_disk["cache_hit_rate"] == pytest.approx(4096 / 8000)
     assert on_disk["accuracy"] == 1.0 and run["n_items"] == 2
     assert "python" in on_disk["versions"]

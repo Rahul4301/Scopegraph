@@ -133,7 +133,8 @@ def test_a_timestamped_name_that_already_exists_is_never_overwritten_and_costs_n
             stage="smoke", budget_stage="pilot", results_dir=tmp_path, cfg=cfg, cfg_hash="x",
             name="no_memory_locomo_t",
         )
-    assert path.read_text() == before and calls == 4 and not second.responses.calls
+    # reader, judge and the secondary Mem0 judge for each of the two LoCoMo questions
+    assert path.read_text() == before and calls == 6 and not second.responses.calls
 
 
 def test_a_stopped_run_still_writes_its_one_file_marked_incomplete(prices, cfg, tmp_path):
@@ -207,7 +208,7 @@ def test_parallel_questions_give_the_same_report_and_never_lose_or_repeat_a_case
         prices, budget, cfg, tmp_path / "p", n_items=9, workers=4, progress=LivePrinter(9)
     )
     a, b = json.loads(serial.read_text()), json.loads(parallel.read_text())
-    assert b["run"]["parallel_questions"] == 4 and len(client.responses.calls) == 18
+    assert b["run"]["parallel_questions"] == 4 and len(client.responses.calls) == 27  # 9 x (reader, judge, mem0 judge)
     assert [c["item_id"] for c in b["cases"]] == [c["item_id"] for c in a["cases"]]
     assert b["summary"]["accuracy"] == a["summary"]["accuracy"] and b["summary"]["cases"]["answered"] == 9
     out = capsys.readouterr().out

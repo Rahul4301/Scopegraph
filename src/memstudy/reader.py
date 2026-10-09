@@ -1,15 +1,22 @@
-"""Reader: GPT-6 Luna, one prompt template for every arm."""
+"""Reader: GPT-6 Luna, one prompt template for every arm.
+
+MemoryAgentBench items add one task-format line for their source (prompts.TASK_INSTRUCTIONS),
+the same for every arm; a source may also have a larger output allowance in the config."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from memstudy.llm import CallResult, ModelCaller
-from memstudy.prompts import READER_INSTRUCTIONS, context_block, question_block
+from memstudy.prompts import READER_INSTRUCTIONS, TASK_INSTRUCTIONS, context_block, question_block
 
 
 def build_input(
-    context: str, question: str, question_date: str | None, breakpoint_after_context: bool
+    context: str,
+    question: str,
+    question_date: str | None,
+    breakpoint_after_context: bool,
+    task: str | None = None,
 ) -> list[dict[str, Any]]:
     """History or retrieved context first, question last.
 
@@ -26,7 +33,7 @@ def build_input(
         },
         {
             "role": "user",
-            "content": [ctx, {"type": "input_text", "text": question_block(question, question_date)}],
+            "content": [ctx, {"type": "input_text", "text": question_block(question, question_date, task)}],
         },
     ]
 
@@ -46,12 +53,15 @@ class Reader:
         question_date: str | None,
         cache_prefix: bool,
         cache_key: str,
+        task_key: str | None = None,
     ) -> CallResult:
+        task = TASK_INSTRUCTIONS[task_key] if task_key else None
+        max_output = self.cfg.get("max_output_tokens_by_task", {}).get(task_key, self.cfg["max_output_tokens"])
         return self.caller.call(
             stage=stage,
             tag={**tag, "purpose": "read"},
-            input_items=build_input(context, question, question_date, cache_prefix),
-            max_output_tokens=self.cfg["max_output_tokens"],
+            input_items=build_input(context, question, question_date, cache_prefix, task),
+            max_output_tokens=max_output,
             reasoning_effort=self.cfg["reasoning_effort"],
             temperature=self.cfg["temperature"],
             extra_body={

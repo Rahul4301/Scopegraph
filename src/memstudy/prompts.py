@@ -6,9 +6,10 @@ version and a new pre-registration.
 
 from __future__ import annotations
 
+from memstudy import official_prompts as official
 from memstudy.schema import Item
 
-PROMPT_VERSION = "v5"
+PROMPT_VERSION = "v7"
 
 READER_INSTRUCTIONS = (
     "You answer a question about a conversation or document. The context is the full text or "
@@ -26,9 +27,45 @@ def context_block(context: str) -> str:
     return f"<context>\n{context}\n</context>"
 
 
-def question_block(question: str, question_date: str | None) -> str:
+# MemoryAgentBench sources each want a different answer shape. One extra line per source, adapted
+# from the benchmark's own query templates (utils/templates.py); it goes after the context so the
+# cached prefix is unchanged. Keys are matched as prefixes of the item's source.
+TASK_INSTRUCTIONS: dict[str, str] = {
+    "ruler_qa": "Only give the answer and do not output any other words.",
+    "eventqa": "Choose from the listed possible events the one that happens next, and reply with "
+    "that event copied exactly as listed, without anything else.",
+    "factconsolidation": "Each fact has a serial number, and a fact with a larger serial number is "
+    "newer and replaces any older fact it conflicts with. Answer from the facts in the context, "
+    "not from real-world knowledge, with a very concise answer.",
+    "icl_": "The context maps example texts to numerical labels. Assign a numerical label to the "
+    "text in the question using that mapping. Only output \"label: <number>\" and nothing else.",
+    "detective_qa": "Answer the multiple-choice question in the output format shown in the "
+    "question, giving the option letter and its text.",
+    "infbench_sum": "This task overrides the short-answer rule: write the summary the question asks "
+    "for, about 1,000 to 1,200 words on the plot and characters.",
+}
+
+
+def task_key(item: Item) -> str | None:
+    source = str(item.meta.get("source", ""))
+    return next((key for key in TASK_INSTRUCTIONS if source.startswith(key)), None)
+
+
+def reader_task_key(item: Item) -> str | None:
+    """The task line the reader adds. None when `run --task_prompts` already wrapped the question
+    in the benchmark's own template, so the instructions are never given twice."""
+    return None if item.meta.get("task_prompt") else task_key(item)
+
+
+def task_instruction(item: Item) -> str | None:
+    key = task_key(item)
+    return TASK_INSTRUCTIONS[key] if key else None
+
+
+def question_block(question: str, question_date: str | None, task: str | None = None) -> str:
     date = f"Current date: {question_date}\n" if question_date else ""
-    return f"{date}Question: {question}\nAnswer:"
+    note = f"Task format: {task}\n" if task else ""
+    return f"{date}{note}Question: {question}\nAnswer:"
 
 
 JUDGE_INSTRUCTIONS = (
@@ -38,7 +75,11 @@ JUDGE_INSTRUCTIONS = (
     "Ignore wording, format, and extra detail. Extra information in the answer is never a reason "
     "for INCORRECT: a longer answer is CORRECT if it contains the core of the gold and does not "
     "contradict it. "
-    "If the gold lists several items, the answer must include all of them (extra items are fine). "
+    "If the gold lists several items and the question asks for all of them (a plural question such "
+    "as \"What are her pets' names?\"), the answer must include all of them; extra items are fine. "
+    "If the question asks for one thing or an example (such as \"What is a stress reliever for "
+    "him?\") and the gold lists several acceptable ones, an answer that gives at least one of them "
+    "without contradicting the rest is CORRECT. "
     "Dates, numbers, and durations match when they are the same value in any form "
     "(\"7 May 2023\" = \"May 7, 2023\"; \"three\" = 3). "
     "A relative gold date such as \"the Friday before 15 July 2023\" means one calendar date "
@@ -120,3 +161,58 @@ TASK_PROMPTS: dict[str, dict[str, str]] = {
         ),
     },
 }
+
+
+# Which grader an item gets. LongMemEval questions (and the composite histories built from them)
+# use LongMemEval's own per-type prompts; InfBench summaries use MemoryAgentBench's summary
+# grader; everything else uses the JUDGE_INSTRUCTIONS rule above.
+LONGMEMEVAL_TEMPLATES = {
+    "single-session-user": official.LME_DEFAULT,
+    "single-session-assistant": official.LME_DEFAULT,
+    "multi-session": official.LME_DEFAULT,
+    "temporal-reasoning": official.LME_TEMPORAL,
+    "knowledge-update": official.LME_KNOWLEDGE_UPDATE,
+    "single-session-preference": official.LME_PREFERENCE,
+}
+
+
+def judge_scheme(item: Item) -> str:
+    if item.bench in ("longmemeval", "composite") and item.category in LONGMEMEVAL_TEMPLATES:
+        return "longmemeval"
+    if task_key(item) == "infbench_sum":
+        return "summary"
+    return "default"
+
+
+def longmemeval_judge_prompt(item: Item, model_answer: str) -> str:
+    template = (
+        official.LME_ABSTENTION
+        if item.meta.get("abstention")
+        else LONGMEMEVAL_TEMPLATES[item.category]
+    )
+    return template.format(item.question, item.gold, model_answer)
+
+
+def uses_mem0_judge(item: Item) -> bool:
+    """Secondary LoCoMo grade with Mem0's prompt, for comparison with published numbers only.
+    Mem0 and Zep never graded category 5, so neither does this."""
+    return item.bench == "locomo" and not item.meta.get("abstention")
+
+
+def mem0_judge_prompt(item: Item, model_answer: str) -> str:
+    return official.MEM0_ACCURACY_PROMPT.format(
+        question=item.question, gold_answer=item.gold, generated_answer=model_answer
+    )
+
+
+def summary_judge_prompts(item: Item, summary: str) -> tuple[str, str, str]:
+    """Fluency, keypoint recall and sentence precision prompts, as MemoryAgentBench builds them."""
+    keypoints = [str(k) for k in item.meta.get("keypoints") or []]
+    text = summary.strip()
+    return (
+        official.FLUENCY_PROMPT_BOOK.format(text=text),
+        official.RECALL_PROMPT_BOOK.format(
+            keypoints="\n".join(f"{i + 1}. {kp}" for i, kp in enumerate(keypoints)), summary=text
+        ),
+        official.PRECISION_PROMPT_BOOK.format(expert_summary=item.gold, summary=text),
+    )

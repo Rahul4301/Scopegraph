@@ -9,10 +9,12 @@ from typing import Any
 
 import yaml
 
+from memstudy import official_prompts
 from memstudy.prompts import (
     JUDGE_INSTRUCTIONS,
     PROMPT_VERSION,
     READER_INSTRUCTIONS,
+    TASK_INSTRUCTIONS,
 )
 
 DEFAULT_CONFIG = Path("configs/study.yaml")
@@ -32,6 +34,8 @@ def config_hash(cfg: dict[str, Any]) -> str:
         "prompt_version": PROMPT_VERSION,
         "reader_instructions": READER_INSTRUCTIONS,
         "judge_instructions": JUDGE_INSTRUCTIONS,
+        "task_instructions": TASK_INSTRUCTIONS,
+        "official_graders": {k: v for k, v in vars(official_prompts).items() if k.isupper()},
     }
     blob = json.dumps(payload, sort_keys=True, default=str).encode()
     return hashlib.sha256(blob).hexdigest()[:16]
