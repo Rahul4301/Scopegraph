@@ -1,7 +1,7 @@
 # Results
 
 The reference record of every reported run: what was run, with which code, what came out, and
-everything that had to change before the runs worked. Last updated 2026-10-09.
+everything that had to change before the runs worked. Last updated 2026-10-16.
 
 **Status.** Arms A (no memory) and C (plain RAG) are complete on all three benchmarks under prompts
 v7. Arm B (Mem0) has not been run, so **H1 and H3 are not yet tested**: both are comparisons with
@@ -142,6 +142,113 @@ Mean seconds per question: A 4.4 to 5.4, C 3.6 to 4.8.
 
 The reader settings were registered before these results and are not changed in response to
 them.
+
+---
+
+## 2b. All metrics, per arm
+
+Every metric the harness records, for every answered question, per arm. Unlike Section 2, these
+are **not paired**: each arm uses all of its own answered questions, so totals differ slightly
+(for example MemoryAgentBench "All" includes the 300 LongMemEval-S copies; Section 2 uses the
+2,500-question primary set).
+
+- **Judge**: GPT-5 nano verdict (primary on LoCoMo and LongMemEval-S).
+- **F1**: token-overlap F1 against the best accepted answer. **EM**: normalized exact match.
+  **Contain**: normalized gold appears in the answer.
+- **BLEU-1**: clipped unigram precision with brevity penalty, best over accepted answers,
+  lower-cased word tokens. **Added after the runs, exploratory, not registered**; computed from
+  the stored answers and gold strings, so it is the same quantity Mem0's paper calls B1 only up
+  to tokenization. Without smoothing or higher n-grams, it rewards verbose-but-overlapping answers.
+- **Native**: the benchmark's own pass test (MemoryAgentBench only).
+- F1, EM, Contain and BLEU-1 are computed only where a short gold string exists, so LoCoMo
+  category 5 (abstention, no gold string) is in Judge only, and some LongMemEval-S and
+  MemoryAgentBench questions are skipped (`n scored` column).
+- Overlap metrics punish a correct but long answer. Read them as secondary to Judge/Native.
+
+All figures are percentages.
+
+### LoCoMo
+
+| Arm | Slice | n | n scored | Judge | F1 | BLEU-1 | EM | Contain |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A, no memory | All answered | 1,980 | 1,534 | 70.9 | 48.0 | 40.3 | 14.7 | 38.1 |
+| C, RAG | All answered | 1,977 | 1,531 | 69.8 | 49.8 | 42.2 | 16.4 | 39.3 |
+| A, no memory | 1, multi-hop | 280 | 280 | 53.9 | 38.6 | 31.9 | 6.1 | 20.4 |
+| C, RAG | 1, multi-hop | 280 | 280 | 56.8 | 38.2 | 31.6 | 6.8 | 20.4 |
+| A, no memory | 2, temporal | 317 | 317 | 74.1 | 43.4 | 34.0 | 6.9 | 32.2 |
+| C, RAG | 2, temporal | 316 | 316 | 78.5 | 48.0 | 38.6 | 7.3 | 35.1 |
+| A, no memory | 3, open-domain | 96 | 96 | 51.0 | 19.7 | 16.4 | 3.1 | 21.9 |
+| C, RAG | 3, open-domain | 95 | 95 | 53.7 | 25.7 | 21.8 | 8.4 | 24.2 |
+| A, no memory | 4, single-hop | 841 | 841 | 90.4 | 56.1 | 48.2 | 21.9 | 48.2 |
+| C, RAG | 4, single-hop | 840 | 840 | 87.9 | 57.0 | 49.5 | 23.9 | 48.9 |
+| A, no memory | 5, adversarial | 446 | 0 | 46.6 | n/a | n/a | n/a | n/a |
+| C, RAG | 5, adversarial | 446 | 0 | 41.0 | n/a | n/a | n/a | n/a |
+
+### LongMemEval-S
+
+| Arm | Slice | n | n scored | Judge | F1 | BLEU-1 | EM | Contain |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A, no memory | All | 500 | 470 | 70.6 | 40.8 | 33.3 | 15.7 | 48.7 |
+| C, RAG | All | 500 | 470 | 76.4 | 41.9 | 34.1 | 15.3 | 51.5 |
+| A, no memory | knowledge-update | 78 | 72 | 94.9 | 56.7 | 47.1 | 20.8 | 79.2 |
+| C, RAG | knowledge-update | 78 | 72 | 82.1 | 47.9 | 38.2 | 11.1 | 70.8 |
+| A, no memory | multi-session | 133 | 121 | 55.6 | 15.3 | 10.6 | 1.7 | 39.7 |
+| C, RAG | multi-session | 133 | 121 | 70.7 | 17.9 | 12.8 | 0.8 | 49.6 |
+| A, no memory | single-session-assistant | 56 | 56 | 98.2 | 70.8 | 64.5 | 41.1 | 67.9 |
+| C, RAG | single-session-assistant | 56 | 56 | 98.2 | 76.8 | 70.1 | 46.4 | 67.9 |
+| A, no memory | single-session-preference | 30 | 30 | 33.3 | 12.9 | 7.3 | 0.0 | 0.0 |
+| C, RAG | single-session-preference | 30 | 30 | 43.3 | 13.7 | 8.2 | 0.0 | 0.0 |
+| A, no memory | single-session-user | 70 | 64 | 97.1 | 74.6 | 65.9 | 43.8 | 87.5 |
+| C, RAG | single-session-user | 70 | 64 | 98.6 | 77.5 | 69.8 | 46.9 | 87.5 |
+| A, no memory | temporal-reasoning | 133 | 127 | 54.1 | 32.3 | 23.2 | 4.7 | 23.6 |
+| C, RAG | temporal-reasoning | 133 | 127 | 65.4 | 34.8 | 24.2 | 5.5 | 29.1 |
+
+### MemoryAgentBench
+
+| Arm | Slice | n | n scored | Judge | F1 | BLEU-1 | EM | Contain | Native |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A, no memory | All (3,371, incl. non-primary) | 3,371 | 3,358 | 73.7 | 66.4 | 63.2 | 52.7 | 70.8 | 73.7 |
+| C, RAG | All (3,371, incl. non-primary) | 3,371 | 3,358 | 69.2 | 62.7 | 59.8 | 49.6 | 66.4 | 69.1 |
+| A, no memory | Accurate_Retrieval | 2,000 | 1,987 | 88.4 | 83.5 | 82.1 | 77.0 | 83.5 | 90.5 |
+| C, RAG | Accurate_Retrieval | 2,000 | 1,987 | 83.1 | 79.1 | 78.0 | 72.5 | 78.8 | 85.3 |
+| A, no memory | Conflict_Resolution | 800 | 800 | 26.5 | 27.9 | 27.6 | 26.1 | 26.8 | 26.8 |
+| C, RAG | Conflict_Resolution | 800 | 800 | 23.9 | 25.1 | 25.0 | 23.8 | 23.9 | 23.9 |
+| A, no memory | Long_Range_Understanding | 71 | 71 | 81.7 | 65.4 | 64.6 | 46.5 | 73.2 | 81.7 |
+| C, RAG | Long_Range_Understanding | 71 | 71 | 77.5 | 66.7 | 67.3 | 52.1 | 67.6 | 77.5 |
+| A, no memory | Test_Time_Learning | 500 | 500 | 90.0 | 60.1 | 45.1 | 0.0 | 90.4 | 90.2 |
+| C, RAG | Test_Time_Learning | 500 | 500 | 85.0 | 56.8 | 42.6 | 0.0 | 85.4 | 85.2 |
+
+## 2c. Mem0 (arm B)
+
+**No results yet.** Arm B has not been run (Section 5, item 1). The table is the layout the results will fill, with the same metrics as 2b; A and C rows are copied from 2b for reference. Nothing below the reference rows is a measurement.
+
+| Arm | Benchmark | n | Judge | F1 | BLEU-1 | EM | Contain | Native |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A, no memory | LoCoMo | 1,980 | 70.9 | 48.0 | 40.3 | 14.7 | 38.1 | n/a |
+| C, RAG | LoCoMo | 1,977 | 69.8 | 49.8 | 42.2 | 16.4 | 39.3 | n/a |
+| **B, Mem0** | LoCoMo | not run | not run | not run | not run | not run | not run | not run |
+| A, no memory | LongMemEval-S | 500 | 70.6 | 40.8 | 33.3 | 15.7 | 48.7 | n/a |
+| C, RAG | LongMemEval-S | 500 | 76.4 | 41.9 | 34.1 | 15.3 | 51.5 | n/a |
+| **B, Mem0** | LongMemEval-S | not run | not run | not run | not run | not run | not run | not run |
+| A, no memory | MemoryAgentBench | 3,371 | 73.7 | 66.4 | 63.2 | 52.7 | 70.8 | 73.7 |
+| C, RAG | MemoryAgentBench | 3,371 | 69.2 | 62.7 | 59.8 | 49.6 | 66.4 | 69.1 |
+| **B, Mem0** | MemoryAgentBench | not run | not run | not run | not run | not run | not run | not run |
+
+## 2c. Supermemory (arm D)
+
+**No results yet.** Arm D is deferred and its code was removed from the main branch (`future_work.md`, Extension 1; recoverable from commit `f46e569`). No API key is available. The table is the layout the results will fill, with the same metrics as 2b; A and C rows are copied from 2b for reference. Nothing below the reference rows is a measurement.
+
+| Arm | Benchmark | n | Judge | F1 | BLEU-1 | EM | Contain | Native |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A, no memory | LoCoMo | 1,980 | 70.9 | 48.0 | 40.3 | 14.7 | 38.1 | n/a |
+| C, RAG | LoCoMo | 1,977 | 69.8 | 49.8 | 42.2 | 16.4 | 39.3 | n/a |
+| **D, Supermemory** | LoCoMo | not run | not run | not run | not run | not run | not run | not run |
+| A, no memory | LongMemEval-S | 500 | 70.6 | 40.8 | 33.3 | 15.7 | 48.7 | n/a |
+| C, RAG | LongMemEval-S | 500 | 76.4 | 41.9 | 34.1 | 15.3 | 51.5 | n/a |
+| **D, Supermemory** | LongMemEval-S | not run | not run | not run | not run | not run | not run | not run |
+| A, no memory | MemoryAgentBench | 3,371 | 73.7 | 66.4 | 63.2 | 52.7 | 70.8 | 73.7 |
+| C, RAG | MemoryAgentBench | 3,371 | 69.2 | 62.7 | 59.8 | 49.6 | 66.4 | 69.1 |
+| **D, Supermemory** | MemoryAgentBench | not run | not run | not run | not run | not run | not run | not run |
 
 ---
 
