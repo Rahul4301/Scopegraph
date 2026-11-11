@@ -45,4 +45,5 @@ supermemory:
 	SUPERMEMORY_EMBEDDING_MODEL=text-embedding-3-small \
 	SUPERMEMORY_EMBEDDING_DIMENSIONS=1536 \
 	SUPERMEMORY_DATA_DIR=.cache/supermemory \
+	SUPERMEMORY_EMBEDDING_RAM_LIMIT=8gb \
 	supermemory-server

@@ -37,6 +37,7 @@ from typing import Any
 
 from memstudy.arms.base import ArmContext, ArmError, IngestStats, fill_to_budget
 from memstudy.budget import Budget, ModelPrice
+from memstudy.chunking import chunk_document
 from memstudy.metering import CostSink
 from memstudy.schema import History, Item, Usage, render_session
 from memstudy.tokens import count_tokens
@@ -157,11 +158,29 @@ class SupermemoryArm:
         container = self._container(history)
         done = self._sessions_done.setdefault(container, set())
         new = [s for s in history.sessions if s.session_id not in done]
-        tokens = sum(count_tokens(render_session(s)) for s in new)
+        # A verbatim document (MemoryAgentBench) has no sessions: one fixed-size chunk per add,
+        # the same size as arm B's.
+        size = int(self.cfg.get("document_chunk_tokens", 4096))
+        chunks = (
+            [c for c in chunk_document(history.document, size) if c.strip()]
+            if history.document is not None and f"{container}-doc" not in done
+            else []
+        )
+        tokens = sum(count_tokens(render_session(s)) for s in new) + sum(count_tokens(c) for c in chunks)
         usd = self._ingest_usd(tokens)
         self.budget.guard(self.stage, usd)
         start = self._clock()
         ids: list[str] = []
+        for n, chunk in enumerate(chunks):
+            ids.append(
+                self.client.documents.add(
+                    content=chunk,
+                    container_tag=container,
+                    custom_id=f"{container}-doc{n}",
+                    task_type=self.cfg["task_type"],
+                    metadata={"chunk": n},
+                ).id
+            )
         for session in new:
             kwargs: dict[str, Any] = {
                 "content": render_session(session),
@@ -176,6 +195,8 @@ class SupermemoryArm:
             ids.append(self.client.documents.add(**kwargs).id)
         self._wait_until_done(ids)
         done.update(s.session_id for s in new)
+        if chunks:
+            done.add(f"{container}-doc")
         self._stored_text.pop(container, None)
         self.budget.charge(
             self.stage,
