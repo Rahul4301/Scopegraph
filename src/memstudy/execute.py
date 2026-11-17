@@ -506,10 +506,13 @@ def ingest_by_history(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _merged_ingest(reports: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Per history, the record with the largest cost: a retry that found the embeddings already
+    cached records $0 and must not replace the run that paid for them."""
     merged: dict[str, dict[str, Any]] = {}
     for r in reports:
         for history_id, record in ingest_by_history(r).items():
-            merged.setdefault(history_id, record)
+            if history_id not in merged or float(record.get("usd", 0)) > float(merged[history_id].get("usd", 0)):
+                merged[history_id] = record
     return merged
 
 

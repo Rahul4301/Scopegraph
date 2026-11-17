@@ -19,10 +19,10 @@ every question. Superseded runs are in `data/old_runs/` and `data/old_smoke/` (S
 | --- | --- | --- | --- | --- | --- |
 | A | LoCoMo | `no_memory_locomo_20261009_110627.json` | 1,980 / 1,986 | $1.28 | 92 min |
 | A | LongMemEval-S | `no_memory_longmemeval_20261009_110634.json` | 500 / 500 | $5.25 | 38 min |
-| A | MemoryAgentBench | `no_memory_memoryagentbench_20261009_132956.json` | 3,371 / 3,371 | $13.27 | 46 min |
+| A | MemoryAgentBench | `no_memory_memoryagentbench_20261009_132956.json` | 1,771 / 1,771 (3,371 run) | $13.27 ($11.65 on the 1,771) | 46 min |
 | C | LoCoMo | `rag_locomo_20261009_144918.json` | 1,977 / 1,986 | $2.27 | 41 min |
 | C | LongMemEval-S | `rag_longmemeval_20261009_144923_merged.json` | 500 / 500 | $1.59 | 52 min |
-| C | MemoryAgentBench | `rag_memoryagentbench_20261009_151920_merged.json` | 3,371 / 3,371 | $3.12 | 37 min |
+| C | MemoryAgentBench | `rag_memoryagentbench_20261009_151920_merged.json` | 1,771 / 1,771 (3,371 run) | $3.12 ($1.57 on the 1,771) | 37 min |
 
 Total for the six runs: $26.78. Whole study to date: $69.41 ($68.81 full runs, $0.60 pilot and
 smoke).
@@ -32,10 +32,14 @@ nano) ran out of its 2,048 output tokens (`IncompleteResponse`); the other was a
 error that failed all four retries. The reader's answer is lost with the judge's. They are left
 out of every comparison. They can be recovered with `--retry_failed` and `merge`.
 
-**MemoryAgentBench counts.** 3,571 questions after excluding InfBench Sum (amendment A3); the 200
-recsys questions are also excluded (the context is 1.48M tokens, larger than the window; PREREG
-Section 2), leaving 3,371. The primary set is Accurate Retrieval plus Conflict Resolution without
-the five LongMemEval-S copies: 2,500 questions.
+**MemoryAgentBench counts.** The set is the paper's: 2,071 questions in 130 contexts (PREREG
+amendment A4; the release's 1,600 context-length-ablation questions are dropped). Excluding InfBench
+Sum (amendment A3, 100 questions) and recsys (200 questions; the context is 1.48M tokens, larger
+than the window; PREREG Section 2) leaves 1,771 questions in 29 contexts. The runs above were made
+on the full release (3,371 questions answered) before A4; every number below is computed on the
+1,771, which both files contain in full with unchanged item ids. The primary set is Accurate
+Retrieval plus Conflict Resolution without the five LongMemEval-S copies: 900 questions in 9
+contexts, 8 distinct documents (the two FactConsolidation 262K contexts are byte-identical).
 
 ### Provenance
 
@@ -64,28 +68,29 @@ medium).
 ## 2. Results: no memory (A) vs plain RAG (C)
 
 Only questions that both arms answered are compared. A − C is in percentage points; intervals are
-95% bootstrap intervals that resample whole histories (the method of H1). Primary metrics: the
+95% percentile bootstrap intervals that resample whole histories (10,000 resamples, seed 0; the
+method of H1). Primary metrics: the
 judge verdict on LoCoMo and LongMemEval-S, the benchmark's own pass test (`native_match`) on
 MemoryAgentBench.
 
 | Benchmark | Questions | A | C | A − C [95% CI] |
 | --- | --- | --- | --- | --- |
 | LoCoMo, categories 1 to 4 | 1,525 | 78.1% | 78.0% | +0.1 [−1.6, +1.6] |
-| LongMemEval-S | 500 | 70.6% | 76.4% | **−5.8** [−9.4, −2.0] |
-| MemoryAgentBench, primary set | 2,500 | 70.1% | 65.6% | **+4.5** [+2.6, +6.6] |
+| LongMemEval-S | 500 | 70.6% | 76.4% | **−5.8** [−9.6, −2.0] |
+| MemoryAgentBench, primary set | 900 | 70.0% | 62.6% | **+7.4** [+4.2, +11.2] |
 
 ### LoCoMo (10 conversations)
 
 | Category | Questions | A | C | A − C [95% CI] |
 | --- | --- | --- | --- | --- |
-| 1, multi-hop | 278 | 54.0 | 56.5 | −2.5 [−8.7, +2.8] |
-| 2, temporal | 312 | 74.4 | 78.2 | −3.8 [−6.7, −0.6] |
-| 3, open-domain | 95 | 51.6 | 53.7 | −2.1 [−8.9, +5.3] |
-| 4, single-hop | 840 | 90.5 | 87.9 | +2.6 [+0.2, +4.7] |
-| 5, adversarial (must abstain) | 446 | 46.6 | 41.0 | +5.6 [+0.7, +11.0] |
+| 1, multi-hop | 278 | 54.0 | 56.5 | −2.5 [−8.9, +2.6] |
+| 2, temporal | 312 | 74.4 | 78.2 | −3.8 [−6.7, −0.7] |
+| 3, open-domain | 95 | 51.6 | 53.7 | −2.1 [−8.7, +5.2] |
+| 4, single-hop | 840 | 90.5 | 87.9 | +2.6 [+0.3, +4.7] |
+| 5, adversarial (must abstain) | 446 | 46.6 | 41.0 | +5.6 [+0.6, +10.8] |
 
 - Without the development conversation `conv-26` (PREREG Section 6), categories 1 to 4:
-  A 78.5, C 78.6, A − C −0.1 [−2.0, +1.6], 1,376 questions.
+  A 78.5, C 78.6, A − C −0.1 [−2.0, +1.5], 1,376 questions.
 - Mem0's own judge prompt (secondary, categories 1 to 4): A 87.4, C 86.6. It is more lenient
   than the study judge, and is reported only so these numbers can sit beside published Mem0 and
   Zep LoCoMo results.
@@ -98,23 +103,23 @@ MemoryAgentBench.
 | single-session-user | 70 | 97.1 | 98.6 | −1.4 [−5.7, +2.9] |
 | single-session-assistant | 56 | 98.2 | 98.2 | 0.0 [−5.4, +5.4] |
 | single-session-preference | 30 | 33.3 | 43.3 | −10.0 [−26.7, +6.7] |
-| temporal-reasoning | 133 | 54.1 | 65.4 | −11.3 [−20.3, −2.3] |
+| temporal-reasoning | 133 | 54.1 | 65.4 | −11.3 [−20.3, −3.0] |
 | multi-session | 133 | 55.6 | 70.7 | −15.0 [−23.3, −6.8] |
 
 ### MemoryAgentBench
 
 | Competency | Questions | Documents | A | C | A − C [95% CI] |
 | --- | --- | --- | --- | --- | --- |
-| Accurate Retrieval (without LongMemEval-S copies) | 1,700 | 17 | 90.5 | 85.3 | +5.2 [+2.8, +7.9] |
-| Conflict Resolution | 800 | 8 | 26.8 | 23.9 | +2.9 [+0.2, +6.1] |
-| Long-Range Understanding (DetectiveQA only) | 71 | 10 | 81.7 | 77.5 | +4.2 [−4.2, +14.3] |
+| Accurate Retrieval (without LongMemEval-S copies) | 700 | 7 | 84.3 | 75.6 | +8.7 [+4.9, +13.0] |
+| Conflict Resolution | 200 | 2 (1 distinct document) | 20.0 | 17.0 | +3.0 (both contexts differ by 3.0; no usable interval) |
+| Long-Range Understanding (DetectiveQA only) | 71 | 10 | 81.7 | 77.5 | +4.2 [−4.3, +13.6] |
 | Test-Time Learning (classification) | 500 | 5 | 90.2 | 85.2 | +5.0 [−0.2, +12.2] |
-| LongMemEval-S copies (not primary) | 300 | 5 | 63.3 | 59.3 | +4.0 [+1.7, +6.3] |
+| LongMemEval-S copies (not primary) | 300 | 5 | 63.3 | 59.3 | +4.0 [+1.3, +6.3] |
 
 Per source (one document each, so no interval): the largest gaps favour A on the longest
 documents, `eventqa_full` (A 86.6, C 76.4) and `ruler_qa2_421K` (72.0, 63.0), and on
-`icl_trec_fine` (81.0, 62.0). Multi-hop fact consolidation is near zero for both arms (1 to 5%
-per source), so it separates neither.
+`icl_trec_fine` (81.0, 62.0). Multi-hop fact consolidation at 262K is near zero for both arms
+(A 4.0, C 1.0), so it separates neither.
 
 ### Cost per arm
 
@@ -122,7 +127,7 @@ per source), so it separates neither.
 | --- | --- | --- | --- |
 | LoCoMo | about 200 | **$1.28** (cache hit 99.4%) | $2.27 |
 | LongMemEval-S | 1 | $5.25 (no caching possible) | **$1.59** |
-| MemoryAgentBench | about 75, documents about 200K tokens | $13.27 (cache hit 98.6%) | **$3.12** |
+| MemoryAgentBench | about 61, documents about 260K tokens | $11.65 on the 1,771 ($13.27 whole run, cache hit 98.6%) | **$1.57** ($3.12 whole run) |
 
 Mean seconds per question: A 4.4 to 5.4, C 3.6 to 4.8.
 
@@ -150,7 +155,9 @@ them.
 Every metric the harness records, for every answered question, per arm. Unlike Section 2, these
 are **not paired**: each arm uses all of its own answered questions, so totals differ slightly
 (for example MemoryAgentBench "All" includes the 300 LongMemEval-S copies; Section 2 uses the
-2,500-question primary set).
+900-question primary set). MemoryAgentBench rows are on the 1,771-question paper set; BLEU-1 is not
+stored per question and its original script is not in the repository, so it is not recomputed
+for that set (—).
 
 - **Judge**: GPT-5 nano verdict (primary on LoCoMo and LongMemEval-S).
 - **F1**: token-overlap F1 against the best accepted answer. **EM**: normalized exact match.
@@ -207,12 +214,12 @@ All figures are percentages.
 
 | Arm | Slice | n | n scored | Judge | F1 | BLEU-1 | EM | Contain | Native |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| A, no memory | All (3,371, incl. non-primary) | 3,371 | 3,358 | 73.7 | 66.4 | 63.2 | 52.7 | 70.8 | 73.7 |
-| C, RAG | All (3,371, incl. non-primary) | 3,371 | 3,358 | 69.2 | 62.7 | 59.8 | 49.6 | 66.4 | 69.1 |
-| A, no memory | Accurate_Retrieval | 2,000 | 1,987 | 88.4 | 83.5 | 82.1 | 77.0 | 83.5 | 90.5 |
-| C, RAG | Accurate_Retrieval | 2,000 | 1,987 | 83.1 | 79.1 | 78.0 | 72.5 | 78.8 | 85.3 |
-| A, no memory | Conflict_Resolution | 800 | 800 | 26.5 | 27.9 | 27.6 | 26.1 | 26.8 | 26.8 |
-| C, RAG | Conflict_Resolution | 800 | 800 | 23.9 | 25.1 | 25.0 | 23.8 | 23.9 | 23.9 |
+| A, no memory | All (1,771, incl. non-primary) | 1,771 | 1,758 | 76.4 | 61.9 | — | 37.1 | 71.3 | 77.4 |
+| C, RAG | All (1,771, incl. non-primary) | 1,771 | 1,758 | 70.4 | 57.0 | — | 33.6 | 65.6 | 71.0 |
+| A, no memory | Accurate_Retrieval | 1,000 | 987 | 80.6 | 70.6 | — | 58.8 | 71.9 | 84.3 |
+| C, RAG | Accurate_Retrieval | 1,000 | 987 | 73.3 | 64.4 | — | 52.6 | 65.2 | 75.6 |
+| A, no memory | Conflict_Resolution | 200 | 200 | 19.5 | 22.0 | — | 19.5 | 20.0 | 20.0 |
+| C, RAG | Conflict_Resolution | 200 | 200 | 17.0 | 18.0 | — | 17.0 | 17.0 | 17.0 |
 | A, no memory | Long_Range_Understanding | 71 | 71 | 81.7 | 65.4 | 64.6 | 46.5 | 73.2 | 81.7 |
 | C, RAG | Long_Range_Understanding | 71 | 71 | 77.5 | 66.7 | 67.3 | 52.1 | 67.6 | 77.5 |
 | A, no memory | Test_Time_Learning | 500 | 500 | 90.0 | 60.1 | 45.1 | 0.0 | 90.4 | 90.2 |
@@ -230,8 +237,8 @@ All figures are percentages.
 | A, no memory | LongMemEval-S | 500 | 70.6 | 40.8 | 33.3 | 15.7 | 48.7 | n/a |
 | C, RAG | LongMemEval-S | 500 | 76.4 | 41.9 | 34.1 | 15.3 | 51.5 | n/a |
 | **B, Mem0** | LongMemEval-S | not run | not run | not run | not run | not run | not run | not run |
-| A, no memory | MemoryAgentBench | 3,371 | 73.7 | 66.4 | 63.2 | 52.7 | 70.8 | 73.7 |
-| C, RAG | MemoryAgentBench | 3,371 | 69.2 | 62.7 | 59.8 | 49.6 | 66.4 | 69.1 |
+| A, no memory | MemoryAgentBench | 1,771 | 76.4 | 61.9 | — | 37.1 | 71.3 | 77.4 |
+| C, RAG | MemoryAgentBench | 1,771 | 70.4 | 57.0 | — | 33.6 | 65.6 | 71.0 |
 | **B, Mem0** | MemoryAgentBench | not run | not run | not run | not run | not run | not run | not run |
 
 ---
@@ -244,7 +251,7 @@ PREREG Section 3 sets three checks on the judge. On these runs:
 | --- | --- | --- |
 | Unparseable or cut-off judge output | at most 1% | 0% on LongMemEval-S; 0.30% (A) and 0.45% (C) on LoCoMo (judge cut-offs, counted as unanswered); 0.47% (A) and 0.21% (C) of MemoryAgentBench answers ungraded by the judge (the primary metric there is the pass test, which needs no judge) |
 | Flip rate (judge rerun on 100 answers) | at most 5% | **not yet measured** (`memstudy judge-flip` needs the pilot) |
-| Agreement with the containment test, short-answer questions | at least 85% | LoCoMo 83.3% (A), 84.6% (C); LongMemEval-S 82.5% (A), 81.9% (C); MemoryAgentBench 89.1% (A), 90.3% (C) |
+| Agreement with the containment test, short-answer questions | at least 85% | LoCoMo 83.3% (A), 84.6% (C); LongMemEval-S 82.5% (A), 81.9% (C); MemoryAgentBench 89.1% (A), 90.3% (C) (full release, before A4) |
 
 LoCoMo and LongMemEval-S are below 85%, so by the registered rule containment accuracy is
 reported beside the judge and a conclusion that differs between them is labelled
@@ -429,5 +436,6 @@ If a run stops early, finish it and combine the two files:
 ```
 
 The A vs C comparison tables in Section 2 are not yet a command; they were computed with a
-paired, history-clustered bootstrap (4,000 resamples, seed 0) over the questions both arms
-answered.
+paired, history-clustered percentile bootstrap (10,000 resamples, seed 0, `random.Random`) over the
+questions both arms answered. The containment table in Section 3 predates this and used 4,000
+resamples.

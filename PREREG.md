@@ -48,7 +48,18 @@ failed on the grader's output limit; no other InfBench result under v7 had been 
 Understanding is reported from DetectiveQA alone (71 questions), and the exclusion is reported as a
 limitation, since the MemoryAgentBench paper and later work report InfBench Sum. The benchmark's
 summary grader stays in the code, unused. MemoryAgentBench now has 3,571 questions, 3,371 of them
-in contexts that fit the window.
+in contexts that fit the window (superseded by A4).
+
+**Amendment A4 (2026-11-16).** The MemoryAgentBench release also ships context-length variants that
+its paper (Hu et al., ICLR 2026) uses only in its context-length analyses: `eventqa_65536`,
+`eventqa_131072` and `factconsolidation_{sh,mh}_{6k,32k,64k}`, 16 contexts and 1,600 questions
+(all but four distinct from the kept questions). They are dropped (`ABLATION_SOURCES` in the
+loader), so the set equals the paper's Tables 1 and 6: 130 contexts and 2,071 questions, with
+EventQA at full length and FactConsolidation at 262K, as in the paper's main results. After A3 and
+the recsys exclusion, 1,771 questions in 29 contexts are run; the primary set is 900 questions in
+9 contexts (8 distinct documents: the two FactConsolidation 262K contexts are byte-identical). The
+change was made after the arm A and C MemoryAgentBench runs had been seen. Those runs contain every
+one of the 1,771 questions with unchanged item ids, so they are re-scored on the new set, not re-run.
 
 Correction to A1 and A2: only LongMemEval-S is confirmatory (Section 1); LoCoMo and
 MemoryAgentBench are descriptive replications. So A1's switch to LongMemEval's own judge prompts is
@@ -112,14 +123,16 @@ free-text answer graded against a gold answer. Same definition for all arms.
   abstention questions.
 - MemoryAgentBench (`ai-hyz/MemoryAgentBench`, pinned revision `7ea06698`, four parquet files in
   `data/memoryagentbench/`): 146 rows, each one long context shared by many questions, 3,671
-  questions in all. Accurate retrieval and conflict resolution (selective forgetting) are the
-  primary descriptive competencies (30 contexts, 2,800 questions before the exclusion below);
-  test-time learning and long-range understanding are exploratory. No MemoryAgentBench result is
-  confirmatory. 145 of 146 contexts fit the window (token census in
-  `results/phase0/mab_token_census.json`); `recsys_redial_full` (1.48M tokens) is excluded and
-  reported. Five accurate-retrieval rows (`longmemeval_s*`, 300 questions) repeat LongMemEval-S
-  content and are excluded from the MemoryAgentBench primary set to avoid double counting,
-  leaving 25 contexts and 2,500 questions; the excluded rows are reported separately. Contexts
+  questions in all, of which 16 rows and 1,600 questions are the paper's context-length variants
+  and are dropped (A4), leaving the paper's 130 contexts and 2,071 questions. Accurate retrieval
+  and conflict resolution (selective forgetting) are the primary descriptive competencies (14
+  contexts, 1,200 questions before the exclusion below); test-time learning and long-range
+  understanding are exploratory. No MemoryAgentBench result is confirmatory. 129 of 130 contexts
+  fit the window (token census in `results/phase0/mab_token_census.json`); `recsys_redial_full`
+  (1.48M tokens) is excluded and reported. Five accurate-retrieval rows (`longmemeval_s*`, 300
+  questions) repeat LongMemEval-S content and are excluded from the MemoryAgentBench primary set
+  to avoid double counting, leaving 9 contexts and 900 questions; the excluded rows are reported
+  separately. Contexts
   are single documents, not sessions: arm A sends the text
   verbatim, arm B adds it in 4,096-token chunks, arm C indexes it in 256-token verbatim chunks.
   Scoring (amendment A1): the benchmark's own pass test per source is primary (`native_match` in
@@ -214,7 +227,6 @@ candidates; nothing is cut mid-item.
 - **C, plain RAG (control for H3).** Verbatim chunks of whole turns, 256 tokens,
   `text-embedding-3-small` (the same embedder as Mem0), cosine ranking. Oversized turns are split,
   never cut.
-
 
 Mem0's self-reported scores are never used as baselines. The prior numbers
 in Pollertlam and Kornsuwannawit and Wolff and Bennati are reference points only.
@@ -325,9 +337,10 @@ line above predates the switch of extraction to Luna and is re-run from the pilo
 (Section 10) are costed from the pilot; the arm A reader cost of the composite histories is about
 $3 (41 questions per history, cached, 272K surcharge included).
 
-MemoryAgentBench is not in this table. Its 145 fitting contexts hold about 26M tokens, and arm A
-re-reads each context once per question (about 0.7B input tokens in all), so caching is required
-and 23 contexts also cross the 272K price threshold. A dollar projection comes from the pilot; the
+MemoryAgentBench is not in this table. Before A4 its 145 fitting contexts held about 26M tokens,
+and arm A re-reads each context once per question (about 0.7B input tokens in all), so caching is
+required and 23 contexts also cross the 272K price threshold. After A3 and A4 the 29 run contexts
+hold 7.5M tokens, 11 of them above 272K. A dollar projection comes from the pilot; the
 guard stops the run at the cap either way.
 
 ## 8. Stops and limits

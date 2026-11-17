@@ -408,21 +408,32 @@ def cmd_rq4_table(args: argparse.Namespace) -> None:
         arms[run["arm"]] = report
     chunk = int(cfg["arms"]["C"]["chunk_tokens"])
     rows: list[dict[str, Any]] = []
+    notes: dict[str, Any] = {}
     for bench, reports in sorted(by_eval.items()):
         if "A" not in reports:
             raise SystemExit(f"{bench}: an arm A (no memory) result file is required")
         histories = load_bench(bench)[0]
         rows += rq4.per_history_rows(
             bench, reports, reader, embed, rq4.rag_ingest_from(histories, chunk, embed), args.by,
-            keep=set(histories),
+            keep=set(histories), notes=notes,
         )
+    for bench, n in sorted(notes.get("dropped_histories", {}).items()):
+        if n:
+            print(f"note: {bench}: {n} histories not in the loaded benchmark set were dropped", file=sys.stderr)
+    for arm, per_bench in sorted(notes.get("skipped_no_ingest", {}).items()):
+        for bench, n in sorted(per_bench.items()):
+            print(f"note: arm {arm} on {bench}: {n} histories have no ingestion record and were skipped "
+                  "(result files from before per-history ingest records)", file=sys.stderr)
+    if not rows:
+        raise SystemExit("no usable rows: pass an arm A file and at least one B or C file per eval")
     table = rq4.summarize(rows)
-    print(rq4.to_markdown(table, args.by))
+    print(rq4.to_markdown(table, args.by, notes.get("supplied", set())))
     if args.out:
         out = Path(args.out)
         ensure_new(out)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps({"by": args.by, "table": table, "histories": rows}, indent=2, default=str) + "\n")
+        payload = {"by": args.by, "table": table, "histories": rows}
+        out.write_text(json.dumps(rq4.jsonable(payload), indent=2, allow_nan=False) + "\n")
         print(f"written: {out}")
 
 

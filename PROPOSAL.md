@@ -126,7 +126,7 @@ The task is long-term conversational question answering. The input is a long mul
 | --- | --- | --- | --- |
 | LongMemEval-S [3] | 500 questions, each with its own haystack of 97K to 106K tokens (proxy tokenizer), so histories are not shared and caching cannot amortize. 30 questions test abstention. | Confirmatory (H1, H3) | GPT-5 nano judge; substring match as diagnostic |
 | LoCoMo [2] | 10 conversations of 10K to 21K tokens, 1,986 questions. Categories 1 to 4 (1,540 questions) are primary; the 446 adversarial questions are reported separately and graded for abstention. | Descriptive replication; the only benchmark where one history receives many questions, which makes it the primary source for measured crossover | GPT-5 nano judge; substring match as diagnostic |
-| MemoryAgentBench [8] | 146 long contexts shared by many questions, 3,671 questions in total, pinned revision. 145 contexts fit the reader window; one context of 1.48M tokens is excluded and reported. Accurate retrieval and conflict resolution are the primary descriptive competencies. Five accurate-retrieval contexts repeat LongMemEval-S content and are excluded from the primary set, leaving 25 contexts and 2,500 questions. Test-time learning and long-range understanding are exploratory. | Descriptive replication | Substring match against accepted answers (primary); judge verdict (secondary) |
+| MemoryAgentBench [8] | The paper's set: 130 long contexts shared by many questions, 2,071 questions, pinned revision (the release's 1,600 context-length-variant questions are dropped). 129 contexts fit the reader window; one context of 1.48M tokens is excluded and reported. Accurate retrieval and conflict resolution are the primary descriptive competencies. Five accurate-retrieval contexts repeat LongMemEval-S content and are excluded from the primary set, leaving 9 contexts and 900 questions. Test-time learning and long-range understanding are exploratory. | Descriptive replication | Substring match against accepted answers (primary); judge verdict (secondary) |
 | Composite long histories (Section 4.4) | Histories constructed from LongMemEval-S sessions at target lengths between 200K tokens and the window limit | Exploratory (RQ3) | GPT-5 nano judge; substring match as diagnostic |
 
 *Table 5. Benchmarks. All three published benchmarks are used as published, with checksums recorded in the repository.*
@@ -142,7 +142,6 @@ All arms share the reader, the answer template, and the questions. Only the way 
 | C | Plain RAG | Verbatim chunks of whole turns (256 tokens), the same embedder as arm B, cosine ranking. No LLM extraction. | Control for H3 |
 
 *Table 6. Experimental arms.*
-
 
 The study records what the memory system extracts by default. Mem0's default extraction reads only user messages. For LoCoMo, where the two speakers are peers, both are sent as user messages prefixed with their names. For LongMemEval the real user and assistant roles are kept, so facts stated only by the assistant are not extracted, which is Mem0 as released. A sensitivity analysis excludes the single-session-assistant category of LongMemEval-S and reports whether the conclusion changes.
 
@@ -206,7 +205,7 @@ The margin of 3 points is the largest accuracy loss accepted in exchange for dro
 
 With 500 paired questions, the power of a non-inferiority test depends on the discordance rate d, the share of questions on which exactly one of two arms is correct. When the true difference is zero, the lower confidence limit is approximately -z * sqrt(d / 500). To remain above -3 points, d must be at most about 12% with an unadjusted 95% interval and at most about 9% after the Holm adjustment. Larger true advantages for the baseline relax this requirement. The power curve over a plausible range of d is computed before the full run and reported. A non-significant result in an underpowered test is labeled inconclusive and is not presented as evidence against non-inferiority. A result that clears the margin stands in either case.
 
-LoCoMo and MemoryAgentBench have few independent histories (10 and 25), and a percentile bootstrap undercovers with so few clusters. Their intervals are reported, and no non-inferiority claim rests on them. Conclusions are worded as consistent or inconsistent with the LongMemEval-S result. All other comparisons, which include categories, length-axis results, as-of results, and sensitivity margins, are exploratory and reported descriptively without adjustment.
+LoCoMo and MemoryAgentBench have few independent histories (10 and 9), and a percentile bootstrap undercovers with so few clusters. Their intervals are reported, and no non-inferiority claim rests on them. Conclusions are worded as consistent or inconsistent with the LongMemEval-S result. All other comparisons, which include categories, length-axis results, as-of results, and sensitivity margins, are exploratory and reported descriptively without adjustment.
 
 ### 4.10 Components and Status
 
