@@ -119,7 +119,7 @@ def judge_prompt(item: Item, model_answer: str) -> str:
 # Exploratory, not registered: MemoryAgentBench's own query templates for the two splits where
 # the generic reader prompt does not state the task (fact consolidation, label classification).
 # Copied verbatim from the benchmark's utils/templates.py (str.format with {question}); arm A
-# gets the long-context template, arms B, C and D the RAG template. Opt-in with
+# gets the long-context template, arms B and C the RAG template. Opt-in with
 # `run --task_prompts`, which enters the config hash.
 TASK_PROMPTS: dict[str, dict[str, str]] = {
     'factconsolidation_': {

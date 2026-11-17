@@ -8,6 +8,11 @@ retrieval and conflict resolution (selective forgetting) are the confirmatory co
 proposal and load as primary; test-time learning and long-range understanding are exploratory.
 Rows that repeat LongMemEval-S content (source longmemeval_s*) are flagged and not primary, so
 they are not double counted. Native-metric scoring is not part of the loader.
+
+The HF release also ships the paper's context-length ablation variants (Hu et al., ICLR 2026,
+Table 10 and Appendix G) in the same splits. They are dropped here, so the loaded set is exactly
+the paper's Table 6 / Table 1 set: 130 contexts, 2,071 questions, with EventQA at full length
+(534K) and FactConsolidation at 262K. Row numbers, and so item ids, are those of the parquet file.
 """
 
 from __future__ import annotations
@@ -27,6 +32,11 @@ COMPETENCIES = (
     "Test_Time_Learning",
 )
 CONFIRMATORY = {"Accurate_Retrieval", "Conflict_Resolution"}
+# Context-length ablation rows of the HF release, not part of the paper's question set (1,600 questions).
+ABLATION_SOURCES = frozenset({
+    "eventqa_65536", "eventqa_131072",
+    *(f"factconsolidation_{hop}_{length}" for hop in ("sh", "mh") for length in ("6k", "32k", "64k")),
+})
 # Metadata lists aligned with the questions, copied per item when the row has them.
 _PER_QUESTION = {
     "qa_pair_ids": "qa_pair_id",
@@ -52,6 +62,8 @@ def load_memoryagentbench(data_dir: Path) -> tuple[dict[str, History], list[Item
         for row_no, row in enumerate(pq.read_table(files[0]).to_pylist()):
             meta: dict[str, Any] = row["metadata"] or {}
             source = str(meta["source"])
+            if source in ABLATION_SOURCES:
+                continue
             history_id = safe_name(f"{competency.lower()}-{source}-r{row_no:02d}")
             histories[history_id] = History(history_id=history_id, bench=BENCH, document=row["context"])
             questions, answers = row["questions"], row["answers"]

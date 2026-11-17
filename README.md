@@ -17,7 +17,6 @@ published benchmarks is exploratory (PREREG.md Section 10).
 | A | No memory: full history first, question last, prompt caching when a history is queried twice or more |
 | B | Mem0 open source, pinned `mem0ai==2.2.1`, extraction by GPT-6 Luna (effort none), default embedder, one `user_id` per history |
 | C | Plain RAG over verbatim chunks (control) |
-| D | Supermemory, self-hosted open-source server (exploratory), same extraction model and embedder as B, one container per history; needs the extra `supermemory` and a running `supermemory-server` |
 
 Same reader (`gpt-6-luna`), template, questions and retrieval token budget (B, C). The sole
 grader is `gpt-5-nano`; there is no second grader and no human grading.
@@ -30,7 +29,7 @@ configs/    study.yaml (pre-registered settings), prices.yaml (every price, sour
 src/memstudy/
   schema.py budget.py llm.py reader.py judge.py runner.py store.py tokens.py
   execute.py scoring.py chunking.py     (one named run, answer metrics, verbatim chunking)
-  arms/      full_context.py mem0_arm.py rag.py supermemory_arm.py
+  arms/      full_context.py mem0_arm.py rag.py
   loaders/   locomo.py longmemeval.py memoryagentbench.py composite.py
   asof.py                               (as-of checkpoints for LoCoMo)
   pilot.py costmodel.py phase0.py preflight.py metering.py datacheck.py cli.py
@@ -54,7 +53,7 @@ python -m memstudy run --memory_system rag --eval memoryagentbench --num_cases 1
 
 | Flag | Values |
 | --- | --- |
-| `--memory_system` | `no_memory` (A), `mem0` (B), `rag` (C), `supermemory` (D); the letters work too |
+| `--memory_system` | `no_memory` (A), `mem0` (B), `rag` (C); the letters work too |
 | `--eval` | `locomo`, `longmemeval`, `memoryagentbench`, `composite` (long histories built from LongMemEval-S, 200K to 950K tokens) |
 | `--num_cases` | first N cases, in loader order, each with all its primary questions (a case is one LoCoMo conversation, one LongMemEval haystack, one MemoryAgentBench document); omit for the full run |
 | `--include_secondary` | also run non-primary cases (LoCoMo adversarial, MemoryAgentBench exploratory) |
@@ -79,8 +78,7 @@ question answered so far; the run is not resumable.
 Paid runs are refused until `prereg-v1` is tagged and the matching gate in
 `configs/approvals.yaml` is true: `stage_smoke` for `--num_cases`, `stage_chat_<eval>` for a full
 run (`stage_chat_composite` for the composite benchmark; a gate that is absent counts as closed).
-Arms B, C and D also need `g1_extra_models` (the embedder besides Luna and nano), and arm D needs
-`g2_supermemory_self_hosted`. Smoke runs count against the pilot spend cap. Other paid
+Arms B and C also need `g1_extra_models` (the embedder besides Luna and nano). Smoke runs count against the pilot spend cap. Other paid
 commands: `judge-flip`; `api-check --yes` is a two-call, under-$0.001 request check.
 
 ```bash
@@ -89,8 +87,7 @@ python -m memstudy <command>     # needs PYTHONPATH=src or an editable install
 
 Setup: `uv pip install -e ".[dev]"`, then `python -m spacy download en_core_web_sm` (installed).
 Keys come from the environment or `.env` and are never printed or logged: `OPENAI_API_KEY`
-(`--key_var` or `--key-var` can name a differently named variable). Arm D also reads
-`SUPERMEMORY_API_KEY`, the key the local server prints on first boot.
+(`--key_var` or `--key-var` can name a differently named variable).
 
 ## Guarantees in code
 

@@ -69,7 +69,6 @@ def test_result_names_follow_system_eval_and_timestamp():
     assert result_name("no_memory", "longmemeval", when) == "no_memory_longmemeval_20261002_093245"
     assert resolve_system("A") == ("no_memory", "A") and resolve_system("rag") == ("rag", "C")
     assert resolve_system("B")[0] == "mem0"
-    assert resolve_system("supermemory") == ("supermemory", "D") and resolve_system("D")[1] == "D"
     with pytest.raises(ValueError):
         resolve_system("zep")
 

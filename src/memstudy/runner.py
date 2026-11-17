@@ -96,7 +96,7 @@ def build_record(
         "metrics": None
         if item.meta.get("abstention")
         else answer_metrics(read.text, ctx.text, accepted_answers(item), task_key(item)),
-        # Stage attribution (arms B and D): was the gold fact stored? None when the arm has no
+        # Stage attribution (arm B): was the gold fact stored? None when the arm has no
         # store, or for abstention items, which have no answer string to look for.
         "gold_in_store": None
         if ctx.stored_text is None or item.meta.get("abstention")
@@ -160,21 +160,38 @@ def run_chat(
     run_id: str,
     progress: Progress | None = None,
     workers: int = 1,
+    ingest_workers: int = 1,
 ) -> RunSummary:
+    """Answer every item, one history at a time unless ingest_workers > 1.
+
+    With ingest_workers > 1, and only for an arm that declares concurrent_prepare, histories with
+    different store keys run at the same time, each one ingested and then answered, so one
+    history's ingestion overlaps another's questions. Histories sharing a store key (as-of
+    checkpoints) stay in order in one chain, since a later checkpoint writes into the same store.
+    What is stored and answered per history is unchanged; only the wall-clock order differs.
+    """
     summary = RunSummary(run_id=run_id)
     by_history: dict[str, list[Item]] = {}
     for item in items:
         by_history.setdefault(item.history_id, []).append(item)
+    # One run-level lock covers the counters, the progress output and the ingest records, which
+    # concurrent histories share. arm.context gets its own lock per history (see answer).
+    out_lock = threading.Lock()
+    stop = threading.Event()  # set when one history raises, so the others start no new work
 
     def run_history(history_id: str, group: list[Item]) -> None:
+        if stop.is_set():
+            return
         bench = group[0].bench
         pending = [i for i in group if not store.has_item(arm.name, bench, i.item_id)]
-        summary.skipped_existing += len(group) - len(pending)
+        with out_lock:
+            summary.skipped_existing += len(group) - len(pending)
         if not pending:
             return
         history = histories[history_id]
         if progress:
-            progress.history_started(history_id, len(pending))
+            with out_lock:
+                progress.history_started(history_id, len(pending))
         try:
             ingest = arm.prepare(history)
         except DoesNotFit as err:
@@ -188,9 +205,11 @@ def run_chat(
                 }
                 store.write_error(arm.name, bench, item.item_id, error)
                 if progress:
-                    progress.failed(item, error)
-            summary.does_not_fit.append(history_id)
-            summary.errors += len(pending)
+                    with out_lock:
+                        progress.failed(item, error)
+            with out_lock:
+                summary.does_not_fit.append(history_id)
+                summary.errors += len(pending)
             return
         except HANDLED as err:  # storing the history failed: record it for every question, keep going
             for item in pending:
@@ -202,30 +221,20 @@ def run_chat(
                 }
                 store.write_error(arm.name, bench, item.item_id, error)
                 if progress:
-                    progress.failed(item, error)
-            summary.errors += len(pending)
+                    with out_lock:
+                        progress.failed(item, error)
+            with out_lock:
+                summary.errors += len(pending)
             return
-        if ingest is not None and progress:
-            progress.ingested(history_id, ingest)
-        if ingest is not None and not store.has_ingest(arm.name, bench, history_id):
-            store.write_ingest(
-                arm.name,
-                bench,
-                history_id,
-                {
-                    "run_id": run_id,
-                    "arm": arm.name,
-                    "history_id": history_id,
-                    "seconds": ingest.seconds,
-                    "cost": ingest.cost.to_dict(),
-                    "stored_units": ingest.stored_units,
-                },
-            )
-        # One lock covers arm.context (the arms are not built for concurrent use), the counters
-        # and the progress output; the slow reader and judge calls run outside it.
+        with out_lock:
+            _record_ingest(history_id, bench, ingest)
+        # arm.context is serialized within a history (the arms are not built for concurrent use
+        # on one store); the slow reader and judge calls run outside the lock.
         lock = threading.Lock()
 
         def answer(item: Item) -> None:
+            if stop.is_set():
+                return
             try:
                 with lock:
                     ctx = arm.context(item, history)
@@ -250,7 +259,7 @@ def run_chat(
                     judged_mem0=judged_mem0,
                 )
                 store.write_item(arm.name, bench, item.item_id, record)
-                with lock:
+                with out_lock:
                     summary.completed += 1
                     if progress:
                         progress.answered(item, record)
@@ -264,7 +273,7 @@ def run_chat(
                     "message": str(err),
                 }
                 store.write_error(arm.name, bench, item.item_id, error)
-                with lock:
+                with out_lock:
                     summary.errors += 1
                     if progress:
                         progress.failed(item, error)
@@ -283,8 +292,48 @@ def run_chat(
                 for future in futures:
                     future.cancel()
                 raise
-    for history_id, group in by_history.items():
-        run_history(history_id, group)
+    def _record_ingest(history_id: str, bench: str, ingest: IngestStats | None) -> None:
+        if ingest is None:
+            return
+        if progress:
+            progress.ingested(history_id, ingest)
+        if not store.has_ingest(arm.name, bench, history_id):
+            store.write_ingest(
+                arm.name,
+                bench,
+                history_id,
+                {
+                    "run_id": run_id,
+                    "arm": arm.name,
+                    "history_id": history_id,
+                    "seconds": ingest.seconds,
+                    "cost": ingest.cost.to_dict(),
+                    "stored_units": ingest.stored_units,
+                },
+            )
+
+    chains: dict[str, list[str]] = {}
+    for history_id in by_history:
+        chains.setdefault(histories[history_id].store_key, []).append(history_id)
+
+    def run_chain(chain: list[str]) -> None:
+        for history_id in chain:
+            run_history(history_id, by_history[history_id])
+
+    if ingest_workers <= 1 or len(chains) <= 1 or not getattr(arm, "concurrent_prepare", False):
+        for history_id, group in by_history.items():
+            run_history(history_id, group)
+        return summary
+    with ThreadPoolExecutor(max_workers=ingest_workers) as pool:
+        futures = [pool.submit(run_chain, chain) for chain in chains.values()]
+        try:
+            for future in as_completed(futures):
+                future.result()
+        except BaseException:
+            stop.set()
+            for future in futures:
+                future.cancel()
+            raise
     return summary
 
 
@@ -492,6 +541,16 @@ def summarize_records(
             "calls": sum(i["cost"]["calls"] for i in ingests),
             "tokens": sum(i["cost"]["usage"]["input_tokens"] for i in ingests),
             "stored_units": sum(i["stored_units"] for i in ingests),
+            # Per history, for the RQ4 break-even table (ingestion is paid once per history).
+            "by_history": {
+                i["history_id"]: {
+                    "usd": i["cost"]["usd"],
+                    "input_tokens": i["cost"]["usage"]["input_tokens"],
+                    "seconds": i["seconds"],
+                    "stored_units": i["stored_units"],
+                }
+                for i in sorted(ingests, key=lambda i: i["history_id"])
+            },
         },
         "models_returned": sorted(models),
     }

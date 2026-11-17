@@ -31,8 +31,5 @@ results/raw/*.jsonl
 .DS_Store
 **/.DS_Store
 
-# Supermemory self-hosted server data (holds its API key and an embedding plan)
-.supermemory/
-
 # everything under results/ (already-tracked files such as ledger.jsonl and phase0/ stay tracked)
 results/*

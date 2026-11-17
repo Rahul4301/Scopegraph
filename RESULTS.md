@@ -234,22 +234,6 @@ All figures are percentages.
 | C, RAG | MemoryAgentBench | 3,371 | 69.2 | 62.7 | 59.8 | 49.6 | 66.4 | 69.1 |
 | **B, Mem0** | MemoryAgentBench | not run | not run | not run | not run | not run | not run | not run |
 
-## 2c. Supermemory (arm D)
-
-**No results yet.** Arm D is deferred and its code was removed from the main branch (`future_work.md`, Extension 1; recoverable from commit `f46e569`). No API key is available. The table is the layout the results will fill, with the same metrics as 2b; A and C rows are copied from 2b for reference. Nothing below the reference rows is a measurement.
-
-| Arm | Benchmark | n | Judge | F1 | BLEU-1 | EM | Contain | Native |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| A, no memory | LoCoMo | 1,980 | 70.9 | 48.0 | 40.3 | 14.7 | 38.1 | n/a |
-| C, RAG | LoCoMo | 1,977 | 69.8 | 49.8 | 42.2 | 16.4 | 39.3 | n/a |
-| **D, Supermemory** | LoCoMo | not run | not run | not run | not run | not run | not run | not run |
-| A, no memory | LongMemEval-S | 500 | 70.6 | 40.8 | 33.3 | 15.7 | 48.7 | n/a |
-| C, RAG | LongMemEval-S | 500 | 76.4 | 41.9 | 34.1 | 15.3 | 51.5 | n/a |
-| **D, Supermemory** | LongMemEval-S | not run | not run | not run | not run | not run | not run | not run |
-| A, no memory | MemoryAgentBench | 3,371 | 73.7 | 66.4 | 63.2 | 52.7 | 70.8 | 73.7 |
-| C, RAG | MemoryAgentBench | 3,371 | 69.2 | 62.7 | 59.8 | 49.6 | 66.4 | 69.1 |
-| **D, Supermemory** | MemoryAgentBench | not run | not run | not run | not run | not run | not run | not run |
-
 ---
 
 ## 3. Grader checks

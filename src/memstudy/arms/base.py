@@ -33,7 +33,7 @@ class ArmContext:
     candidates: int = 0
     retrieval_seconds: float = 0.0
     retrieval_cost: CostSink = field(default_factory=CostSink)
-    # Everything the memory system holds for this history (arms B and D), for gold-in-store.
+    # Everything the memory system holds for this history (arm B), for gold-in-store.
     stored_text: str | None = None
 
 

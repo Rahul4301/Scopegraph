@@ -1,62 +1,8 @@
 # Future Work: Extending "Memory Layer or Full Context?"
 
-Proposed follow-on studies, to be scoped with the faculty mentor after the main study (arms A, B, C on LoCoMo and LongMemEval-S) is complete. Both extensions reuse the main study's harness, reader, grader, and pre-registration discipline, so each can be added without redesigning the core comparison.
+A proposed follow-on study, to be scoped with the faculty mentor after the main study (arms A, B, C on LoCoMo and LongMemEval-S) is complete. The extension reuses the main study's harness, reader, grader, and pre-registration discipline, so it can be added without redesigning the core comparison.
 
-## Extension 1: Add Supermemory (arm D) as a second memory system
-
-**Status: deferred (backburner).** A Supermemory API key is not affordable at this time, so this extension is on hold until funding or credits are available. Nothing in the main study depends on it. The Supermemory code has been removed from the main codebase and lives only in git history (see below).
-
-### Motivation
-
-The main study tests one memory system, Mem0. Its stated limitation is that conclusions apply to Mem0 only. Supermemory is a different design: a hosted service with its own extraction, memory graph, and hybrid search, rather than an open-source library we run locally. If full context is non-inferior to Mem0 and also to Supermemory, the finding no longer depends on one vendor's architecture. If the two systems disagree, that is a finding in itself.
-
-### Question and hypotheses
-
-Does the headline result (H1, H3 from the main proposal) hold for a second, architecturally different memory system?
-
-| ID | Hypothesis | Test | Falsified if |
-|----|------------|------|--------------|
-| F1 | No memory (arm A) is non-inferior to Supermemory on LoCoMo (categories 1 to 4) and LongMemEval-S. | Paired non-inferiority, 3 point margin, same as H1. | Lower 95% bound of (A minus Supermemory) falls below the margin, or Supermemory is significantly better. |
-| F2 | Plain RAG (arm C) is within the margin of Supermemory. | Paired non-inferiority, same as H3. | Supermemory exceeds RAG by more than the margin. |
-| F3 | Supermemory and Mem0 differ by less than the margin. | Paired equivalence test between the two memory arms. | The two systems differ by more than the margin in either direction. |
-
-The margin and tests are fixed before data collection, as in the main study.
-
-### Design
-
-- Same reader (GPT-6 Luna), same grader (GPT-5 nano), same questions, same answer template.
-- Same shared retrieval token budget as arms B and C (7,000 tokens, whole items in rank order from 200 candidates), so the comparison isolates how each system builds and ranks memories, not how much it is allowed to show the reader.
-- One Supermemory container per history, hybrid search, memory-oriented ingestion, version-pinned SDK (`supermemory==3.62.0`).
-- Ingestion cost and per-query cost recorded separately and fed to the same cost-crossover model used for H2, so Supermemory gets its own crossover estimate.
-
-### Status of the code
-
-The arm, its offline tests (against a fake service), its rate-card pricing and its `g2_supermemory` gate were removed from the main branch so the main study ships without it. They are recoverable from commit `f46e569`: `src/memstudy/arms/supermemory_arm.py`, `tests/test_supermemory.py`, the `services.supermemory` block in `configs/prices.yaml`, the arm D block in `configs/study.yaml`, and `SupermemoryPrice` in `src/memstudy/budget.py`. Reviving it means restoring those, adding the arm to the CLI and `SYSTEMS` in `src/memstudy/execute.py`, and extending it to MemoryAgentBench's single-document histories (one service document per chunk). It has never called the real service, so a small live check is needed before any paid run.
-
-### Cost and scope decision
-
-Estimated from the published rate card (not yet measured):
-
-| Benchmark | Estimated Supermemory cost | Note |
-|-----------|----------------------------|------|
-| LoCoMo | about $1 | 10 histories, 10K to 21K tokens each |
-| LongMemEval-S | about $260 | about 51.9M ingested tokens at $5 per 1M; every question has its own haystack, so nothing is shared |
-
-LongMemEval-S dominates the cost because histories cannot be reused. Options to put to the mentor:
-
-1. LoCoMo only (about $1). Cheap, but only ten histories, so intervals are wide.
-2. LoCoMo plus a fixed random subset of LongMemEval-S (for example 100 of 500 questions, seed fixed in advance). Roughly $52 for the subset at the same rate.
-3. Full LongMemEval-S, which needs a raised budget cap or outside funding.
-
-Recommendation: option 2, with the subset size chosen from a power calculation on the pilot data so the non-inferiority test is not underpowered.
-
-### Risks
-
-- Hosted service behavior and pricing can change between pilot and final run. Pin versions and record the run date.
-- Supermemory's own ingestion is asynchronous, so ingestion completion must be confirmed before querying, or results will reflect partial indexing.
-- A deprecated or withdrawn extraction model upstream would invalidate comparability, so the model versions in use are recorded for every run.
-
-## Extension 2: VibeMemBench (memory for coding agents)
+## Extension: VibeMemBench (memory for coding agents)
 
 ### What it is
 
@@ -78,7 +24,7 @@ Does a full-context, no-memory arm match or beat memory systems on repository co
 | V2 | Plain retrieval over verbatim trajectory chunks is within the margin of an extraction-based memory system. | Paired non-inferiority. | Extraction exceeds verbatim retrieval by more than the margin. |
 | V3 | Memory arms use fewer agent steps or tokens than full context at equal resolution rate. | Paired comparison of steps and measured cost per target. | No reduction in steps or cost. |
 
-Arms would mirror the main study: A (full history in prompt where it fits), B (Mem0), C (verbatim RAG), plus the benchmark's memory-off baseline. Supermemory would be added only if Extension 1 is later funded.
+Arms would mirror the main study: A (full history in prompt where it fits), B (Mem0), C (verbatim RAG), plus the benchmark's memory-off baseline.
 
 ### Open items to verify before committing
 
@@ -102,8 +48,7 @@ Not yet estimated. Agent runs on 111 targets across several arms are likely to b
 ## Suggested order
 
 1. Finish the main study as pre-registered.
-2. VibeMemBench pilot after reading the full paper and confirming data availability, with go or no-go decided on measured pilot cost. Run it with arms A, B, and C only, since Supermemory is deferred.
-3. Supermemory (backburner, funding permitting): LoCoMo first (about $1) after one live smoke test, then the LongMemEval-S subset once its size is set by power analysis. Free options to explore before paying: vendor startup, research, or student credits, or a free tier if one covers LoCoMo.
+2. VibeMemBench pilot after reading the full paper and confirming data availability, with go or no-go decided on measured pilot cost. Run it with arms A, B, and C.
 
 ## References
 

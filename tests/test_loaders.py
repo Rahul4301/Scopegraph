@@ -95,7 +95,8 @@ def test_memoryagentbench_loader_keeps_context_verbatim_and_all_answers(tmp_path
         {"context": context, "questions": ["q0", "q1"], "answers": [["France", "FR"], ["10th"]], "metadata": meta}
     ])
     _write_mab(tmp_path, "Conflict_Resolution", [
-        {"context": "c", "questions": ["q"], "answers": [["x"]], "metadata": {"source": "factconsolidation_sh_6k"}}
+        {"context": "c", "questions": ["q"], "answers": [["x"]], "metadata": {"source": "factconsolidation_sh_6k"}},
+        {"context": "c", "questions": ["q"], "answers": [["x"]], "metadata": {"source": "factconsolidation_sh_262k"}},
     ])
     _write_mab(tmp_path, "Long_Range_Understanding", [
         {"context": "l", "questions": ["q"], "answers": [["y"]],
@@ -119,6 +120,9 @@ def test_memoryagentbench_loader_keeps_context_verbatim_and_all_answers(tmp_path
     }
     lru = next(i for i in items if i.category == "Long_Range_Understanding")
     assert lru.meta["demo"] == "D" and lru.meta["keypoints"] == ["k1", "k2"]
+    # The 6k ablation row is dropped; the 262k row keeps its parquet row number in its id.
+    assert "conflict_resolution-factconsolidation_sh_6k-r00" not in histories
+    assert "conflict_resolution-factconsolidation_sh_262k-r01" in histories
 
 
 def test_memoryagentbench_loader_flags_longmemeval_overlap_and_abstention(tmp_path):
@@ -144,21 +148,34 @@ MAB = ROOT / "data/memoryagentbench/data"
 
 
 @pytest.mark.skipif(not MAB.exists(), reason="MemoryAgentBench data not downloaded")
-def test_real_memoryagentbench_matches_the_census():
+def test_real_memoryagentbench_matches_the_paper():
+    """Hu et al. (ICLR 2026) Table 1: 2,071 questions; Table 6: contexts : questions per dataset."""
+    from collections import Counter
+
     from memstudy.loaders.memoryagentbench import load_memoryagentbench
 
     histories, items = load_memoryagentbench(MAB)
-    assert len(histories) == 146 and len(items) == 3671
+    assert len(histories) == 130 and len(items) == 2071
     primary = [i for i in items if i.primary]
-    assert len(primary) == 2500 and len({i.history_id for i in primary}) == 25
-    by_comp: dict[str, int] = {}
-    for i in items:
-        by_comp[i.category] = by_comp.get(i.category, 0) + 1
+    assert len(primary) == 900 and len({i.history_id for i in primary}) == 9
+    by_comp = Counter(i.category for i in items)
     assert by_comp == {
-        "Accurate_Retrieval": 2000,
-        "Conflict_Resolution": 800,
+        "Accurate_Retrieval": 1000,
+        "Conflict_Resolution": 200,
         "Long_Range_Understanding": 171,
         "Test_Time_Learning": 700,
     }
+    sources = Counter(i.meta["source"] for i in items)
+    contexts = Counter(h.split("-")[1] for h in histories)
+    table6 = {  # source: (contexts, questions)
+        "ruler_qa1_197K": (1, 100), "ruler_qa2_421K": (1, 100), "longmemeval_s*": (5, 300),
+        "eventqa_full": (5, 500), "factconsolidation_sh_262k": (1, 100), "factconsolidation_mh_262k": (1, 100),
+        "recsys_redial_full": (1, 200), "infbench_sum_eng_shots2": (100, 100), "detective_qa": (10, 71),
+        **{f"icl_{t}": (1, 100) for t in ("banking77_5900shot_balance", "clinic150_7050shot_balance",
+                                         "nlu_8296shot_balance", "trec_coarse_6600shot_balance",
+                                         "trec_fine_6400shot_balance")},
+    }
+    assert dict(sources) == {s: q for s, (_, q) in table6.items()}
+    assert dict(contexts) == {s.replace("*", ""): c for s, (c, _) in table6.items()}
     assert len({i.item_id for i in items}) == len(items)
     assert all(i.history_id in histories for i in items)

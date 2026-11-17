@@ -2,8 +2,8 @@
 
 Study: **When Does a Memory Layer Pay for Itself?** Accuracy and cost boundaries of agent memory
 against cached full context. Source: [PROPOSAL.md](PROPOSAL.md), the proposal of record (it
-replaces the earlier docx; arm labels follow this repository: A no memory, B Mem0, C plain RAG,
-D Supermemory). Branch `memstudy`. Written 2026-10-01 and revised 2026-10-02, before any benchmark
+replaces the earlier docx; arm labels follow this repository: A no memory, B Mem0, C plain RAG).
+Branch `memstudy`. Written 2026-10-01 and revised 2026-10-02, before any benchmark
 run. The settings are in `configs/study.yaml` and the prompt texts in `src/memstudy/prompts.py`;
 their hash is written to every `run.json` as `config_hash`. A change after tag `prereg-v1` needs a
 new tag.
@@ -84,9 +84,7 @@ A significant memory-layer advantage smaller than the margin does not falsify H1
 
 LoCoMo and MemoryAgentBench are pre-registered as descriptive replications of H1 and H3 (Section 6):
 they have too few independent histories for a confirmatory test. Their results can support or
-fail to support the direction found on LongMemEval-S but cannot establish non-inferiority. Arm D
-(Supermemory, self-hosted) is analyzed with the same tests as arm B but is exploratory and sits
-outside the confirmatory family, so the family and its power stay as registered.
+fail to support the direction found on LongMemEval-S but cannot establish non-inferiority.
 
 H2 is a price-model extrapolation from measured token counts, cache hits and ingestion cost. A
 crossover is measured directly only where one history gets many questions (LoCoMo, about 199;
@@ -217,35 +215,6 @@ candidates; nothing is cut mid-item.
   `text-embedding-3-small` (the same embedder as Mem0), cosine ranking. Oversized turns are split,
   never cut.
 
-- **D, Supermemory, self-hosted (exploratory).** The self-hosted server binary (release
-  `server-v0.0.8`; the repository `github.com/supermemoryai/supermemory` is MIT licensed but, as
-  checked 2026-10-02, holds no server or extraction source: `apps/` has docs, mcp, web and
-  playgrounds, `packages/` has SDKs and tools, so the extraction prompt cannot be audited), one container per history (`container_tag` = the same
-  `<bench>_<history_id>` scope as arm B), `task_type` memory, `search_mode` hybrid (the server's
-  documented default: extracted memories plus raw document chunks in one ranked list, so arm D
-  is not a pure extraction system and partly overlaps with arm C; this is stated wherever its
-  results appear). Chosen after one development case (`conv-26`): memories-only mode returned
-  about 1,700 context tokens and 63.2% judge accuracy, hybrid about 2,700 tokens and 68.4%, a
-  difference inside the noise of 152 questions, so the choice rests on hybrid being the
-  product's own default, not on that result. Rerank and query rewriting are off. The server is configured with the same extraction model
-  as arm B (`OPENAI_MODEL`) and the same embedder (provider `openai`, `text-embedding-3-small`,
-  1,536 dimensions). Ingestion is asynchronous on the server, so the arm polls until every
-  document is done before any query. It is reported as "Supermemory (self-hosted, shared
-  extraction model)" and never as the hosted product, whose extraction models are proprietary.
-  Known gaps, to be settled before arm D is run: neither the documentation nor the public
-  repository says whether extraction reads only user turns (checked on a smoke run by reading
-  the stored memories, and covered by the single-session-assistant sensitivity analysis); the server's own model calls are
-  made with its own key and are not metered, so arm D spend is estimated from our token counts at
-  the shared models' verified prices (input tokens only, a lower bound) and marked estimated in
-  the ledger; the server's search `threshold` defaults to 0.6, which is tuned to its local embedder: with
-  `text-embedding-3-small` the best similarity on a smoke question was 0.55 and the server
-  returned nothing. Arm D therefore uses 0.1, Mem0's library default, so neither arm is tuned
-  against the other (the smoke result at 0.6 is a development finding, not a result).
-  The server rejects search limits above 100, so arm D's candidate pool is 100 where arms B and C
-  use 200; the shared 7,000-token budget is unchanged and extracted facts are short, so the pool,
-  not the budget, is the binding limit for D (reported, not tuned).
-  Gold-in-store for arm D comes from the server's memory-list endpoint (`POST /v4/memories/list`,
-  latest and not-forgotten versions), the same verbatim test as arm B.
 
 Mem0's self-reported scores are never used as baselines. The prior numbers
 in Pollertlam and Kornsuwannawit and Wolff and Bennati are reference points only.
@@ -325,7 +294,7 @@ in Pollertlam and Kornsuwannawit and Wolff and Bennati are reference points only
   The composite histories exclude the 20 LongMemEval-S development questions by construction.
   Earlier smoke result files are kept unchanged in `data/old_smoke/` and are not study results.
 - All other comparisons (categories, exploratory MemoryAgentBench competencies, sensitivity
-  analyses, judge-stability checks, arm D, and everything in Section 10) are exploratory and
+  analyses, judge-stability checks, and everything in Section 10) are exploratory and
   reported descriptively without adjustment.
 - H2: cost per question from measured token counts and verified prices. Arm A pays one
   cache-writing call then cached reads; memory arms pay one-time ingestion plus per-question
@@ -354,8 +323,7 @@ Projection from the token census (reader and judge from the cost model, ingestio
 The core design comes to about $35 under current price cards, against the $350 cap (the arm B
 line above predates the switch of extraction to Luna and is re-run from the pilot). Extensions
 (Section 10) are costed from the pilot; the arm A reader cost of the composite histories is about
-$3 (41 questions per history, cached, 272K surcharge included), and arm D ingestion is an
-estimate (Section 4).
+$3 (41 questions per history, cached, 272K surcharge included).
 
 MemoryAgentBench is not in this table. Its 145 fitting contexts hold about 26M tokens, and arm A
 re-reads each context once per question (about 0.7B input tokens in all), so caching is required
@@ -374,9 +342,7 @@ independently measured (the reader and judge are both OpenAI models), only ten L
 conversational benchmarks only, histories that fit in context by design, the open-source Mem0
 rather than the hosted one, proxy tokenizer for the fit check, results tied to the tested
 versions, MemoryAgentBench run with one generic reader template and a one-line answer format per source
-rather than its own task prompts,
-Supermemory run self-hosted with a shared extraction model so it does not describe the hosted
-product, composite histories that are synthetic, and public benchmarks that the reader model may
+rather than its own task prompts, composite histories that are synthetic, and public benchmarks that the reader model may
 have seen in training.
 
 ## 9. Timeline
@@ -402,10 +368,9 @@ confirmatory family (H1 and H3); all are reported with intervals and without adj
 subsection that the owner drops before tag `prereg-v1` is removed with its code left unused; an
 extension added after the tag is exploratory by definition and needs a new tag if it changes a
 registered setting. Paid runs are gated as in Section 9; the composite benchmark uses the gate
-`stage_chat_composite`, and arm D uses `g2_supermemory_self_hosted` (a gate that is absent from
-`configs/approvals.yaml` counts as closed).
+`stage_chat_composite` (a gate that is absent from `configs/approvals.yaml` counts as closed).
 
-**10.1 Stage attribution (RQ4).** For each question answered by a memory arm (B, and D) the
+**10.1 Stage attribution (RQ4).** For each question answered by the memory arm (B) the
 per-case record stores `gold_in_store`: an accepted answer appears, after normalization, in the
 text of everything the system holds for the history. It is `None` for arms without a store and for
 abstention questions. Together with the existing `gold_in_context` and the judge verdict it gives
@@ -460,6 +425,3 @@ reported against the number of sessions seen. Result files are named
 sets the messages per ingestion call: one turn, ten turns (the registered default, used in every
 confirmatory and core run), or one whole session. The setting is part of the config hash and is
 appended to the result file name. Each setting is compared with arm A on LoCoMo.
-
-**10.6 Arm D, Supermemory self-hosted.** Defined in Section 4; exploratory; same tests as arm B,
-outside the Holm family.

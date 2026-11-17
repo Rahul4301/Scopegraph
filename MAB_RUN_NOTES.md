@@ -57,7 +57,7 @@
 2. Memory arms: skip `infbench_sum` and `recsys_redial_full`, which cannot be scored or compared:
    `--include_secondary --sources detective_qa,eventqa,factconsolidation_,icl_,longmemeval_s,ruler_qa`
 3. Run `--task_prompts` for every arm, or the sensitivity analysis is not fair.
-4. Smoke-test Mem0 and Supermemory ingestion with `--num_cases 3` before full runs (LongMemEval is about 52M tokens).
+4. Smoke-test Mem0 ingestion with `--num_cases 3` before full runs (LongMemEval is about 52M tokens).
 5. Compare arms only on questions every arm answered.
 6. Check the errored count; `status: complete` does not mean zero errors.
 7. Close the gates in `configs/approvals.yaml` when the study is done.

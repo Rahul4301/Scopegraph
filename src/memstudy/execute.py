@@ -31,7 +31,7 @@ from memstudy.runner import RunSummary, _dist, run_chat, summarize_records, vers
 from memstudy.schema import History, Item
 from memstudy.store import MemoryStore
 
-SYSTEMS = {"no_memory": "A", "mem0": "B", "rag": "C", "supermemory": "D"}
+SYSTEMS = {"no_memory": "A", "mem0": "B", "rag": "C"}
 EVALS = ("locomo", "longmemeval", "memoryagentbench", "composite")
 
 METRIC_NOTES = {
@@ -338,6 +338,7 @@ def build_report(
     finished_at: float,
     status: str = "complete",
     workers: int = 1,
+    ingest_workers: int = 1,
 ) -> dict[str, Any]:
     flat = summarize_records(records, ingests)
     by_item = {r["item_id"]: r for r in records}
@@ -360,6 +361,7 @@ def build_report(
             "stage": stage,
             "budget_stage": budget_stage,
             "parallel_questions": workers,
+            "parallel_histories": ingest_workers,
             "started_at": datetime.fromtimestamp(started_at).astimezone().isoformat(timespec="seconds"),
             "finished_at": datetime.fromtimestamp(finished_at).astimezone().isoformat(timespec="seconds"),
             "reader_model": cfg["reader"]["model"],
@@ -496,6 +498,21 @@ def _merged_summary(cases: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def ingest_by_history(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Per-history ingestion records of a result file, plain or merged ({} when not recorded)."""
+    summary = report.get("summary", {})
+    found = summary.get("ingest_by_history") or (summary.get("ingest") or {}).get("by_history")
+    return dict(found or {})
+
+
+def _merged_ingest(reports: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for r in reports:
+        for history_id, record in ingest_by_history(r).items():
+            merged.setdefault(history_id, record)
+    return merged
+
+
 def merge_reports(paths: list[Path]) -> dict[str, Any]:
     """One result from a run and its retries. The first file lists every question in loader order;
     each question keeps the first answered ('ok') version found, in file order, and otherwise the
@@ -557,6 +574,8 @@ def merge_reports(paths: list[Path]) -> dict[str, Any]:
             # Every dollar the input runs spent, failed attempts and ingestion included.
             "cost_usd_spent": sum(r["summary"]["cost_usd"]["total"] for r in reports),
             "wall_seconds": sum(r["summary"]["time"]["total_wall_s"] for r in reports),
+            # Ingestion cost per history, first file that has it (for the RQ4 break-even table).
+            "ingest_by_history": _merged_ingest(reports),
         },
         "cases": cases,
         "metric_notes": reports[0]["metric_notes"],
@@ -589,6 +608,7 @@ def execute_run(
     name: str | None = None,
     progress: LivePrinter | None = None,
     workers: int = 1,
+    ingest_workers: int = 1,
 ) -> Path:
     """Run arm over cases and write the one result file. stage labels the run (smoke or chat);
     budget_stage is the spend cap it counts against. Raises ResultExists before any paid call
@@ -615,6 +635,7 @@ def execute_run(
             run_id=run_id,
             progress=progress,
             workers=workers,
+            ingest_workers=ingest_workers,
         )
     except BaseException as err:  # keep the answers already paid for
         status = f"incomplete: {type(err).__name__}: {err}"
@@ -638,6 +659,7 @@ def execute_run(
         finished_at=time.time(),
         status=status,
         workers=workers,
+        ingest_workers=ingest_workers,
     )
     write_report(out, report)
     if failure is not None:

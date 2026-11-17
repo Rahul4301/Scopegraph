@@ -213,3 +213,124 @@ def test_embedding_and_mem0_calls_retry_a_dropped_connection(prices, budget):
 
     meter._run("text-embedding-3-small", 10, 0, flaky, lambda u: Usage(input_tokens=u.prompt_tokens), "embed")
     assert len(attempts) == 2 and meter.sink.calls == 1
+
+
+class _SlowIngestArm(FullContextArm):
+    """A full-context arm with a slow, recorded ingest, to test concurrent histories."""
+
+    concurrent_prepare = True
+
+    def __init__(self, delay: float = 0.2):
+        super().__init__(100_000, 0.05)
+        import threading
+
+        self.delay = delay
+        self.events: list[tuple[str, str]] = []
+        self.active = self.peak = 0
+        self._guard = threading.Lock()
+        self._cache_lock = threading.Lock()
+
+    def prepare(self, history):
+        import time as _time
+
+        with self._guard:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+            self.events.append(("start", history.history_id))
+        _time.sleep(self.delay)
+        with self._guard:
+            self.active -= 1
+            self.events.append(("end", history.history_id))
+        with self._cache_lock:
+            super().prepare(history)
+        return IngestStats(seconds=self.delay, cost=CostSink(usd=0.01, calls=1), stored_units=3)
+
+    def context(self, item, history):
+        with self._cache_lock:
+            return super().context(item, history)
+
+
+def _concurrent_run(prices, budget, cfg, tmp_path, arm, histories, ingest_workers):
+    _, reader, judge = build(prices, budget, cfg)
+    store = ResultStore(tmp_path)
+    items = [make_item(h.history_id, n) for h in histories for n in range(2)]
+    summary = run_chat(
+        arm=arm, items=items, histories={h.history_id: h for h in histories},
+        reader=reader, judge=judge, store=store, stage="pilot", run_id="r",
+        ingest_workers=ingest_workers,
+    )
+    return summary, store
+
+
+def test_histories_ingest_concurrently_and_every_answer_and_ingest_is_kept(prices, budget, cfg, tmp_path):
+    import time as _time
+
+    arm = _SlowIngestArm()
+    histories = [make_history(f"h{i}") for i in range(4)]
+    start = _time.perf_counter()
+    summary, store = _concurrent_run(prices, budget, cfg, tmp_path, arm, histories, ingest_workers=4)
+    elapsed = _time.perf_counter() - start
+    assert arm.peak > 1 and elapsed < 4 * arm.delay
+    assert summary.completed == 8 and summary.errors == 0
+    assert sorted(r["item_id"] for r in store.read_items("A", "locomo")) == sorted(
+        f"h{i}-{n:04d}" for i in range(4) for n in range(2)
+    )
+    ingests = store.read_ingest("A", "locomo")
+    assert sorted(i["history_id"] for i in ingests) == ["h0", "h1", "h2", "h3"]
+    assert all(i["cost"]["usd"] == 0.01 and i["stored_units"] == 3 for i in ingests)
+
+
+def test_checkpoints_of_one_store_stay_in_order_while_other_stores_overlap(prices, budget, cfg, tmp_path):
+    arm = _SlowIngestArm(delay=0.1)
+    cuts = [make_history("c_s01"), make_history("c_s02"), make_history("c_s03")]
+    for cut in cuts:
+        cut.store_id = "c"
+    other = make_history("other")
+    _concurrent_run(prices, budget, cfg, tmp_path, arm, [*cuts, other], ingest_workers=4)
+    order = [h for kind, h in arm.events if kind == "start" and h.startswith("c_s")]
+    assert order == ["c_s01", "c_s02", "c_s03"]
+    for a, b in zip(order, order[1:], strict=False):  # each checkpoint finishes before the next one starts
+        assert arm.events.index(("end", a)) < arm.events.index(("start", b))
+    assert arm.peak == 2  # the conversation's chain and the other history, never two checkpoints
+
+
+def test_an_arm_without_concurrent_prepare_ingests_one_history_at_a_time(prices, budget, cfg, tmp_path):
+    arm = _SlowIngestArm(delay=0.05)
+    arm.concurrent_prepare = False
+    histories = [make_history(f"h{i}") for i in range(3)]
+    summary, _ = _concurrent_run(prices, budget, cfg, tmp_path, arm, histories, ingest_workers=4)
+    assert arm.peak == 1 and summary.completed == 6
+
+
+def test_a_budget_stop_in_one_history_stops_the_concurrent_run(prices, budget, cfg, tmp_path):
+    class CappedArm(_SlowIngestArm):
+        def prepare(self, history):
+            if history.history_id == "h1":
+                raise BudgetExceeded("cap")
+            return super().prepare(history)
+
+    histories = [make_history(f"h{i}") for i in range(3)]
+    with pytest.raises(BudgetExceeded):
+        _concurrent_run(prices, budget, cfg, tmp_path, CappedArm(delay=0.05), histories, ingest_workers=3)
+
+
+def test_a_history_whose_ingestion_fails_is_recorded_and_the_run_continues(
+    prices, budget, cfg, tmp_path
+):
+    from memstudy.arms.base import ArmError
+
+    class StuckArm(FullContextArm):
+        def prepare(self, history):
+            if history.history_id == "h1":
+                raise ArmError("ingestion failed for h1")
+            return super().prepare(history)
+
+    _, reader, judge = build(prices, budget, cfg)
+    store = ResultStore(tmp_path)
+    summary = run_chat(
+        arm=StuckArm(100_000, 0.05), items=[make_item("h1", 0), make_item("h2", 0)],
+        histories={"h1": make_history("h1"), "h2": make_history("h2")},
+        reader=reader, judge=judge, store=store, stage="pilot", run_id="r",
+    )
+    assert summary.errors == 1 and summary.completed == 1
+    assert store.read_errors("A", "locomo")[0]["error"] == "ingest_failed: ArmError"

@@ -22,7 +22,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-supermemory = ["supermemory==3.62.0"]   # arm D client; the server is installed separately
 dev = [
   "mypy>=1.11,<2",
   "pytest>=8.3,<9",
@@ -56,5 +55,5 @@ packages = ["memstudy"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]
-module = ["mem0", "mem0.*", "pyarrow", "pyarrow.*", "spacy", "supermemory", "supermemory.*"]
+module = ["mem0", "mem0.*", "pyarrow", "pyarrow.*", "spacy"]
 ignore_missing_imports = true

@@ -7,13 +7,13 @@ suthar.rahul042@gmail.com
 
 *Faculty Mentor: ______________________________ | Undergraduate Research Proposal | October 2026 (revised)*
 
-**Keywords:** LLM agent memory; long context; prompt caching; Mem0; Supermemory; LoCoMo; LongMemEval; MemoryAgentBench; non-inferiority testing; cost model
+**Keywords:** LLM agent memory; long context; prompt caching; Mem0; LoCoMo; LongMemEval; MemoryAgentBench; non-inferiority testing; cost model
 
 ---
 
 ## Abstract
 
-Memory layers such as Mem0 and Supermemory extract and store distilled facts from a conversation history so that a language model need not read the whole history at question time. Frontier models now accept contexts of about one million tokens, and providers bill cached prompt prefixes at a fraction of the normal input price. Whether a memory layer is required therefore has no single answer. The answer depends on the length of the history and on the pattern of queries, namely their number and their spacing relative to the cache lifetime. This study measures that dependence. A no-memory baseline with prompt caching is compared with two extraction-based memory systems (Mem0 and a self-hosted Supermemory pipeline) and a verbatim retrieval control, under a fixed reader, a fixed retrieval budget, and a shared extraction model. Accuracy is tested on LongMemEval-S with pre-registered non-inferiority tests and a margin of 3 percentage points. LoCoMo and MemoryAgentBench serve as descriptive replications. Cost is computed from cached-token counts logged on every call, and the crossover query volume is estimated as a function of history length and query spacing. A stage attribution records whether each failure arises at extraction, at retrieval, or at reading. The harness, the pre-registration, and the item-level records are released so that later memory systems can be compared against the same baseline.
+Memory layers such as Mem0 extract and store distilled facts from a conversation history so that a language model need not read the whole history at question time. Frontier models now accept contexts of about one million tokens, and providers bill cached prompt prefixes at a fraction of the normal input price. Whether a memory layer is required therefore has no single answer. The answer depends on the length of the history and on the pattern of queries, namely their number and their spacing relative to the cache lifetime. This study measures that dependence. A no-memory baseline with prompt caching is compared with an extraction-based memory system (Mem0) and a verbatim retrieval control, under a fixed reader and a fixed retrieval budget. Accuracy is tested on LongMemEval-S with pre-registered non-inferiority tests and a margin of 3 percentage points. LoCoMo and MemoryAgentBench serve as descriptive replications. Cost is computed from cached-token counts logged on every call, and the crossover query volume is estimated as a function of history length and query spacing. A stage attribution records whether each failure arises at extraction, at retrieval, or at reading. The harness, the pre-registration, and the item-level records are released so that later memory systems can be compared against the same baseline.
 
 ---
 
@@ -44,7 +44,7 @@ This study treats the choice as a boundary to be located. Along the axes of hist
 
 The study makes four contributions.
 
-1. A matched-condition protocol in which every arm shares the reader, the answer template, the questions, the retrieval token budget, and (for the memory systems) the extraction model and embedder.
+1. A matched-condition protocol in which every arm shares the reader, the answer template, the questions, the retrieval token budget, and (for Mem0 and RAG) the embedder.
 2. A cost model computed from cached-token counts logged on every call, extended to model the interval between queries, which determines whether a cached prefix is still available.
 3. A stage attribution that records, for each question, whether the gold fact was stored, retrieved, and used by the reader.
 4. Released artifacts: the harness, the pre-registration, immutable item-level records, and the cost ledger.
@@ -77,14 +77,14 @@ The study makes four contributions.
 | Wolff and Bennati [5] | Mem0, Graphiti, cognee, RAG, full context | LoCoMo | Total cost of ownership | Reproducible testbed |
 | An [6] | Extracted artifacts vs. verbatim chunks | LoCoMo, LongMemEval-S | Not the focus | Controlled ablation |
 | Sharma and Lall [7] | LLM-extraction memory vs. selected raw turns | LoCoMo, LongMemEval | Write cost reported | Pre-registered, non-inferiority |
-| This study | No memory with caching, Mem0, Supermemory (self-hosted), plain RAG | LoCoMo, LongMemEval-S, MemoryAgentBench (fitting subset), composite long histories | Measured cached tokens; crossover as a function of history length and query spacing | Pre-registered margin and falsification conditions; stage attribution |
+| This study | No memory with caching, Mem0, plain RAG | LoCoMo, LongMemEval-S, MemoryAgentBench (fitting subset), composite long histories | Measured cached tokens; crossover as a function of history length and query spacing | Pre-registered margin and falsification conditions; stage attribution |
 
 *Table 2. Prior comparisons and this study. Entries for prior work come from the cited papers' abstracts and, for [4], the full text.*
 
 To the author's knowledge, no single earlier study combines the following elements.
 
 1. A no-memory baseline with a current reader whose window is about one million tokens, so that no history requires truncation.
-2. Memory systems and a verbatim-retrieval control run through the same reader, retrieval budget, questions, judge, and (for the memory systems) extraction model.
+2. A memory system and a verbatim-retrieval control run through the same reader, retrieval budget, questions, and judge.
 3. Cost computed from cached-token counts logged on every call, with query spacing treated as a variable.
 4. Hypotheses stated as non-inferiority with explicit margins and falsification conditions, registered before data collection.
 5. A history-length axis and a stage attribution, so that the result is a boundary with a stated mechanism and not a single comparison.
@@ -105,7 +105,7 @@ The margin and the tests are fixed before data collection. Only H1 and H3 are co
 
 *Table 3. Hypotheses, tests, and outcomes.*
 
-LoCoMo and MemoryAgentBench are registered as descriptive replications of H1 and H3. They contain too few independent histories for a confirmatory test, and their results can be consistent or inconsistent with the LongMemEval-S result without establishing non-inferiority. Arm D (Supermemory) is analyzed with the same tests as arm B but is labeled exploratory, so that the confirmatory family and its statistical power remain as registered.
+LoCoMo and MemoryAgentBench are registered as descriptive replications of H1 and H3. They contain too few independent histories for a confirmatory test, and their results can be consistent or inconsistent with the LongMemEval-S result without establishing non-inferiority.
 
 The headline reading combines H1 and H2 (Table 4).
 
@@ -133,20 +133,18 @@ The task is long-term conversational question answering. The input is a long mul
 
 ### 4.3 Arms
 
-All arms share the reader, the answer template, and the questions. Only the way the history reaches the reader differs. Arms B, C, and D place retrieved items in the prompt under one shared token budget of 7,000 tokens, filled with whole items in rank order from a pool of 200 candidates, and no item is cut.
+All arms share the reader, the answer template, and the questions. Only the way the history reaches the reader differs. Arms B and C place retrieved items in the prompt under one shared token budget of 7,000 tokens, filled with whole items in rank order from a pool of 200 candidates, and no item is cut.
 
 | Arm | Name | Definition | Role |
 | --- | --- | --- | --- |
 | A | No memory | Full history first, question last. The prefix is byte-identical across questions about one history. An explicit cache breakpoint follows the history when a history receives at least two questions (LoCoMo). For a single question (LongMemEval-S) no breakpoint is used, because a cache write without a later read is a surcharge. Both modes are priced in the cost model. | Baseline |
 | B | Mem0 | Open-source Mem0, version pinned (2.2.1), one user identifier per history, local vector store, default library settings (threshold 0.1, no reranking), ten turns per ingestion call, session date written into each message. The default extraction model and embedder are recorded. If the extraction model is withdrawn, a pre-registered fallback applies and arm B is rerun in full for any benchmark that used the default. | System under test |
 | C | Plain RAG | Verbatim chunks of whole turns (256 tokens), the same embedder as arm B, cosine ranking. No LLM extraction. | Control for H3 |
-| D | Supermemory (self-hosted) | The open-source Supermemory server [9], one isolated space per history, configured with the same extraction model and the same embedder as arm B. | Second memory system (exploratory) |
 
 *Table 6. Experimental arms.*
 
-Arm D uses the self-hosted server because it removes the per-token ingestion fee of the hosted platform and allows the extraction model to be held equal to arm B. The documentation states that the hosted platform uses proprietary extraction models and that self-hosted extraction runs on a model supplied by the user [9]. Arm D is therefore reported as "Supermemory (self-hosted, shared extraction model)". Its results do not describe the hosted product. A small hosted run on LoCoMo may be added as a check on divergence if credits are available.
 
-For both memory systems the study records what each system extracts by default. Mem0's default extraction reads only user messages. For LoCoMo, where the two speakers are peers, both are sent as user messages prefixed with their names. For LongMemEval the real user and assistant roles are kept, so facts stated only by the assistant are not extracted, which is Mem0 as released. A sensitivity analysis excludes the single-session-assistant category of LongMemEval-S and reports whether the conclusion changes.
+The study records what the memory system extracts by default. Mem0's default extraction reads only user messages. For LoCoMo, where the two speakers are peers, both are sent as user messages prefixed with their names. For LongMemEval the real user and assistant roles are kept, so facts stated only by the assistant are not extracted, which is Mem0 as released. A sensitivity analysis excludes the single-session-assistant category of LongMemEval-S and reports whether the conclusion changes.
 
 ### 4.4 History-Length Axis
 
@@ -208,7 +206,7 @@ The margin of 3 points is the largest accuracy loss accepted in exchange for dro
 
 With 500 paired questions, the power of a non-inferiority test depends on the discordance rate d, the share of questions on which exactly one of two arms is correct. When the true difference is zero, the lower confidence limit is approximately -z * sqrt(d / 500). To remain above -3 points, d must be at most about 12% with an unadjusted 95% interval and at most about 9% after the Holm adjustment. Larger true advantages for the baseline relax this requirement. The power curve over a plausible range of d is computed before the full run and reported. A non-significant result in an underpowered test is labeled inconclusive and is not presented as evidence against non-inferiority. A result that clears the margin stands in either case.
 
-LoCoMo and MemoryAgentBench have few independent histories (10 and 25), and a percentile bootstrap undercovers with so few clusters. Their intervals are reported, and no non-inferiority claim rests on them. Conclusions are worded as consistent or inconsistent with the LongMemEval-S result. All other comparisons, which include categories, length-axis results, as-of results, arm D, and sensitivity margins, are exploratory and reported descriptively without adjustment.
+LoCoMo and MemoryAgentBench have few independent histories (10 and 25), and a percentile bootstrap undercovers with so few clusters. Their intervals are reported, and no non-inferiority claim rests on them. Conclusions are worded as consistent or inconsistent with the LongMemEval-S result. All other comparisons, which include categories, length-axis results, as-of results, and sensitivity margins, are exploratory and reported descriptively without adjustment.
 
 ### 4.10 Components and Status
 
@@ -219,7 +217,6 @@ LoCoMo and MemoryAgentBench have few independent histories (10 and 25), and a pe
 | Stage attribution | Gold-in-store logging, evidence-position analysis | No | Gold-in-context built; gold-in-store to add |
 | Length axis | Composite histories (Section 4.4) | No | To build |
 | Lifecycle | As-of queries and write granularity (Section 4.5) | No | To build |
-| Arm D | Supermemory self-hosted (Section 4.3) | No | To build; earlier code recoverable from repository history |
 
 *Table 8. Components. Everything outside the core comparison is exploratory unless it is added to the registration before the registration tag is created.*
 
@@ -234,7 +231,7 @@ Prior work suggests, but does not guarantee, that full context performs at least
 | 1. Full context sufficient across the tested lengths | Arm A is non-inferior at every length, and no crossover appears within 200 queries per history. | In the tested range a memory layer adds cost and complexity without benefit. |
 | 2. Cost boundary only | Arm A matches the memory arms on accuracy, and the memory arms become cheaper beyond a measured Q*, which shifts with query spacing. | A memory layer is a cost optimization with a quantified threshold that depends on traffic pattern. |
 | 3. Accuracy boundary | Arm A degrades beyond a history length L*, while the memory arms or plain RAG do not. | A memory layer is justified by accuracy above L*, and the stage attribution shows whether the degradation arises in reading. |
-| 4. Extraction adds little | Plain RAG is within the margin of both memory systems at lower ingestion cost. | LLM extraction adds no value over verbatim retrieval in this regime. |
+| 4. Extraction adds little | Plain RAG is within the margin of Mem0 at lower ingestion cost. | LLM extraction adds no value over verbatim retrieval in this regime. |
 
 *Table 9. Possible patterns and their interpretation.*
 
@@ -251,7 +248,7 @@ The stage attribution is intended to be usable by developers of memory systems. 
 - **Grader.** A single LLM grader whose error and family-level bias are not independently measured. The reader and the judge are both OpenAI models in the core design. The registered thresholds in Table 7 bound but do not remove this risk.
 - **Independent histories.** LoCoMo has ten histories, so history-level intervals are wide. LongMemEval-S supports confirmatory tests but is underpowered for equivalence when the discordance rate is high (Section 4.9).
 - **Composite histories.** Composite histories are synthetic. They may contain contradictions between evidence sessions, and they differ in structure from the organic histories of deployed agents.
-- **Systems.** Mem0 is the open-source library and not the hosted platform, so results are not comparable to published Mem0 numbers. Supermemory runs self-hosted with a shared extraction model and does not represent the hosted product. Results are tied to the tested versions.
+- **Systems.** Mem0 is the open-source library and not the hosted platform, so results are not comparable to published Mem0 numbers. Results are tied to the tested versions.
 - **Mem0 configuration.** Mem0 runs with library defaults. A tuned configuration might perform better, and the claim is limited to the default.
 - **Contamination.** LoCoMo and LongMemEval are public and may appear in the training data of the reader.
 - **Scope.** The benchmarks are conversational. No coding or repository workloads are included. MemoryAgentBench runs with one generic reader template and not with its own task prompts. Fit checks use a proxy tokenizer, and the usage field returned by the API is authoritative for cost.
@@ -263,7 +260,7 @@ The stage attribution is intended to be usable by developers of memory systems. 
 
 **Privacy.** Memory layers retain information about users, and sending histories to hosted APIs (the reader and the judge) exposes that content to third parties. This study uses only public benchmark conversations and no real user data. Any conclusion about deployment notes that a memory layer adds a persistent store of personal information that full-context prompting does not.
 
-**Misleading comparisons.** Commercial memory systems change quickly, so a result tied to one version, one reader, and one judge could be over-generalized, either to dismiss memory layers in general or to discredit a vendor unfairly. Versions and configurations are pinned and reported. Conclusions are worded as applying to the tested regime under the stated settings, and the self-hosted status of arm D is stated wherever its results appear.
+**Misleading comparisons.** Commercial memory systems change quickly, so a result tied to one version, one reader, and one judge could be over-generalized, either to dismiss memory layers in general or to discredit a vendor unfairly. Versions and configurations are pinned and reported. Conclusions are worded as applying to the tested regime under the stated settings.
 
 ---
 
@@ -307,4 +304,3 @@ The harness and configuration files, the registration with its tag, the analysis
 
 [8] Hu, Y., Wang, Y., and McAuley, J. (2026). Evaluating Memory in LLM Agents via Incremental Multi-Turn Interactions. International Conference on Learning Representations (ICLR) 2026. arXiv:2507.05257. https://arxiv.org/abs/2507.05257
 
-[9] Supermemory. Self-hosting overview (Supermemory local). Documentation, accessed October 2026. https://supermemory.ai/docs/self-hosting/overview

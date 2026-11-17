@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import uuid
 from dataclasses import dataclass
@@ -21,7 +20,6 @@ from memstudy.arms.base import Arm
 from memstudy.arms.full_context import FullContextArm
 from memstudy.arms.mem0_arm import Mem0Arm
 from memstudy.arms.rag import RagArm
-from memstudy.arms.supermemory_arm import SupermemoryArm
 from memstudy.asof import expand_asof
 from memstudy.budget import Budget, ModelPrice, load_prices, worst_case_usd
 from memstudy.config import DEFAULT_CONFIG, DEFAULT_PRICES, config_hash, load_config
@@ -56,7 +54,7 @@ from memstudy.pilot import (
     select_flip_sample,
     select_pilot,
 )
-from memstudy.preflight import load_env_key, load_openai_key, require_gates
+from memstudy.preflight import load_openai_key, require_gates
 from memstudy.prompts import TASK_PROMPTS, task_key
 from memstudy.reader import Reader
 from memstudy.runner import finalize_run, run_chat
@@ -133,33 +131,7 @@ def build_arm(
         return RagArm(cfg["arms"]["C"], retrieval, embedder, meter, Path(".cache/rag"))
     if name == "B":
         return Mem0Arm.create(cfg["arms"]["B"], retrieval, meter, f".cache/mem0/{store_name or stage}")
-    if name == "D":
-        arm_cfg = cfg["arms"]["D"]
-        require_gates("g2_supermemory_self_hosted")
-        from supermemory import Supermemory
-
-        return SupermemoryArm(
-            arm_cfg,
-            retrieval,
-            Supermemory(api_key=supermemory_key(arm_cfg), base_url=arm_cfg["base_url"], max_retries=2),
-            rt.prices[arm_cfg["extraction_model"]],
-            rt.prices[arm_cfg["embedding_model"]],
-            rt.budget,
-            stage,
-            tag,
-        )
     raise ValueError(f"unknown arm {name}")
-
-
-def supermemory_key(arm_cfg: dict[str, Any]) -> str:
-    """The local server's own key. The file the server keeps in its data directory is the source
-    of truth (it is regenerated whenever the directory is), so it wins over SUPERMEMORY_API_KEY,
-    which can be stale in a long-lived shell. Never printed."""
-    key_file = Path(arm_cfg["data_dir"]) / "api-key"
-    if key_file.exists():
-        return key_file.read_text().strip()
-    load_env_key("SUPERMEMORY_API_KEY")
-    return os.environ["SUPERMEMORY_API_KEY"]
 
 
 def _write_new_json(path: Path, payload: Any) -> None:
@@ -281,10 +253,8 @@ def _dry_run(
         )
         row["reader_worst_case_usd"] += worst_case_usd(price, prompt, max_output)
     gates = [stage_gate(stage, args.eval)]
-    if letter in ("B", "C", "D"):
+    if letter in ("B", "C"):
         gates.append("g1_extra_models")
-    if letter == "D":
-        gates.append("g2_supermemory_self_hosted")
     print(
         json.dumps(
             {
@@ -331,6 +301,14 @@ def cmd_run(args: argparse.Namespace) -> None:
         return
     if args.workers < 1:
         raise SystemExit("--workers must be at least 1")
+    if args.ingest_workers < 1:
+        raise SystemExit("--ingest_workers must be at least 1")
+    if args.ingest_workers > 1:
+        print(
+            "note: --ingest_workers needs an arm that supports concurrent ingestion; no arm does yet, "
+            "so histories are ingested one at a time",
+            file=sys.stderr,
+        )
     if args.asof and args.eval != "locomo":
         raise SystemExit("--asof applies to locomo only")
     if args.write_granularity and letter != "B":
@@ -393,6 +371,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         name=name,
         progress=LivePrinter(len(cases)),
         workers=args.workers,
+        ingest_workers=args.ingest_workers,
     )
     print(format_summary(json.loads(path.read_text())))
     print(f"\nresults: {path}")
@@ -409,6 +388,42 @@ def cmd_merge(args: argparse.Namespace) -> None:
     print(f"{s['answered']}/{s['n']} answered | judge {s['accuracy_judge']} | native {s['native_match']} "
           f"| not answered {s['not_answered']}")
     print(f"results: {out}")
+
+
+def cmd_rq4_table(args: argparse.Namespace) -> None:
+    """(free) RQ4 break-even table from finished result files (src/memstudy/rq4.py)."""
+    from memstudy import rq4
+
+    cfg = load_config(DEFAULT_CONFIG)
+    prices = load_prices(DEFAULT_PRICES)
+    reader = prices[cfg["reader"]["model"]]
+    embed = prices[cfg["arms"]["C"]["embedding_model"]]
+    by_eval: dict[str, dict[str, dict[str, Any]]] = {}
+    for path in args.result:
+        report = rq4.load_report(Path(path))
+        run = report["run"]
+        arms = by_eval.setdefault(run["eval"], {})
+        if run["arm"] in arms:
+            raise SystemExit(f"two result files for arm {run['arm']} on {run['eval']}; pass one (merge first)")
+        arms[run["arm"]] = report
+    chunk = int(cfg["arms"]["C"]["chunk_tokens"])
+    rows: list[dict[str, Any]] = []
+    for bench, reports in sorted(by_eval.items()):
+        if "A" not in reports:
+            raise SystemExit(f"{bench}: an arm A (no memory) result file is required")
+        histories = load_bench(bench)[0]
+        rows += rq4.per_history_rows(
+            bench, reports, reader, embed, rq4.rag_ingest_from(histories, chunk, embed), args.by,
+            keep=set(histories),
+        )
+    table = rq4.summarize(rows)
+    print(rq4.to_markdown(table, args.by))
+    if args.out:
+        out = Path(args.out)
+        ensure_new(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"by": args.by, "table": table, "histories": rows}, indent=2, default=str) + "\n")
+        print(f"written: {out}")
 
 
 def cmd_judge_flip(args: argparse.Namespace) -> None:
@@ -494,7 +509,7 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         choices=[*SYSTEMS, *SYSTEMS.values()],
         metavar="SYSTEM",
-        help="no_memory (A), mem0 (B), rag (C) or supermemory (D, self-hosted, exploratory)",
+        help="no_memory (A), mem0 (B) or rag (C)",
     )
     run.add_argument("--eval", required=True, choices=EVALS, help="benchmark to run")
     run.add_argument(
@@ -515,6 +530,14 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=4,
         help="questions answered at the same time (default 4; 1 for strictly one at a time)",
+    )
+    run.add_argument(
+        "--ingest_workers",
+        type=int,
+        default=1,
+        help="histories ingested and answered at the same time, for an arm that supports concurrent "
+        "ingestion (none does yet; default 1). "
+        "Each history keeps its own --workers question pool",
     )
     run.add_argument(
         "--asof",
@@ -560,6 +583,12 @@ def main(argv: list[str] | None = None) -> int:
         help="pilot, or runs for every run under results/runs",
     )
     add("pilot-report", cmd_pilot_report, "(free) per-arm tokens, cost, latency, projection")
+    table = add("rq4-table", cmd_rq4_table, "(free) RQ4: questions per history at which RAG and Mem0 break even")
+    table.add_argument("--result", action="append", required=True, metavar="FILE",
+                       help="a result file (arm A required per eval; B and C optional); repeat for each")
+    table.add_argument("--by", choices=["bucket", "category"], default="bucket",
+                       help="rows: 100K-token history buckets (default) or question categories")
+    table.add_argument("--out", help="also write the table and per-history rows as JSON here")
     args = parser.parse_args(argv)
     args.fn(args)
     return 0
